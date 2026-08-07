@@ -1015,15 +1015,35 @@ function lsActivateJournalWikiLinks(container) {
   }
 }
 
-function lsEmbedNativeJournalEditor(pageSheet, html) {
+function lsFindOpenJournalSheet(journal) {
+  const v1Windows = Object.values(ui.windows ?? {});
+  const v2Collection = foundry.applications.instances;
+  const v2Windows = v2Collection instanceof Map
+    ? [...v2Collection.values()]
+    : Object.values(v2Collection ?? {});
+  return [journal._sheet, ...v1Windows, ...v2Windows].find((candidate) => {
+    const document = candidate?.document ?? candidate?.object;
+    return candidate?.rendered && document?.documentName === "JournalEntry" && document.id === journal.id;
+  }) ?? journal._sheet ?? journal.sheet;
+}
+
+function lsEmbedNativeJournalEditor(pageSheet, html, retry = true) {
   const page = pageSheet.object ?? pageSheet.document;
   const journal = page?.parent;
-  if (!pageSheet.isEditable || journal?.documentName !== "JournalEntry") return;
-  const journalSheet = journal.sheet;
+  if (journal?.documentName !== "JournalEntry" || pageSheet.options?.editable === false) return;
+  const journalSheet = lsFindOpenJournalSheet(journal);
   const journalRoot = lsRoot(journalSheet?.element);
-  const pageNode = journalRoot?.querySelector(`.journal-entry-page[data-page-id="${page.id}"]`);
-  const wrapper = lsRoot(pageSheet.element) ?? lsRoot(html)?.closest?.(".window-app, .application");
-  if (!pageNode || !wrapper || wrapper.dataset.loreSmithEmbeddedEditor === "ready") return;
+  const pageNode = journalRoot?.querySelector(`[data-page-id="${page.id}"].journal-entry-page`)
+    ?? journalRoot?.querySelector(`.journal-entry-page[data-page-id="${page.id}"]`);
+  const rendered = lsRoot(html);
+  const wrapper = lsRoot(pageSheet.element)
+    ?? rendered?.closest?.(".window-app, .application")
+    ?? rendered;
+  if (!pageNode || !wrapper) {
+    if (retry) setTimeout(() => lsEmbedNativeJournalEditor(pageSheet, html, false), 0);
+    return;
+  }
+  if (wrapper.dataset.loreSmithEmbeddedEditor === "ready") return;
 
   wrapper.dataset.loreSmithEmbeddedEditor = "ready";
   wrapper.classList.add("ls-inline-journal-page-sheet");
@@ -1201,6 +1221,10 @@ Hooks.on("renderJournalSheet", (app, html) => {
 
 Hooks.on("renderJournalPageSheet", lsEmbedNativeJournalEditor);
 Hooks.on("renderJournalTextPageSheet", lsEmbedNativeJournalEditor);
+Hooks.on("renderApplication", (app, html) => {
+  const document = app.document ?? app.object;
+  if (document?.documentName === "JournalEntryPage") lsEmbedNativeJournalEditor(app, html);
+});
 
 Hooks.on("renderApplicationV2", (app, html) => {
   const document = app.document ?? app.actor ?? app.item;
