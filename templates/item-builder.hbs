@@ -24,10 +24,23 @@
           <button class="secondary" data-action="useCurrent"><i class="fa-regular fa-file"></i> Start blank</button>
         </div>
         <div class="ls-browser-summary"><span>{{sourceCount}} matching items</span><span>Page {{sourcePageLabel}}</span></div>
-        <div class="ls-builder-results compact tall">
-          {{#each results}}
-            <article><img src="{{img}}"><div><strong>{{name}}</strong><small>Level {{level}} &middot; {{traits}} &middot; {{pack}}</small></div><button data-action="useSource" data-uuid="{{uuid}}">Use as base</button></article>
-          {{else}}<div class="ls-builder-empty">No installed PF2e item matches these filters.</div>{{/each}}
+        <div class="ls-source-browser">
+          <div class="ls-builder-results compact tall">
+            {{#each results}}
+              <article data-action="previewSource" data-uuid="{{uuid}}"><img src="{{img}}"><div><strong>{{name}}</strong><small>Level {{level}} &middot; {{traits}} &middot; {{pack}}</small></div><button data-action="useSource" data-uuid="{{uuid}}">Use as base</button></article>
+            {{else}}<div class="ls-builder-empty">No installed PF2e item matches these filters.</div>{{/each}}
+          </div>
+          <aside class="ls-source-preview">
+            {{#if sourcePreview}}
+              <header><img src="{{sourcePreview.img}}"><div><h3>{{sourcePreview.name}}</h3><span>Level {{sourcePreview.level}} {{sourcePreview.type}}</span></div></header>
+              <div class="ls-preview-traits">{{#each sourcePreview.traits}}<span>{{this}}</span>{{/each}}</div>
+              <dl><div><dt>Usage</dt><dd>{{sourcePreview.usage}}</dd></div><div><dt>Bulk</dt><dd>{{sourcePreview.bulk}}</dd></div><div><dt>Price</dt><dd>{{sourcePreview.price}}</dd></div></dl>
+              <div class="ls-preview-description">{{{sourcePreview.description}}}</div>
+              <button data-action="useSource" data-uuid="{{sourcePreview.uuid}}">Use {{sourcePreview.name}} as base</button>
+            {{else}}
+              <div class="ls-preview-empty"><i class="fa-solid fa-eye"></i><strong>Select an item</strong><span>Its traits, usage, price, bulk, and rules text will appear here before you use it.</span></div>
+            {{/if}}
+          </aside>
         </div>
         <div class="ls-browser-pages">
           <button data-action="previousSources" {{#unless hasPreviousSources}}disabled{{/unless}}><i class="fa-solid fa-arrow-left"></i> Previous</button>
@@ -43,7 +56,7 @@
         <div class="ls-form-grid">
           <label class="wide">Item name<input name="name" value="{{item.name}}"></label>
           <label>Level<select name="level">{{#each itemLevels}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-          <label>Rarity<select name="rarity"><option value="{{item.rarity}}" selected>Current: {{item.rarity}}</option><option value="common">Common</option><option value="uncommon">Uncommon</option><option value="rare">Rare</option><option value="unique">Unique</option></select></label>
+          <label>Rarity<select name="rarity">{{#each rarityOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
           <label class="wide">Add an item trait
             <span class="ls-inline-control"><select name="traitToAdd"><option value="">Choose a trait</option>{{#each itemTraitOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button type="button" data-action="addTrait">Add</button></span>
           </label>
@@ -57,7 +70,7 @@
         <h2>Rules and activation</h2>
         <p>Only entries supported by this PF2e item type are shown. The native sheet remains available for every type-specific field and rule element.</p>
         <div class="ls-form-grid">
-          {{#if item.hasActionType}}<label>Activation<select name="actionType"><option value="{{item.actionType}}" selected>Current: {{item.actionType}}</option><option value="passive">Passive</option><option value="free">Free action</option><option value="reaction">Reaction</option><option value="action">Action</option></select></label>{{/if}}
+          {{#if item.hasActionType}}<label>Activation<select name="actionType">{{#each actionTypeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
           {{#if item.hasActions}}<label>Actions<input name="actions" type="number" min="0" max="3" value="{{item.actions}}"></label>{{/if}}
           {{#if item.hasFrequency}}<label>Uses<input name="frequencyMax" type="number" min="0" value="{{item.frequencyMax}}"></label><label>Frequency period<input name="frequencyPer" value="{{item.frequencyPer}}" placeholder="day, hour, round"></label>{{/if}}
           <label class="wide">Description and rules<textarea name="description" rows="14">{{item.description}}</textarea></label>

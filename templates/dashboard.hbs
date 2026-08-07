@@ -16,8 +16,8 @@
   <main class="ls-main">
     {{#if tabs.notes}}
       <section class="ls-panel">
-        <header><div><span>Native Foundry Journals</span><h1>Campaign Notes</h1></div><button data-action="createNote"><i class="fa-solid fa-plus"></i> New note</button></header>
-        <p class="ls-lead">Write directly here. Type <strong>[[Note Name]]</strong> to create a link; clicking it opens the note here and creates it when it does not exist.</p>
+        <header><div><span>Native Foundry Journal pages</span><h1>{{notebookName}}</h1></div><div class="ls-header-actions"><button data-action="openNotebook"><i class="fa-solid fa-book-open"></i> Open Foundry Journal</button><button data-action="createNote"><i class="fa-solid fa-plus"></i> New page</button></div></header>
+        <p class="ls-lead">Every note is a page inside this single Journal. Rename the Journal and use Foundry's complete formatting and image tools from its native sheet. Type <strong>[[Page Name]]</strong> to link pages.</p>
         <div class="ls-note-workspace">
           <aside class="ls-note-list">
             {{#each notes}}
@@ -25,7 +25,7 @@
                 <i class="fa-solid fa-file-lines"></i><span>{{name}}</span>
               </button>
             {{else}}
-              <div class="ls-empty">No notes yet. Select <strong>New note</strong> to begin.</div>
+              <div class="ls-empty">No pages yet. Select <strong>New page</strong> to begin.</div>
             {{/each}}
           </aside>
           <section class="ls-note-paper">
@@ -34,7 +34,7 @@
               <div class="ls-note-editor" data-role="note-editor" contenteditable="true" spellcheck="true">{{{activeNote.content}}}</div>
               <footer><span><i class="fa-solid fa-circle-check"></i> Saved automatically</span><span>Double-click a wiki link to edit its <strong>[[name]]</strong>.</span></footer>
             {{else}}
-              <div class="ls-empty ls-note-empty"><i class="fa-solid fa-feather-pointed"></i><strong>Your chronicle is empty.</strong><span>Create a note to start writing.</span></div>
+              <div class="ls-empty ls-note-empty"><i class="fa-solid fa-feather-pointed"></i><strong>Your chronicle is empty.</strong><span>Create a page to start writing.</span></div>
             {{/if}}
           </section>
         </div>

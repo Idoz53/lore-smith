@@ -1,6 +1,6 @@
 <section class="ls-live-combat">
   <header>
-    <div><strong>Live combat log</strong><small>{{#if running}}Simulation running{{else}}Simulation complete{{/if}}</small></div>
+    <div><strong>Live combat log</strong><small>{{status}}</small></div>
     <label>Seconds per action
       <input name="liveDelay" type="range" min="250" max="10000" step="250" value="{{delay}}">
       <span data-role="delayLabel">{{delaySeconds}} seconds</span>
@@ -8,6 +8,6 @@
   </header>
   <div class="ls-live-notice"><i class="fa-solid fa-comment-slash"></i> This log stays in Lore Smith. Chat mirroring is optional in Module Settings.</div>
   <div class="ls-live-entries">
-    {{#each entries}}<p class="{{kind}}">{{text}}</p>{{else}}<p class="empty">Waiting for the first action…</p>{{/each}}
+    {{#each entries}}<p class="{{kind}}">{{text}}</p>{{else}}<p class="empty">Waiting for the first action...</p>{{/each}}
   </div>
 </section>

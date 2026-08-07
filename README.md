@@ -14,7 +14,9 @@ The module provides:
 - adjustable live action pacing without Chat spam by default;
 - browse-all compendium source libraries with keyword, level, trait, and type filters;
 - GM Core level benchmark menus for creature statistics;
-- an embedded native Journal editor that opens and creates `[[wiki links]]` without a separate page window.
+- native Foundry Journal sheets with their standard formatting, images, and page
+  sidebar, plus `[[wiki links]]` that open or create pages inside the same Journal;
+- side-by-side creature and item source previews before copying a compendium entry.
 
 ## Prototype warning
 
@@ -36,6 +38,10 @@ adds **Simulate Logs** and **Live Combat** controls when an encounter is active.
 Use the slider in the Live Combat window to change the delay from 0.25 to 10
 seconds per action. Chat mirroring is optional in Module Settings and is off by
 default.
+
+Selecting **Live Combat** opens a separate Lore Smith window immediately. It
+shows preparation errors as well as the complete action log, so failed setup is
+visible instead of silently stopping.
 
 ## Content and licensing
 

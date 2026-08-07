@@ -722,6 +722,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       tab: LoreSmithDashboard.changeTab,
       createNote: LoreSmithDashboard.createNote,
       openNote: LoreSmithDashboard.openNote,
+      openNotebook: LoreSmithDashboard.openNotebook,
       searchCreatures: LoreSmithDashboard.searchCreatures,
       cloneCreature: LoreSmithDashboard.cloneCreature,
       blankCreature: LoreSmithDashboard.blankCreature,
@@ -750,6 +751,22 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   iterations = 100;
   result = null;
 
+  async getNotebook(create = false) {
+    let journal = game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "notebook"));
+    if (!journal) {
+      journal = game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "note"));
+      if (journal) await journal.setFlag(FLAG_SCOPE, "notebook", true);
+    }
+    if (!journal && create) {
+      journal = await JournalEntry.create({
+        name: "Campaign Journal",
+        flags: { [FLAG_SCOPE]: { note: true, notebook: true } },
+        pages: [],
+      });
+    }
+    return journal;
+  }
+
   async _prepareContext(options) {
     const sceneTokens = (canvas?.scene?.tokens?.contents ?? []).filter((token) => token.actor).map((token) => {
       const actor = token.actor;
@@ -766,29 +783,28 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         enemy: this.enemyIds.has(token.id),
       };
     });
-    const noteEntries = game.journal
-      .filter((entry) => entry.getFlag(FLAG_SCOPE, "note"))
-      .sort((left, right) => left.name.localeCompare(right.name));
-    if (!this.activeNoteId && noteEntries.length) this.activeNoteId = noteEntries[0].id;
-    const notes = noteEntries
-      .map((entry) => ({
-        id: entry.id,
-        name: entry.name,
-        pages: entry.pages.size,
-        active: entry.id === this.activeNoteId,
-      }));
-    const activeJournal = this.activeNoteId ? game.journal.get(this.activeNoteId) : null;
-    const activePage = activeJournal?.pages?.find((page) => page.type === "text") ?? activeJournal?.pages?.contents?.[0] ?? null;
-    const activeNote = activeJournal ? {
-      id: activeJournal.id,
-      name: activeJournal.name,
-      content: activePage?.text?.content ?? "",
+    const notebook = await this.getNotebook(false);
+    const notePages = notebook?.pages?.contents
+      ?.filter((page) => page.type === "text")
+      .sort((left, right) => left.sort - right.sort) ?? [];
+    if (!notePages.some((page) => page.id === this.activeNoteId)) this.activeNoteId = notePages[0]?.id ?? null;
+    const notes = notePages.map((page) => ({
+      id: page.id,
+      name: page.name,
+      active: page.id === this.activeNoteId,
+    }));
+    const activePage = notebook?.pages?.get(this.activeNoteId) ?? null;
+    const activeNote = activePage ? {
+      id: activePage.id,
+      name: activePage.name,
+      content: activePage.text?.content ?? "",
     } : null;
     return {
       ...await super._prepareContext(options),
       tabs: { [this.activeTab]: true },
       notes,
       activeNote,
+      notebookName: notebook?.name ?? "Campaign Journal",
       creatureSearch: this.creatureSearch,
       itemSearch: this.itemSearch,
       itemTypes: Object.entries(ITEM_TYPE_LABELS).map(([value, label]) => ({ value, label, selected: value === this.itemType })),
@@ -850,32 +866,33 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async saveActiveNote() {
-    const journal = this.activeNoteId ? game.journal.get(this.activeNoteId) : null;
-    if (!journal) return;
+    const journal = await this.getNotebook(false);
+    const page = journal?.pages?.get(this.activeNoteId);
+    if (!journal || !page) return;
     const title = this.element?.querySelector('[data-role="note-title"]')?.value.trim() || "Untitled Note";
     const content = this.element?.querySelector('[data-role="note-editor"]')?.innerHTML ?? "";
-    const page = journal.pages.find((candidate) => candidate.type === "text") ?? journal.pages.contents[0];
-    const updates = [];
-    if (journal.name !== title) updates.push(journal.update({ name: title }));
-    if (page && page.text?.content !== content) updates.push(page.update({ name: title, "text.content": content }));
-    await Promise.all(updates);
+    if (page.name !== title || page.text?.content !== content) {
+      await page.update({ name: title, "text.content": content });
+    }
   }
 
   async openOrCreateLinkedNote(name) {
     const noteName = String(name ?? "").trim();
     if (!noteName) return;
     await this.saveActiveNote();
-    let journal = game.journal.find((entry) =>
-      entry.getFlag(FLAG_SCOPE, "note") && entry.name.localeCompare(noteName, undefined, { sensitivity: "accent" }) === 0);
-    if (!journal) {
-      journal = await JournalEntry.create({
+    const journal = await this.getNotebook(true);
+    let page = journal.pages.find((candidate) =>
+      candidate.name.localeCompare(noteName, undefined, { sensitivity: "accent" }) === 0);
+    if (!page) {
+      [page] = await journal.createEmbeddedDocuments("JournalEntryPage", [{
         name: noteName,
-        flags: { [FLAG_SCOPE]: { note: true } },
-        pages: [{ name: noteName, type: "text", text: { content: "" } }],
-      });
-      ui.notifications.info(`Created Lore Smith note “${noteName}”.`);
+        type: "text",
+        text: { content: "" },
+        sort: Math.max(0, ...journal.pages.map((candidate) => candidate.sort ?? 0)) + 100000,
+      }]);
+      ui.notifications.info(`Created page "${noteName}" inside ${journal.name}.`);
     }
-    this.activeNoteId = journal.id;
+    this.activeNoteId = page.id;
     await this.render();
   }
 
@@ -897,16 +914,18 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async createNote() {
     await this.saveActiveNote();
-    const existing = new Set(game.journal.map((entry) => entry.name.toLowerCase()));
+    const journal = await this.getNotebook(true);
+    const existing = new Set(journal.pages.map((page) => page.name.toLowerCase()));
     let noteName = "New Note";
     let suffix = 2;
     while (existing.has(noteName.toLowerCase())) noteName = `New Note ${suffix++}`;
-    const journal = await JournalEntry.create({
+    const [page] = await journal.createEmbeddedDocuments("JournalEntryPage", [{
       name: noteName,
-      flags: { [FLAG_SCOPE]: { note: true } },
-      pages: [{ name: noteName, type: "text", text: { content: "" } }],
-    });
-    this.activeNoteId = journal.id;
+      type: "text",
+      text: { content: "" },
+      sort: Math.max(0, ...journal.pages.map((candidate) => candidate.sort ?? 0)) + 100000,
+    }]);
+    this.activeNoteId = page.id;
     await this.render();
   }
 
@@ -914,6 +933,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.saveActiveNote();
     this.activeNoteId = target.dataset.id;
     await this.render();
+  }
+
+  static async openNotebook() {
+    const journal = await this.getNotebook(true);
+    journal.sheet.render(true);
   }
 
   static async searchCreatures() {

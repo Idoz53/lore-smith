@@ -104,6 +104,46 @@ async function lsSearchPacks({ documentName, query = "", types = [], level = "",
   return results.sort((left, right) => left.name.localeCompare(right.name));
 }
 
+async function lsBuildSourcePreview(uuid) {
+  const source = await fromUuid(uuid);
+  if (!source) return null;
+  const traits = lsTraits(source).map((value) =>
+    game.i18n.localize(CONFIG.PF2E.creatureTraits?.[value] ?? lsItemTraitConfig()[value] ?? value));
+  if (source.documentName === "Actor") {
+    return {
+      uuid,
+      kind: "creature",
+      name: source.name,
+      img: source.img,
+      type: source.type,
+      level: lsNumber(source.system?.details?.level, 0),
+      traits,
+      ac: lsNumber(source.system?.attributes?.ac, 10),
+      hp: lsNumber(source.system?.attributes?.hp?.max, 1),
+      perception: lsNumber(source.system?.perception, 0),
+      speed: lsNumber(source.system?.attributes?.speed, 25),
+      entries: source.items.map((item) => ({ name: item.name, type: item.type })).slice(0, 40),
+      description: source.system?.details?.publicNotes ?? "",
+    };
+  }
+  const price = source.system?.price?.value;
+  return {
+    uuid,
+    kind: "item",
+    name: source.name,
+    img: source.img,
+    type: source.type,
+    level: lsNumber(source.system?.level, 0),
+    traits,
+    usage: source.system?.usage?.value ?? source.system?.usage ?? "",
+    bulk: source.system?.bulk?.value ?? source.system?.bulk ?? "",
+    price: price && typeof price === "object"
+      ? Object.entries(price).map(([coin, amount]) => `${amount} ${coin}`).join(", ")
+      : price ?? "",
+    description: source.system?.description?.value ?? "",
+  };
+}
+
 class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: "lore-smith-creature-builder-{id}",
@@ -116,6 +156,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       searchSource: LoreSmithCreatureBuilder.searchSource,
       previousSources: LoreSmithCreatureBuilder.previousSources,
       nextSources: LoreSmithCreatureBuilder.nextSources,
+      previewSource: LoreSmithCreatureBuilder.previewSource,
       useSource: LoreSmithCreatureBuilder.useSource,
       useCurrent: LoreSmithCreatureBuilder.useCurrent,
       addTrait: LoreSmithCreatureBuilder.addTrait,
@@ -147,6 +188,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   contentQuery = "";
   contentType = "";
   sourceResults = [];
+  sourcePreview = null;
   contentResults = [];
 
   async _prepareContext(options) {
@@ -161,6 +203,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     const actor = this.actor;
     const system = actor.system;
     const level = lsNumber(system.details?.level, 0);
+    const actorSize = system.traits?.size?.value ?? "med";
     const benchmarkRows = lsBenchmarks(level);
     const markSelected = (rows, value) => rows.map((row) => ({ ...row, selected: Number(row.value) === Number(value) }));
     return {
@@ -170,7 +213,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         name: actor.name,
         img: actor.img,
         level,
-        size: system.traits?.size?.value ?? "med",
+        size: actorSize,
         traits: lsTraits(actor).map((value) => ({
           value,
           label: game.i18n.localize(CONFIG.PF2E.creatureTraits?.[value] ?? value),
@@ -187,6 +230,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       sourceQuery: this.sourceQuery,
       contentQuery: this.contentQuery,
       sourceResults: this.sourceResults,
+      sourcePreview: this.sourcePreview,
       sourceLevel: this.sourceLevel,
       sourceTrait: this.sourceTrait,
       sourcePageLabel: `${this.sourcePage + 1} / ${Math.max(1, Math.ceil(this.sourceAllResults.length / this.sourcePageSize))}`,
@@ -199,6 +243,10 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         label: index - 1,
         selected: index - 1 === level,
       })),
+      sizeOptions: [
+        ["tiny", "Tiny"], ["sm", "Small"], ["med", "Medium"],
+        ["lg", "Large"], ["huge", "Huge"], ["grg", "Gargantuan"],
+      ].map(([value, label]) => ({ value, label, selected: value === actorSize })),
       creatureTraitOptions: Object.entries(CONFIG.PF2E.creatureTraits ?? {}).map(([value, label]) => ({
         value,
         label: game.i18n.localize(label),
@@ -316,6 +364,11 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     await this.render();
   }
 
+  static async previewSource(_event, target) {
+    this.sourcePreview = await lsBuildSourcePreview(target.dataset.uuid);
+    await this.render();
+  }
+
   static async useSource(_event, target) {
     const source = await fromUuid(target.dataset.uuid);
     if (!source?.isOfType?.("npc") && source?.type !== "npc") return ui.notifications.error("That compendium entry is not a PF2e NPC.");
@@ -413,6 +466,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       searchSource: LoreSmithItemBuilder.searchSource,
       previousSources: LoreSmithItemBuilder.previousSources,
       nextSources: LoreSmithItemBuilder.nextSources,
+      previewSource: LoreSmithItemBuilder.previewSource,
       useSource: LoreSmithItemBuilder.useSource,
       useCurrent: LoreSmithItemBuilder.useCurrent,
       addTrait: LoreSmithItemBuilder.addTrait,
@@ -439,6 +493,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   sourceAllResults = [];
   sourcesLoaded = false;
   results = [];
+  sourcePreview = null;
 
   async _prepareContext(options) {
     if (this.step === 0 && !this.sourcesLoaded) await this.loadSources();
@@ -468,6 +523,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       },
       query: this.query,
       results: this.results,
+      sourcePreview: this.sourcePreview,
       sourceLevel: this.sourceLevel,
       sourceTrait: this.sourceTrait,
       sourceCount: this.sourceAllResults.length,
@@ -483,6 +539,18 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         value: level,
         label: level,
         selected: level === lsNumber(item.system?.level, 0),
+      })),
+      rarityOptions: ["common", "uncommon", "rare", "unique"].map((value) => ({
+        value,
+        label: value.charAt(0).toUpperCase() + value.slice(1),
+        selected: value === (item.system?.traits?.rarity ?? "common"),
+      })),
+      actionTypeOptions: [
+        ["passive", "Passive"], ["free", "Free action"], ["reaction", "Reaction"], ["action", "Action"],
+      ].map(([value, label]) => ({
+        value,
+        label,
+        selected: value === (item.system?.actionType?.value ?? "passive"),
       })),
       itemTraitOptions: Object.entries(traitConfig).map(([value, label]) => ({
         value,
@@ -567,6 +635,11 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     await this.render();
   }
 
+  static async previewSource(_event, target) {
+    this.sourcePreview = await lsBuildSourcePreview(target.dataset.uuid);
+    await this.render();
+  }
+
   static async useSource(_event, target) {
     const source = await fromUuid(target.dataset.uuid);
     if (!source || source.type !== this.item.type) return ui.notifications.error("That source is not the same PF2e item type.");
@@ -619,7 +692,7 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: "lore-smith-live-log",
     classes: ["lore-smith-live-log"],
-    position: { width: 520, height: 640, right: 340, top: 80 },
+    position: { width: 560, height: 680, left: 70, top: 70 },
     window: { title: "Lore Smith Live Combat", icon: "fa-solid fa-swords", resizable: true },
   };
 
@@ -629,6 +702,7 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
 
   entries = [];
   running = true;
+  status = "Preparing encounter";
 
   async _prepareContext(options) {
     return {
@@ -637,6 +711,7 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
       delay: game.settings.get(LS_MODULE_ID, "liveActionDelay"),
       delaySeconds: (game.settings.get(LS_MODULE_ID, "liveActionDelay") / 1000).toFixed(2),
       running: this.running,
+      status: this.status,
     };
   }
 
@@ -651,13 +726,14 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     });
     const log = this.element?.querySelector(".ls-live-entries");
     if (log) log.scrollTop = log.scrollHeight;
+    this.bringToTop?.();
   }
 
   async add(entry) {
     this.entries.push(entry);
     if (this.entries.length > 500) this.entries.shift();
     const list = this.element?.querySelector(".ls-live-entries");
-    if (!list) return this.render();
+    if (!list) return this.render({ force: true });
     list.querySelector(".empty")?.remove();
     const row = document.createElement("p");
     row.className = entry.kind ?? "action";
@@ -668,7 +744,8 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
 
   async complete() {
     this.running = false;
-    await this.render();
+    this.status = this.status === "Running" ? "Simulation complete" : this.status;
+    await this.render({ force: true });
   }
 }
 
@@ -725,31 +802,47 @@ async function lsRunIterations() {
 }
 
 async function lsRunLiveCombat() {
+  const log = new LoreSmithLiveLog({
+    id: `lore-smith-live-log-${foundry.utils.randomID(6)}`,
+  });
+  await log.render(true);
+  await log.add({ text: "Preparing the current Combat Tracker encounter...", kind: "round" });
   const sides = lsCombatSides();
   if (!sides || !sides.partyIds.size || !sides.enemyIds.size) {
-    return ui.notifications.error("Start an encounter with at least one friendly and one hostile combatant.");
+    log.status = "Cannot start";
+    await log.add({ text: "Add at least one friendly and one hostile combatant to the active Combat Tracker, then press Live Combat again.", kind: "error" });
+    await log.complete();
+    ui.notifications.error("Start an encounter with at least one friendly and one hostile combatant.");
+    return;
   }
-  if (!sides.combat.started) await sides.combat.startCombat();
-  const missingInitiative = sides.combat.combatants.filter((combatant) => combatant.initiative === null).map((combatant) => combatant.id);
-  if (missingInitiative.length) await sides.combat.rollInitiative(missingInitiative);
-  const log = new LoreSmithLiveLog();
-  await log.render(true);
-  ui.notifications.info("Lore Smith live combat started. The dedicated combat window contains the log.");
   try {
+    if (!sides.combat.started) await sides.combat.startCombat();
+    const missingInitiative = sides.combat.combatants.filter((combatant) => combatant.initiative === null).map((combatant) => combatant.id);
+    if (missingInitiative.length) await sides.combat.rollInitiative(missingInitiative);
+    log.status = "Running";
+    await log.render({ force: true });
+    ui.notifications.info("Lore Smith live combat started. Use the separate window to read the log and change its speed.");
     await game.loreSmith.runLiveReplay(sides.tokens, sides.partyIds, sides.enemyIds, {
       combat: sides.combat,
       onLog: (entry) => log.add(entry),
       delay: () => game.settings.get(LS_MODULE_ID, "liveActionDelay"),
     });
+  } catch (error) {
+    console.error(`${LS_MODULE_ID} | Live combat failed`, error);
+    log.status = "Stopped by an error";
+    await log.add({ text: `Live combat stopped: ${error.message}`, kind: "error" });
+    ui.notifications.error(`Lore Smith live combat stopped: ${error.message}`);
   } finally {
     await log.complete();
   }
 }
 
-function lsActivateNativeWikiLinks(editor) {
-  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
+function lsActivateJournalWikiLinks(container) {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
-      if (node.parentElement?.closest(".ls-wiki-link")) return NodeFilter.FILTER_REJECT;
+      if (node.parentElement?.closest(".ls-journal-wiki-link, [contenteditable='true'], script, style, textarea")) {
+        return NodeFilter.FILTER_REJECT;
+      }
       return /\[\[[^\]\n]{1,100}\]\]/.test(node.nodeValue ?? "") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
     },
   });
@@ -762,12 +855,12 @@ function lsActivateNativeWikiLinks(editor) {
     for (const match of text.matchAll(/\[\[([^\]\n]{1,100})\]\]/g)) {
       fragment.append(document.createTextNode(text.slice(cursor, match.index)));
       const name = match[1].trim();
-      const link = document.createElement("span");
-      link.className = "ls-wiki-link";
-      link.dataset.noteName = name;
-      link.contentEditable = "false";
+      const link = document.createElement("a");
+      link.className = "ls-journal-wiki-link";
+      link.dataset.pageName = name;
+      link.href = "#";
       link.tabIndex = 0;
-      link.title = `Open or create "${name}"`;
+      link.title = `Open or create page "${name}" in this Journal`;
       link.textContent = name;
       fragment.append(link);
       cursor = match.index + match[0].length;
@@ -777,145 +870,56 @@ function lsActivateNativeWikiLinks(editor) {
   }
 }
 
-function lsEmbeddedJournalRoot(app, html) {
-  const supplied = lsRoot(html);
-  return supplied?.classList?.contains("window-content")
-    ? supplied
-    : supplied?.querySelector?.(".window-content") ?? app.element?.querySelector?.(".window-content") ?? supplied;
-}
-
-async function lsRenderEmbeddedJournal(app, html) {
-  if (!game.user.isGM) return;
-  const opened = app.document;
-  if (opened?.documentName !== "JournalEntry") return;
-  if (!opened.getFlag(LS_MODULE_ID, "note")) await opened.setFlag(LS_MODULE_ID, "note", true);
-  const root = lsEmbeddedJournalRoot(app, html);
-  if (!root || root.dataset.loreSmithEmbedded === "ready") return;
-  root.dataset.loreSmithEmbedded = "ready";
-  root.classList.add("ls-native-journal-host");
-
-  const draw = async () => {
-    const notes = game.journal
-      .filter((entry) => entry.getFlag(LS_MODULE_ID, "note"))
-      .sort((left, right) => left.name.localeCompare(right.name));
-    let journal = game.journal.get(app._loreSmithActiveNoteId) ?? opened;
-    if (!journal?.getFlag(LS_MODULE_ID, "note")) journal = notes[0] ?? opened;
-    app._loreSmithActiveNoteId = journal.id;
-    const page = journal.pages.find((candidate) => candidate.type === "text") ?? journal.pages.contents[0];
-
-    root.replaceChildren();
-    const shell = document.createElement("section");
-    shell.className = "ls-native-journal";
-    const sidebar = document.createElement("aside");
-    sidebar.innerHTML = `<header><strong>Lore Smith Notes</strong><button type="button" data-action="new-note" data-tooltip="New note"><i class="fa-solid fa-plus"></i></button></header><nav></nav>`;
-    const navigation = sidebar.querySelector("nav");
-    for (const note of notes) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = note.id === journal.id ? "active" : "";
-      button.dataset.noteId = note.id;
-      button.textContent = note.name;
-      navigation.append(button);
-    }
-
-    const paper = document.createElement("main");
-    paper.className = "ls-native-journal-paper";
-    const title = document.createElement("input");
-    title.className = "ls-native-journal-title";
-    title.value = journal.name;
-    title.setAttribute("aria-label", "Note title");
-    const editor = document.createElement("div");
-    editor.className = "ls-native-journal-editor";
-    editor.contentEditable = "true";
-    editor.spellcheck = true;
-    editor.dataset.placeholder = "Start writing. Use [[Note Name]] to link or create another note.";
-    editor.innerHTML = page?.text?.content ?? "";
-    lsActivateNativeWikiLinks(editor);
-    const status = document.createElement("footer");
-    status.textContent = "Saved in Foundry Journal Entries";
-    paper.append(title, editor, status);
-    shell.append(sidebar, paper);
-    root.append(shell);
-
-    let saveTimer;
-    const save = async () => {
-      window.clearTimeout(saveTimer);
-      const name = title.value.trim() || "Untitled Note";
-      const updates = [];
-      if (journal.name !== name) updates.push(journal.update({ name }));
-      if (page && page.text?.content !== editor.innerHTML) updates.push(page.update({ name, "text.content": editor.innerHTML }));
-      await Promise.all(updates);
-      status.textContent = "Saved";
-    };
-    const scheduleSave = () => {
-      status.textContent = "Saving...";
-      window.clearTimeout(saveTimer);
-      saveTimer = window.setTimeout(save, 350);
-    };
-    title.addEventListener("input", scheduleSave);
-    title.addEventListener("change", save);
-    editor.addEventListener("input", () => {
-      lsActivateNativeWikiLinks(editor);
-      scheduleSave();
-    });
-    editor.addEventListener("blur", save);
-    editor.addEventListener("click", async (event) => {
-      const link = event.target.closest?.(".ls-wiki-link");
-      if (!link) return;
-      event.preventDefault();
-      await save();
-      const noteName = link.dataset.noteName.trim();
-      let linked = game.journal.find((entry) =>
-        entry.getFlag(LS_MODULE_ID, "note")
-        && entry.name.localeCompare(noteName, undefined, { sensitivity: "accent" }) === 0);
-      if (!linked) {
-        linked = await JournalEntry.create({
-          name: noteName,
-          flags: { [LS_MODULE_ID]: { note: true } },
-          pages: [{ name: noteName, type: "text", text: { content: "" } }],
-        });
+function lsEnhanceNativeJournal(app, html) {
+  const journal = app.document;
+  const root = lsRoot(html);
+  if (journal?.documentName !== "JournalEntry" || !root) return;
+  const containers = [
+    ...root.querySelectorAll(".journal-page-content, article.journal-entry-page, .journal-entry-page .editor-content"),
+  ];
+  for (const container of new Set(containers)) lsActivateJournalWikiLinks(container);
+  if (root.dataset.loreSmithWikiLinks === "ready") return;
+  root.dataset.loreSmithWikiLinks = "ready";
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const added of mutation.addedNodes) {
+        if (!(added instanceof HTMLElement)) continue;
+        if (added.matches(".journal-page-content, article.journal-entry-page, .journal-entry-page .editor-content")) {
+          lsActivateJournalWikiLinks(added);
+        }
+        for (const container of added.querySelectorAll?.(".journal-page-content, article.journal-entry-page, .journal-entry-page .editor-content") ?? []) {
+          lsActivateJournalWikiLinks(container);
+        }
       }
-      app._loreSmithActiveNoteId = linked.id;
-      await draw();
-    });
-    editor.addEventListener("dblclick", (event) => {
-      const link = event.target.closest?.(".ls-wiki-link");
-      if (!link) return;
-      event.preventDefault();
-      const text = document.createTextNode(`[[${link.dataset.noteName}]]`);
-      link.replaceWith(text);
-      const range = document.createRange();
-      range.selectNodeContents(text);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-      editor.focus();
-      scheduleSave();
-    });
-    navigation.addEventListener("click", async (event) => {
-      const button = event.target.closest("[data-note-id]");
-      if (!button) return;
-      await save();
-      app._loreSmithActiveNoteId = button.dataset.noteId;
-      await draw();
-    });
-    sidebar.querySelector('[data-action="new-note"]').addEventListener("click", async () => {
-      await save();
-      const existing = new Set(game.journal.map((entry) => entry.name.toLowerCase()));
-      let name = "New Note";
-      let suffix = 2;
-      while (existing.has(name.toLowerCase())) name = `New Note ${suffix++}`;
-      const created = await JournalEntry.create({
-        name,
-        flags: { [LS_MODULE_ID]: { note: true } },
-        pages: [{ name, type: "text", text: { content: "" } }],
-      });
-      app._loreSmithActiveNoteId = created.id;
-      await draw();
-    });
-  };
-
-  await draw();
+    }
+  });
+  observer.observe(root, { childList: true, subtree: true });
+  root.addEventListener("click", async (event) => {
+    const link = event.target.closest?.(".ls-journal-wiki-link");
+    if (!link) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const pageName = link.dataset.pageName?.trim();
+    if (!pageName) return;
+    let page = journal.pages.find((candidate) =>
+      candidate.name.localeCompare(pageName, undefined, { sensitivity: "accent" }) === 0);
+    if (!page) {
+      [page] = await journal.createEmbeddedDocuments("JournalEntryPage", [{
+        name: pageName,
+        type: "text",
+        text: { content: "" },
+        sort: Math.max(0, ...journal.pages.map((candidate) => candidate.sort ?? 0)) + 100000,
+      }]);
+      ui.notifications.info(`Created page "${pageName}" inside ${journal.name}.`);
+    }
+    await app.render(true);
+    if (typeof app.goToPage === "function") await app.goToPage(page.id);
+    else {
+      const pageControl = app.element?.querySelector(`[data-page-id="${page.id}"]`);
+      pageControl?.click();
+      pageControl?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  });
 }
 
 function lsAddCombatTrackerButtons(_app, html) {
@@ -1015,7 +1019,7 @@ Hooks.on("renderItemSheet", (app, html) => {
 });
 
 Hooks.on("renderJournalSheet", (app, html) => {
-  void lsRenderEmbeddedJournal(app, html);
+  lsEnhanceNativeJournal(app, html);
 });
 
 Hooks.on("renderApplicationV2", (app, html) => {
@@ -1035,7 +1039,7 @@ Hooks.on("renderApplicationV2", (app, html) => {
       onClick: () => new LoreSmithItemBuilder(document).render(true),
     });
   } else if (document?.documentName === "JournalEntry") {
-    void lsRenderEmbeddedJournal(app, html);
+    lsEnhanceNativeJournal(app, html);
   }
   if (/CombatTracker/i.test(app.constructor?.name ?? "")) lsAddCombatTrackerButtons(app, html);
 });
