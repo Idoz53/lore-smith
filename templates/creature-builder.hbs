@@ -16,18 +16,26 @@
     {{#if steps.source}}
       <section class="ls-builder-step">
         <h2>Choose a starting point</h2>
-        <p>Search every installed PF2e Actor compendium by creature name. Loading a source copies its native statistics, strikes, actions, spells, traits, and automation into this actor.</p>
-        <div class="ls-builder-search">
-          <input name="sourceQuery" value="{{sourceQuery}}" placeholder="Search creatures, e.g. flame drake">
-          <button data-action="searchSource"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
-          <button class="secondary" data-action="useCurrent"><i class="fa-regular fa-file"></i> Start from current / blank NPC</button>
+        <p>Browse every NPC in your installed PF2e compendiums, or narrow the list by name, keyword, level, and trait. A source keeps its native rules and automation.</p>
+        <div class="ls-builder-filters">
+          <input name="sourceQuery" value="{{sourceQuery}}" placeholder="Name or keyword">
+          <select name="sourceLevel"><option value="">All levels</option>{{#each levelFilters}}<option value="{{value}}" {{#if selected}}selected{{/if}}>Level {{label}}</option>{{/each}}</select>
+          <select name="sourceTrait"><option value="">All traits</option>{{#each creatureTraitOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
+          <button data-action="searchSource"><i class="fa-solid fa-filter"></i> Apply filters</button>
+          <button class="secondary" data-action="useCurrent"><i class="fa-regular fa-file"></i> Start blank</button>
         </div>
-        <div class="ls-builder-results">
+        <div class="ls-browser-summary"><span>{{sourceCount}} NPCs</span><span>Page {{sourcePageLabel}}</span></div>
+        <div class="ls-builder-results compact tall">
           {{#each sourceResults}}
-            <article><img src="{{img}}"><div><strong>{{name}}</strong><small>Level {{level}} · {{pack}}</small></div><button data-action="useSource" data-uuid="{{uuid}}">Use as base</button></article>
+            <article><img src="{{img}}"><div><strong>{{name}}</strong><small>Level {{level}} &middot; {{traits}} &middot; {{pack}}</small></div><button data-action="useSource" data-uuid="{{uuid}}">Use as base</button></article>
           {{else}}
-            <div class="ls-builder-empty">Search to find official PF2e NPCs available in your installed compendiums.</div>
+            <div class="ls-builder-empty">No installed PF2e NPC matches these filters.</div>
           {{/each}}
+        </div>
+        <div class="ls-browser-pages">
+          <button data-action="previousSources" {{#unless hasPreviousSources}}disabled{{/unless}}><i class="fa-solid fa-arrow-left"></i> Previous</button>
+          <span>Page {{sourcePageLabel}}</span>
+          <button data-action="nextSources" {{#unless hasNextSources}}disabled{{/unless}}>Next <i class="fa-solid fa-arrow-right"></i></button>
         </div>
       </section>
     {{/if}}
@@ -38,49 +46,53 @@
         <p>These values write directly to the native PF2e NPC actor.</p>
         <div class="ls-form-grid">
           <label class="wide">Creature name<input name="name" value="{{actor.name}}"></label>
-          <label>Level<input name="level" type="number" min="-1" max="25" value="{{actor.level}}"></label>
+          <label>Level<select name="level">{{#each creatureLevels}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
           <label>Size<select name="size">
             <option value="{{actor.size}}" selected>Current: {{actor.size}}</option>
             <option value="tiny">Tiny</option><option value="sm">Small</option><option value="med">Medium</option>
             <option value="lg">Large</option><option value="huge">Huge</option><option value="grg">Gargantuan</option>
           </select></label>
-          <label class="wide">Traits<input name="traits" value="{{actor.traits}}" placeholder="dragon, fire, magical"></label>
+          <label class="wide">Add a creature trait
+            <span class="ls-inline-control"><select name="traitToAdd"><option value="">Choose a trait</option>{{#each creatureTraitOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button type="button" data-action="addTrait">Add</button></span>
+          </label>
+          <div class="ls-trait-chips wide">{{#each actor.traits}}<button type="button" class="ls-trait-chip" data-action="removeTrait" data-trait="{{value}}">{{label}} <i class="fa-solid fa-xmark"></i></button>{{else}}<span>No traits selected.</span>{{/each}}</div>
         </div>
       </section>
     {{/if}}
 
     {{#if steps.defenses}}
       <section class="ls-builder-step">
-        <h2>Core statistics</h2>
-        <p>Enter the final PF2e modifiers. The native sheet and PF2e system will use them for checks, saves, attacks, and encounter play.</p>
+        <h2>Level-based statistics</h2>
+        <p>Choose a GM Core benchmark or type a custom final value. The menus are recalculated from the creature level selected in the previous step.</p>
         <div class="ls-form-grid stats">
-          <label>Armor Class<input name="ac" type="number" value="{{actor.ac}}"></label>
-          <label>Hit Points<input name="hp" type="number" min="1" value="{{actor.hp}}"></label>
-          <label>Perception<input name="perception" type="number" value="{{actor.perception}}"></label>
-          <label>Fortitude<input name="fortitude" type="number" value="{{actor.fortitude}}"></label>
-          <label>Reflex<input name="reflex" type="number" value="{{actor.reflex}}"></label>
-          <label>Will<input name="will" type="number" value="{{actor.will}}"></label>
+          <label>Armor Class<select data-benchmark-target="ac"><option value="">Custom</option>{{#each benchmarks.ac}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} ({{value}})</option>{{/each}}</select><input name="ac" type="number" value="{{actor.ac}}"></label>
+          <label>Hit Points<select data-benchmark-target="hp"><option value="">Custom</option>{{#each benchmarks.hp}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} ({{value}})</option>{{/each}}</select><input name="hp" type="number" min="1" value="{{actor.hp}}"></label>
+          <label>Perception<select data-benchmark-target="perception"><option value="">Custom</option>{{#each benchmarks.perception}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="perception" type="number" value="{{actor.perception}}"></label>
+          <label>Fortitude<select data-benchmark-target="fortitude"><option value="">Custom</option>{{#each benchmarks.fortitude}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="fortitude" type="number" value="{{actor.fortitude}}"></label>
+          <label>Reflex<select data-benchmark-target="reflex"><option value="">Custom</option>{{#each benchmarks.reflex}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="reflex" type="number" value="{{actor.reflex}}"></label>
+          <label>Will<select data-benchmark-target="will"><option value="">Custom</option>{{#each benchmarks.will}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="will" type="number" value="{{actor.will}}"></label>
           <label>Land Speed (feet)<input name="speed" type="number" min="0" step="5" value="{{actor.speed}}"></label>
         </div>
-        <div class="ls-builder-tip"><i class="fa-solid fa-circle-info"></i><span>Special speeds, senses, immunities, weaknesses, resistances, languages, and custom statistic details remain editable on the native NPC sheet after this guide.</span></div>
+        <div class="ls-builder-tip"><i class="fa-solid fa-circle-info"></i><span>The native NPC sheet remains available for special speeds, senses, languages, immunities, weaknesses, resistances, and detailed statistic notes.</span></div>
       </section>
     {{/if}}
 
     {{#if steps.content}}
       <section class="ls-builder-step">
         <h2>Actions, abilities, strikes, and spells</h2>
-        <p>Search native PF2e Item compendiums. Added entries keep their PF2e rules, traits, action costs, inline rolls, spell data, and automation.</p>
-        <div class="ls-builder-search">
-          <input name="contentQuery" value="{{contentQuery}}" placeholder="Search abilities or spells, e.g. breath weapon">
-          <button data-action="searchContent"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+        <p>Browse native PF2e content or search by keyword. Added entries keep their traits, action costs, inline rolls, spell data, and system automation.</p>
+        <div class="ls-builder-filters content">
+          <input name="contentQuery" value="{{contentQuery}}" placeholder="Name, trait, or keyword">
+          <select name="contentType">{{#each contentTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
+          <button data-action="searchContent"><i class="fa-solid fa-filter"></i> Browse</button>
         </div>
         <div class="ls-content-columns">
-          <section><h3>Search results</h3><div class="ls-builder-results compact">
+          <section><h3>Available PF2e entries</h3><div class="ls-builder-results compact tall">
             {{#each contentResults}}
-              <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}} · Level {{level}} · {{pack}}</small></div><button data-action="addContent" data-uuid="{{uuid}}"><i class="fa-solid fa-plus"></i></button></article>
-            {{else}}<div class="ls-builder-empty">Search installed PF2e compendiums.</div>{{/each}}
+              <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}} &middot; Level {{level}} &middot; {{pack}}</small></div><button data-action="addContent" data-uuid="{{uuid}}"><i class="fa-solid fa-plus"></i></button></article>
+            {{else}}<div class="ls-builder-empty">No installed entry matches these filters.</div>{{/each}}
           </div></section>
-          <section><h3>On this creature</h3><div class="ls-builder-results compact">
+          <section><h3>On this creature</h3><div class="ls-builder-results compact tall">
             {{#each actor.items}}
               <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}}</small></div><button class="danger" data-action="removeContent" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></article>
             {{else}}<div class="ls-builder-empty">No embedded actions or items yet.</div>{{/each}}
@@ -93,8 +105,8 @@
       <section class="ls-builder-step ls-builder-review">
         <i class="fa-solid fa-dragon"></i>
         <h2>{{actor.name}} is ready</h2>
-        <p>Level {{actor.level}} · AC {{actor.ac}} · HP {{actor.hp}} · Perception {{actor.perception}}</p>
-        <p>{{actor.items.length}} native PF2e embedded entries are attached. Finish to return to the regular PF2e NPC sheet for any detailed adjustments.</p>
+        <p>Level {{actor.level}} &middot; AC {{actor.ac}} &middot; HP {{actor.hp}} &middot; Perception {{actor.perception}}</p>
+        <p>{{actor.items.length}} native PF2e embedded entries are attached. Finish to return to the regular PF2e NPC sheet.</p>
         <button data-action="finish"><i class="fa-solid fa-check"></i> Finish creature</button>
       </section>
     {{/if}}

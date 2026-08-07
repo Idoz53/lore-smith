@@ -1,3 +1,16 @@
+import {
+  actionTargets,
+  applyConditions,
+  buildActionCatalog,
+  checkDegree,
+  chooseAction as chooseCatalogAction,
+  consumeUse,
+  degreeText,
+  rollFormulaValue,
+  saveModifier,
+  templateData,
+} from "./combat-engine.js";
+
 const MODULE_ID = "lore-smith";
 const FLAG_SCOPE = MODULE_ID;
 
@@ -208,8 +221,12 @@ function actorStrikes(actor) {
 
 function healingOptions(actor) {
   return [...(actor?.items ?? [])].filter((item) => {
+    if (!["spell", "action", "feat", "consumable"].includes(item.type)) return false;
     const traits = item.system?.traits?.value ?? [];
-    return traits.includes("healing") || /\bheal|lay on hands|soothe\b/i.test(item.name);
+    const description = item.system?.description?.value ?? "";
+    const damageEntries = Object.values(item.system?.damage ?? {});
+    return damageEntries.some((entry) => entry?.kind === "healing" || entry?.kinds?.includes?.("healing") || entry?.type === "healing")
+      || traits.includes("healing") && /@Damage\[[^\]]*\[healing\]/i.test(description);
   }).map((item) => {
     const damages = Object.values(item.system?.damage ?? {});
     const formula = damages.find((damage) => damage?.formula)?.formula
@@ -221,6 +238,7 @@ function healingOptions(actor) {
 function virtualCombatant(token, team) {
   const actor = token.actor;
   const hp = actorHp(actor);
+  const options = buildActionCatalog(actor);
   return {
     id: token.id,
     token,
@@ -234,6 +252,9 @@ function virtualCombatant(token, team) {
     initiative: actorInitiative(actor),
     strikes: actorStrikes(actor),
     heals: healingOptions(actor),
+    options,
+    uses: new Map(options.filter((option) => option.limitedUses !== null).map((option) => [option.id, option.limitedUses])),
+    conditions: new Map(),
     defeated: false,
   };
 }
@@ -250,6 +271,99 @@ function chooseHealingTarget(actor, combatants) {
 }
 
 function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = {}) {
+  const combatants = tokens
+    .filter((token) => partyIds.has(token.id) || enemyIds.has(token.id))
+    .map((token) => virtualCombatant(token, partyIds.has(token.id) ? "party" : "enemy"));
+  const log = [];
+  const push = (text, kind = "action") => captureLog && log.push({ text, kind });
+  const initiatives = combatants
+    .map((combatant) => ({ combatant, score: rollDie(20) + combatant.initiative }))
+    .sort((left, right) => right.score - left.score);
+  push(`Initiative: ${initiatives.map(({ combatant, score }) => `${combatant.name} ${score}`).join(", ")}.`, "round");
+
+  let rounds = 0;
+  while (rounds < 30) {
+    rounds += 1;
+    push(`Round ${rounds}`, "round");
+    for (const turn of initiatives) {
+      const attacker = turn.combatant;
+      if (attacker.defeated) continue;
+      let actionsRemaining = 3;
+      let map = 0;
+      while (actionsRemaining > 0) {
+        const choice = chooseCatalogAction(attacker, combatants, actionsRemaining, map);
+        if (!choice) break;
+        const { option, target, cost } = choice;
+        actionsRemaining -= cost;
+        consumeUse(attacker, option);
+        if (option.healing) {
+          const amount = Math.max(1, rollFormulaValue(option.healing));
+          const before = target.hp;
+          target.hp = Math.min(target.maxHp, target.hp + amount);
+          target.defeated = false;
+          push(`${attacker.name} uses ${option.name} on ${target.name}, restoring ${target.hp - before} HP; ${target.name} has ${target.hp}/${target.maxHp} HP.`, "heal");
+          continue;
+        }
+        if (option.defensive && !option.damage) {
+          attacker.conditions.set("defended", 1);
+          push(`${attacker.name} uses ${option.name} and adopts a defensive stance; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "action");
+          continue;
+        }
+        const targets = actionTargets(option, target, combatants);
+        const outcomes = [];
+        for (const affected of targets) {
+          let multiplier = 0;
+          let outcome = "no effect";
+          if (option.save) {
+            const natural = rollDie(20);
+            const modifier = saveModifier(affected, option.save);
+            const total = natural + modifier;
+            const degree = checkDegree(total, option.dc, natural);
+            multiplier = [2, 1, 0.5, 0][degree];
+            outcome = `${affected.name} rolls ${option.save}: d20 ${natural} ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)} = ${total} vs DC ${option.dc}, ${degreeText(degree)}`;
+          } else if (option.automatic) {
+            multiplier = 1;
+            outcome = `${affected.name} is automatically affected`;
+          } else {
+            const natural = rollDie(20);
+            const modifier = option.attack - (option.attackTrait ? map : 0);
+            const baseAc = affected.ac;
+            const conditionPenalty = (affected.conditions.has("off-guard") || affected.conditions.has("prone") ? 2 : 0)
+              + Math.max(affected.conditions.get("frightened") ?? 0, affected.conditions.get("sickened") ?? 0);
+            const effectiveAc = Math.max(0, baseAc - conditionPenalty);
+            const total = natural + modifier;
+            const degree = checkDegree(total, effectiveAc, natural);
+            multiplier = degree === 3 ? 2 : degree === 2 ? 1 : 0;
+            outcome = `${affected.name}: d20 ${natural} ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)} = ${total} vs AC ${effectiveAc}${conditionPenalty ? ` (base ${baseAc}, conditions −${conditionPenalty})` : ""}, ${degreeText(degree)}`;
+          }
+          let damage = 0;
+          if (option.damage && multiplier > 0) {
+            damage = Math.max(1, Math.floor(rollFormulaValue(option.damage) * multiplier));
+            affected.hp = Math.max(0, affected.hp - damage);
+            affected.defeated = affected.hp <= 0;
+          }
+          if (option.conditions.length && multiplier > 0) {
+            for (const condition of option.conditions) {
+              affected.conditions.set(condition.slug, Math.max(affected.conditions.get(condition.slug) ?? 0, condition.value));
+            }
+          }
+          outcomes.push(`${outcome}${damage ? `; ${damage} ${option.damageType || ""} damage, HP ${affected.hp}/${affected.maxHp}` : ""}${option.conditions.length && multiplier > 0 ? `; ${option.conditions.map((condition) => `${condition.slug} ${condition.value}`).join(", ")}` : ""}`);
+        }
+        push(`${attacker.name} uses ${option.name}${option.kind === "spell" ? " (spell)" : ""}, spending ${cost} action${cost === 1 ? "" : "s"}: ${outcomes.join(" | ")}.`, option.damage ? "damage" : "action");
+        if (option.attackTrait) map += 5;
+      }
+      if (!combatants.some((candidate) => candidate.team === "party" && !candidate.defeated)
+        || !combatants.some((candidate) => candidate.team === "enemy" && !candidate.defeated)) break;
+    }
+    if (!combatants.some((candidate) => candidate.team === "party" && !candidate.defeated)
+      || !combatants.some((candidate) => candidate.team === "enemy" && !candidate.defeated)) break;
+  }
+  const partyAlive = combatants.some((candidate) => candidate.team === "party" && !candidate.defeated);
+  const enemyAlive = combatants.some((candidate) => candidate.team === "enemy" && !candidate.defeated);
+  return { partyWon: partyAlive && !enemyAlive, rounds, log };
+}
+
+function simulateEncounterLegacy(tokens, partyIds, enemyIds, { captureLog = false } = {}) {
   const combatants = tokens
     .filter((token) => partyIds.has(token.id) || enemyIds.has(token.id))
     .map((token) => virtualCombatant(token, partyIds.has(token.id) ? "party" : "enemy"));
@@ -310,9 +424,9 @@ async function pause(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function applyLiveDamage(target, formula, degree) {
+async function applyLiveDamage(target, formula, degree, multiplierOverride = null) {
   const before = actorHp(target.actor).value;
-  const multiplier = degree === 3 ? 2 : 1;
+  const multiplier = multiplierOverride ?? (degree === 3 ? 2 : 1);
   const DamageRollClass = CONFIG.Dice.rolls?.find((RollClass) => RollClass.name === "DamageRoll");
   if (DamageRollClass && typeof target.actor.applyDamage === "function") {
     try {
@@ -322,7 +436,7 @@ async function applyLiveDamage(target, formula, degree) {
         token: target.token.object,
         item: null,
         rollOptions: new Set(["lore-smith", "action:live-combat"]),
-        outcome: degree === 3 ? "criticalSuccess" : "success",
+        outcome: degree === 3 ? "criticalSuccess" : degree === 2 ? "success" : degree === 1 ? "failure" : "criticalFailure",
       });
       const after = actorHp(target.actor).value;
       target.hp = after;
@@ -385,7 +499,129 @@ async function moveToward(attacker, target) {
   return true;
 }
 
-async function runLiveReplay(tokens, partyIds, enemyIds, { combat = game.combat } = {}) {
+async function runLiveReplay(tokens, partyIds, enemyIds, {
+  combat = game.combat,
+  onLog = null,
+  delay = game.settings.settings.has(`${MODULE_ID}.liveActionDelay`) ? game.settings.get(MODULE_ID, "liveActionDelay") : 1500,
+} = {}) {
+  const actionDelay = () => Math.max(100, Number(typeof delay === "function" ? delay() : delay) || 1500);
+  const combatants = tokens
+    .filter((token) => partyIds.has(token.id) || enemyIds.has(token.id))
+    .map((token) => virtualCombatant(token, partyIds.has(token.id) ? "party" : "enemy"));
+  const order = combatants.map((combatant) => {
+    const tracked = combat?.combatants?.find((entry) => entry.tokenId === combatant.id);
+    return { combatant, score: tracked?.initiative ?? rollDie(20) + combatant.initiative, tracked };
+  }).sort((left, right) => right.score - left.score);
+  const emit = async (text, kind = "action") => {
+    await onLog?.({ text, kind, timestamp: Date.now() });
+    if (game.settings.settings.has(`${MODULE_ID}.mirrorLiveToChat`) && game.settings.get(MODULE_ID, "mirrorLiveToChat")) {
+      await ChatMessage.create({ speaker: { alias: "Lore Smith" }, content: `<p>${escapeHtml(text)}</p>` });
+    }
+  };
+  await emit(`Initiative: ${order.map(({ combatant, score }) => `${combatant.name} ${score}`).join(", ")}.`, "round");
+  for (let round = 1; round <= 20; round += 1) {
+    if (combat) await combat.update({ round, turn: 0 });
+    await emit(`Round ${round}`, "round");
+    for (const entry of order) {
+      const attacker = entry.combatant;
+      if (attacker.defeated) continue;
+      if (combat && entry.tracked) {
+        const actualIndex = combat.turns.findIndex((candidate) => candidate.id === entry.tracked.id);
+        if (actualIndex >= 0) await combat.update({ round, turn: actualIndex });
+      }
+      let actionsRemaining = 3;
+      let map = 0;
+      while (actionsRemaining > 0) {
+        const choice = chooseCatalogAction(attacker, combatants, actionsRemaining, map);
+        if (!choice) break;
+        const { option, target, cost } = choice;
+        if (!option.defensive && target !== attacker) {
+          const currentDistance = await sceneDistance(attacker.token.object, target.token.object);
+          if (currentDistance > option.range) {
+            const moved = await moveToward(attacker, target);
+            if (!moved) {
+              await emit(`${attacker.name} cannot find a legal path or line of movement toward ${target.name}.`, "action");
+              break;
+            }
+            actionsRemaining -= 1;
+            await emit(`${attacker.name} Strides toward ${target.name}; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "move");
+            await pause(actionDelay());
+            continue;
+          }
+        }
+        actionsRemaining -= cost;
+        consumeUse(attacker, option);
+        if (option.healing) {
+          const restored = await applyLiveHealing(target, option.healing);
+          await emit(`${attacker.name} uses ${option.name} on ${target.name}, restoring ${restored} HP; ${target.name} has ${target.hp}/${target.maxHp} HP.`, "heal");
+          await pause(actionDelay());
+          continue;
+        }
+        if (option.defensive && !option.damage) {
+          const applied = await applyConditions(attacker, option.conditions);
+          await emit(`${attacker.name} uses ${option.name}${applied.length ? ` and gains ${applied.join(", ")}` : ""}; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "action");
+          await pause(actionDelay());
+          continue;
+        }
+        const targetList = actionTargets(option, target, combatants);
+        let templateDocument = null;
+        const templateSource = templateData(option, attacker.token.object, target.token.object);
+        if (templateSource && canvas.scene) {
+          const cleanTemplate = Object.fromEntries(Object.entries(templateSource).filter(([, value]) => value !== undefined));
+          [templateDocument] = await canvas.scene.createEmbeddedDocuments("MeasuredTemplate", [cleanTemplate]);
+        }
+        const outcomes = [];
+        for (const affected of targetList) {
+          let multiplier = 0;
+          let degree = 1;
+          let outcome;
+          if (option.save) {
+            const natural = rollDie(20);
+            const modifier = saveModifier(affected, option.save);
+            const total = natural + modifier;
+            degree = checkDegree(total, option.dc, natural);
+            multiplier = [2, 1, 0.5, 0][degree];
+            outcome = `${affected.name} rolls ${option.save}: d20 ${natural} ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)} = ${total} vs DC ${option.dc}, ${degreeText(degree)}`;
+          } else if (option.automatic) {
+            degree = 2;
+            multiplier = 1;
+            outcome = `${affected.name} is automatically affected`;
+          } else {
+            const natural = rollDie(20);
+            const modifier = option.attack - (option.attackTrait ? map : 0);
+            const dc = actorAc(affected.actor);
+            const total = natural + modifier;
+            degree = checkDegree(total, dc, natural);
+            multiplier = degree === 3 ? 2 : degree === 2 ? 1 : 0;
+            outcome = `${affected.name}: d20 ${natural} ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)} = ${total} vs AC ${dc}, ${degreeText(degree)}`;
+          }
+          let damage = 0;
+          if (option.damage && multiplier > 0) damage = await applyLiveDamage(affected, option.damage, degree, multiplier);
+          const conditions = multiplier > 0 ? await applyConditions(affected, option.conditions) : [];
+          outcomes.push(`${outcome}${damage ? `; ${damage} ${option.damageType || ""} damage, HP ${affected.hp}/${affected.maxHp}` : ""}${conditions.length ? `; ${conditions.join(", ")}` : ""}`);
+          if (affected.defeated) {
+            const trackedTarget = combat?.combatants?.find((candidate) => candidate.tokenId === affected.id);
+            await trackedTarget?.update({ defeated: true });
+          }
+        }
+        await emit(`${attacker.name} uses ${option.name}${option.kind === "spell" ? " (spell)" : ""}, spending ${cost} action${cost === 1 ? "" : "s"}: ${outcomes.join(" | ")}.`, option.damage ? "damage" : "action");
+        target.token.object?.control({ releaseOthers: true });
+        await canvas.animatePan({ x: target.token.object?.center.x, y: target.token.object?.center.y, duration: Math.min(500, actionDelay() / 3) });
+        await pause(actionDelay());
+        if (templateDocument) await templateDocument.delete();
+        if (option.attackTrait) map += 5;
+      }
+      if (!combatants.some((candidate) => candidate.team === "party" && !candidate.defeated)
+        || !combatants.some((candidate) => candidate.team === "enemy" && !candidate.defeated)) {
+        const winner = combatants.some((candidate) => candidate.team === "party" && !candidate.defeated) ? "Characters" : "Opposition";
+        await emit(`${winner} win the encounter.`, "victory");
+        return;
+      }
+    }
+  }
+}
+
+async function runLiveReplayLegacy(tokens, partyIds, enemyIds, { combat = game.combat } = {}) {
   const combatants = tokens
     .filter((token) => partyIds.has(token.id) || enemyIds.has(token.id))
     .map((token) => virtualCombatant(token, partyIds.has(token.id) ? "party" : "enemy"));
@@ -845,16 +1081,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async runLive() {
     if (!this.validateEncounter()) return;
-    ui.notifications.info("Lore Smith live replay started. Watch the Scene canvas and Chat log.");
-    this.minimize();
-    try {
-      await runLiveReplay(this.selectedSceneTokens(), this.partyIds, this.enemyIds);
-    } catch (error) {
-      console.error(`${MODULE_ID} | Live replay failed`, error);
-      ui.notifications.error(`Live replay stopped: ${error.message}`);
-    } finally {
-      this.maximize();
+    if (typeof game.loreSmith?.runLiveCombat === "function") {
+      await game.loreSmith.runLiveCombat();
+      return;
     }
+    ui.notifications.warn("Open the Combat Tracker and start an encounter before running live combat.");
   }
 }
 

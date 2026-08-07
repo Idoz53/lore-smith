@@ -18,24 +18,83 @@ function lsSplitTraits(value) {
   return [...new Set(String(value ?? "").split(",").map((trait) => trait.trim().toLowerCase()).filter(Boolean))];
 }
 
-async function lsSearchPacks({ documentName, query, types = [], limit = 80 }) {
+const LS_AC_ROWS = [
+  [18, 15, 14, 12], [19, 16, 15, 13], [19, 16, 15, 13], [21, 18, 17, 15],
+  [22, 19, 18, 16], [24, 21, 20, 18], [25, 22, 21, 19], [27, 24, 23, 21],
+  [28, 25, 24, 22], [30, 27, 26, 24], [31, 28, 27, 25], [33, 30, 29, 27],
+  [34, 31, 30, 28], [36, 33, 32, 30], [37, 34, 33, 31], [39, 36, 35, 33],
+  [40, 37, 36, 34], [42, 39, 38, 36], [43, 40, 39, 37], [45, 42, 41, 39],
+  [46, 43, 42, 40], [48, 45, 44, 42], [49, 46, 45, 43], [51, 48, 47, 45],
+  [52, 49, 48, 46], [54, 51, 50, 48],
+];
+
+const LS_PERCEPTION_ROWS = [
+  [9, 8, 5, 2, 0], [10, 9, 6, 3, 1], [11, 10, 7, 4, 2], [12, 11, 8, 5, 3],
+  [14, 12, 9, 6, 4], [15, 14, 11, 8, 6], [17, 15, 12, 9, 7], [18, 17, 14, 11, 8],
+  [20, 18, 15, 12, 10], [21, 19, 16, 13, 11], [23, 21, 18, 15, 12],
+  [24, 22, 19, 16, 14], [26, 24, 21, 18, 15], [27, 25, 22, 19, 16],
+  [29, 26, 23, 20, 18], [30, 28, 25, 22, 19], [32, 29, 26, 23, 20],
+  [33, 30, 28, 25, 22], [35, 32, 29, 26, 23], [36, 33, 30, 27, 24],
+  [38, 35, 32, 29, 26], [39, 36, 33, 30, 27], [41, 38, 35, 32, 28],
+  [43, 39, 36, 33, 30], [44, 40, 37, 34, 31], [46, 42, 38, 36, 32],
+];
+
+const LS_HP_ROWS = [
+  [9, 7, 5], [18, 15, 12], [25, 20, 15], [38, 30, 23], [56, 45, 34], [75, 60, 45],
+  [94, 75, 56], [119, 95, 71], [144, 115, 86], [169, 135, 101], [194, 155, 116],
+  [219, 175, 131], [244, 195, 146], [269, 215, 161], [294, 235, 176], [319, 255, 191],
+  [344, 275, 206], [369, 295, 221], [394, 315, 236], [419, 335, 251], [444, 355, 266],
+  [469, 375, 281], [500, 400, 300], [538, 430, 323], [575, 460, 345], [625, 500, 375],
+];
+
+function lsLevelRow(rows, level) {
+  return rows[Math.max(0, Math.min(rows.length - 1, Number(level) + 1))];
+}
+
+function lsBenchmarks(level) {
+  const named = (names, values) => names.map((label, index) => ({ label, value: values[index] }));
+  return {
+    ac: named(["Extreme", "High", "Moderate", "Low"], lsLevelRow(LS_AC_ROWS, level)),
+    hp: named(["High", "Moderate", "Low"], lsLevelRow(LS_HP_ROWS, level)),
+    perception: named(["Extreme", "High", "Moderate", "Low", "Terrible"], lsLevelRow(LS_PERCEPTION_ROWS, level)),
+    saves: named(["Extreme", "High", "Moderate", "Low", "Terrible"], lsLevelRow(LS_PERCEPTION_ROWS, level)),
+  };
+}
+
+function lsItemTraitConfig() {
+  return Object.assign({},
+    CONFIG.PF2E.actionTraits,
+    CONFIG.PF2E.armorTraits,
+    CONFIG.PF2E.consumableTraits,
+    CONFIG.PF2E.equipmentTraits,
+    CONFIG.PF2E.featTraits,
+    CONFIG.PF2E.spellTraits,
+    CONFIG.PF2E.weaponTraits);
+}
+
+async function lsSearchPacks({ documentName, query = "", types = [], level = "", trait = "", limit = Number.POSITIVE_INFINITY }) {
   const normalized = String(query ?? "").trim().toLowerCase();
-  if (normalized.length < 2) return [];
   const results = [];
   for (const pack of game.packs.filter((candidate) => candidate.documentName === documentName)) {
     const fields = documentName === "Actor"
-      ? ["name", "img", "type", "system.details.level.value"]
-      : ["name", "img", "type", "system.level.value", "system.traits.value"];
+      ? ["name", "img", "type", "system.details.level.value", "system.traits.value", "system.traits.size.value"]
+      : ["name", "img", "type", "system.level.value", "system.traits.value", ...(normalized ? ["system.description.value"] : [])];
     const index = await pack.getIndex({ fields });
     for (const entry of index) {
       if (types.length && !types.includes(entry.type)) continue;
-      const haystack = `${entry.name} ${(entry.system?.traits?.value ?? []).join(" ")}`.toLowerCase();
-      if (!haystack.includes(normalized)) continue;
+      const traits = entry.system?.traits?.value ?? [];
+      const entryLevel = lsNumber(entry.system?.details?.level ?? entry.system?.level, 0);
+      const description = String(entry.system?.description?.value ?? "").replace(/<[^>]+>/g, " ");
+      const haystack = `${entry.name} ${traits.join(" ")} ${description}`.toLowerCase();
+      if (normalized && !haystack.includes(normalized)) continue;
+      if (level !== "" && entryLevel !== Number(level)) continue;
+      if (trait && !traits.includes(trait)) continue;
       results.push({
         name: entry.name,
         img: entry.img,
         type: entry.type,
-        level: lsNumber(entry.system?.details?.level ?? entry.system?.level, 0),
+        level: entryLevel,
+        traits,
         pack: pack.metadata.label,
         uuid: entry.uuid ?? `Compendium.${pack.collection}.${documentName}.${entry._id}`,
       });
@@ -55,8 +114,12 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       previous: LoreSmithCreatureBuilder.previous,
       next: LoreSmithCreatureBuilder.next,
       searchSource: LoreSmithCreatureBuilder.searchSource,
+      previousSources: LoreSmithCreatureBuilder.previousSources,
+      nextSources: LoreSmithCreatureBuilder.nextSources,
       useSource: LoreSmithCreatureBuilder.useSource,
       useCurrent: LoreSmithCreatureBuilder.useCurrent,
+      addTrait: LoreSmithCreatureBuilder.addTrait,
+      removeTrait: LoreSmithCreatureBuilder.removeTrait,
       searchContent: LoreSmithCreatureBuilder.searchContent,
       addContent: LoreSmithCreatureBuilder.addContent,
       removeContent: LoreSmithCreatureBuilder.removeContent,
@@ -75,22 +138,43 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   step = 0;
   sourceQuery = "";
+  sourceLevel = "";
+  sourceTrait = "";
+  sourcePage = 0;
+  sourcePageSize = 60;
+  sourceAllResults = [];
+  sourcesLoaded = false;
   contentQuery = "";
+  contentType = "";
   sourceResults = [];
   contentResults = [];
 
   async _prepareContext(options) {
+    if (this.step === 0 && !this.sourcesLoaded) await this.loadSources();
+    if (this.step === 3 && !this.contentResults.length) {
+      this.contentResults = await lsSearchPacks({
+        documentName: "Item",
+        types: ["action", "feat", "melee", "spell", "effect"],
+        limit: 250,
+      });
+    }
     const actor = this.actor;
     const system = actor.system;
+    const level = lsNumber(system.details?.level, 0);
+    const benchmarkRows = lsBenchmarks(level);
+    const markSelected = (rows, value) => rows.map((row) => ({ ...row, selected: Number(row.value) === Number(value) }));
     return {
       ...await super._prepareContext(options),
       actor: {
         id: actor.id,
         name: actor.name,
         img: actor.img,
-        level: lsNumber(system.details?.level, 0),
+        level,
         size: system.traits?.size?.value ?? "med",
-        traits: lsTraits(actor).join(", "),
+        traits: lsTraits(actor).map((value) => ({
+          value,
+          label: game.i18n.localize(CONFIG.PF2E.creatureTraits?.[value] ?? value),
+        })),
         ac: lsNumber(system.attributes?.ac, 10),
         hp: lsNumber(system.attributes?.hp?.max, 1),
         perception: lsNumber(system.perception, 0),
@@ -103,7 +187,41 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       sourceQuery: this.sourceQuery,
       contentQuery: this.contentQuery,
       sourceResults: this.sourceResults,
+      sourceLevel: this.sourceLevel,
+      sourceTrait: this.sourceTrait,
+      sourcePageLabel: `${this.sourcePage + 1} / ${Math.max(1, Math.ceil(this.sourceAllResults.length / this.sourcePageSize))}`,
+      sourceCount: this.sourceAllResults.length,
+      hasPreviousSources: this.sourcePage > 0,
+      hasNextSources: (this.sourcePage + 1) * this.sourcePageSize < this.sourceAllResults.length,
+      levelFilters: Array.from({ length: 27 }, (_value, index) => ({ value: index - 1, label: index - 1, selected: String(index - 1) === String(this.sourceLevel) })),
+      creatureLevels: Array.from({ length: 27 }, (_value, index) => ({
+        value: index - 1,
+        label: index - 1,
+        selected: index - 1 === level,
+      })),
+      creatureTraitOptions: Object.entries(CONFIG.PF2E.creatureTraits ?? {}).map(([value, label]) => ({
+        value,
+        label: game.i18n.localize(label),
+        selected: value === this.sourceTrait,
+      })).sort((left, right) => left.label.localeCompare(right.label)),
       contentResults: this.contentResults,
+      benchmarks: {
+        ac: markSelected(benchmarkRows.ac, lsNumber(system.attributes?.ac, 10)),
+        hp: markSelected(benchmarkRows.hp, lsNumber(system.attributes?.hp?.max, 1)),
+        perception: markSelected(benchmarkRows.perception, lsNumber(system.perception, 0)),
+        fortitude: markSelected(benchmarkRows.saves, lsNumber(system.saves?.fortitude, 0)),
+        reflex: markSelected(benchmarkRows.saves, lsNumber(system.saves?.reflex, 0)),
+        will: markSelected(benchmarkRows.saves, lsNumber(system.saves?.will, 0)),
+      },
+      contentType: this.contentType,
+      contentTypes: [
+        { value: "", label: "All actions, abilities, and spells" },
+        { value: "spell", label: "Spells" },
+        { value: "action", label: "Actions and abilities" },
+        { value: "feat", label: "Feats and passive abilities" },
+        { value: "melee", label: "NPC strikes" },
+        { value: "effect", label: "Effects and conditions" },
+      ].map((type) => ({ ...type, selected: type.value === this.contentType })),
       step: this.step,
       stepNumber: this.step + 1,
       steps: {
@@ -118,6 +236,29 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     };
   }
 
+  _onRender(context, options) {
+    super._onRender(context, options);
+    for (const select of this.element?.querySelectorAll("[data-benchmark-target]") ?? []) {
+      select.addEventListener("change", () => {
+        const input = this.element.querySelector(`[name="${select.dataset.benchmarkTarget}"]`);
+        if (input && select.value !== "") input.value = select.value;
+      });
+    }
+  }
+
+  async loadSources() {
+    this.sourceAllResults = await lsSearchPacks({
+      documentName: "Actor",
+      query: this.sourceQuery,
+      types: ["npc"],
+      level: this.sourceLevel,
+      trait: this.sourceTrait,
+    });
+    const start = this.sourcePage * this.sourcePageSize;
+    this.sourceResults = this.sourceAllResults.slice(start, start + this.sourcePageSize);
+    this.sourcesLoaded = true;
+  }
+
   async saveStep() {
     const root = this.element;
     if (!root) return;
@@ -126,7 +267,6 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         name: root.querySelector('[name="name"]')?.value.trim() || this.actor.name,
         "system.details.level.value": Math.max(-1, Math.min(25, lsNumber(root.querySelector('[name="level"]')?.value, 0))),
         "system.traits.size.value": root.querySelector('[name="size"]')?.value || "med",
-        "system.traits.value": lsSplitTraits(root.querySelector('[name="traits"]')?.value),
       });
     }
     if (this.step === 2) {
@@ -157,7 +297,22 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   static async searchSource() {
     this.sourceQuery = this.element.querySelector('[name="sourceQuery"]')?.value ?? "";
-    this.sourceResults = await lsSearchPacks({ documentName: "Actor", query: this.sourceQuery, types: ["npc"] });
+    this.sourceLevel = this.element.querySelector('[name="sourceLevel"]')?.value ?? "";
+    this.sourceTrait = this.element.querySelector('[name="sourceTrait"]')?.value ?? "";
+    this.sourcePage = 0;
+    await this.loadSources();
+    await this.render();
+  }
+
+  static async previousSources() {
+    this.sourcePage = Math.max(0, this.sourcePage - 1);
+    await this.loadSources();
+    await this.render();
+  }
+
+  static async nextSources() {
+    this.sourcePage += 1;
+    await this.loadSources();
     await this.render();
   }
 
@@ -196,13 +351,29 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     await this.render();
   }
 
+  static async addTrait() {
+    const trait = this.element.querySelector('[name="traitToAdd"]')?.value;
+    if (!trait) return;
+    const traits = new Set(lsTraits(this.actor));
+    traits.add(trait);
+    await this.actor.update({ "system.traits.value": [...traits] });
+    await this.render();
+  }
+
+  static async removeTrait(_event, target) {
+    const traits = lsTraits(this.actor).filter((trait) => trait !== target.dataset.trait);
+    await this.actor.update({ "system.traits.value": traits });
+    await this.render();
+  }
+
   static async searchContent() {
     this.contentQuery = this.element.querySelector('[name="contentQuery"]')?.value ?? "";
+    this.contentType = this.element.querySelector('[name="contentType"]')?.value ?? "";
     this.contentResults = await lsSearchPacks({
       documentName: "Item",
       query: this.contentQuery,
-      types: ["action", "feat", "melee", "spell", "effect"],
-      limit: 100,
+      types: this.contentType ? [this.contentType] : ["action", "feat", "melee", "spell", "effect"],
+      limit: 250,
     });
     await this.render();
   }
@@ -240,8 +411,12 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       previous: LoreSmithItemBuilder.previous,
       next: LoreSmithItemBuilder.next,
       searchSource: LoreSmithItemBuilder.searchSource,
+      previousSources: LoreSmithItemBuilder.previousSources,
+      nextSources: LoreSmithItemBuilder.nextSources,
       useSource: LoreSmithItemBuilder.useSource,
       useCurrent: LoreSmithItemBuilder.useCurrent,
+      addTrait: LoreSmithItemBuilder.addTrait,
+      removeTrait: LoreSmithItemBuilder.removeTrait,
       finish: LoreSmithItemBuilder.finish,
     },
   };
@@ -257,10 +432,18 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   step = 0;
   query = "";
+  sourceLevel = "";
+  sourceTrait = "";
+  sourcePage = 0;
+  sourcePageSize = 60;
+  sourceAllResults = [];
+  sourcesLoaded = false;
   results = [];
 
   async _prepareContext(options) {
+    if (this.step === 0 && !this.sourcesLoaded) await this.loadSources();
     const item = this.item;
+    const traitConfig = lsItemTraitConfig();
     return {
       ...await super._prepareContext(options),
       item: {
@@ -270,7 +453,10 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         typeLabel: item.type.replace(/([A-Z])/g, " $1"),
         level: lsNumber(item.system?.level, 0),
         rarity: item.system?.traits?.rarity ?? "common",
-        traits: lsTraits(item).join(", "),
+        traits: lsTraits(item).map((value) => ({
+          value,
+          label: game.i18n.localize(traitConfig[value] ?? value),
+        })),
         description: item.system?.description?.value ?? "",
         actionType: item.system?.actionType?.value ?? "",
         actions: item.system?.actions?.value ?? "",
@@ -282,12 +468,46 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       },
       query: this.query,
       results: this.results,
+      sourceLevel: this.sourceLevel,
+      sourceTrait: this.sourceTrait,
+      sourceCount: this.sourceAllResults.length,
+      sourcePageLabel: `${this.sourcePage + 1} / ${Math.max(1, Math.ceil(this.sourceAllResults.length / this.sourcePageSize))}`,
+      hasPreviousSources: this.sourcePage > 0,
+      hasNextSources: (this.sourcePage + 1) * this.sourcePageSize < this.sourceAllResults.length,
+      levelFilters: Array.from({ length: 31 }, (_value, level) => ({
+        value: level,
+        label: level,
+        selected: String(level) === String(this.sourceLevel),
+      })),
+      itemLevels: Array.from({ length: 31 }, (_value, level) => ({
+        value: level,
+        label: level,
+        selected: level === lsNumber(item.system?.level, 0),
+      })),
+      itemTraitOptions: Object.entries(traitConfig).map(([value, label]) => ({
+        value,
+        label: game.i18n.localize(label),
+        selected: value === this.sourceTrait,
+      })).sort((left, right) => left.label.localeCompare(right.label)),
       step: this.step,
       stepNumber: this.step + 1,
       steps: { source: this.step === 0, basics: this.step === 1, mechanics: this.step === 2, review: this.step === 3 },
       canBack: this.step > 0,
       canNext: this.step > 0 && this.step < 3,
     };
+  }
+
+  async loadSources() {
+    this.sourceAllResults = await lsSearchPacks({
+      documentName: "Item",
+      query: this.query,
+      types: [this.item.type],
+      level: this.sourceLevel,
+      trait: this.sourceTrait,
+    });
+    const start = this.sourcePage * this.sourcePageSize;
+    this.results = this.sourceAllResults.slice(start, start + this.sourcePageSize);
+    this.sourcesLoaded = true;
   }
 
   async saveStep() {
@@ -298,7 +518,6 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         name: root.querySelector('[name="name"]')?.value.trim() || this.item.name,
         "system.level.value": Math.max(0, Math.min(30, lsNumber(root.querySelector('[name="level"]')?.value, 0))),
         "system.traits.rarity": root.querySelector('[name="rarity"]')?.value || "common",
-        "system.traits.value": lsSplitTraits(root.querySelector('[name="traits"]')?.value),
       });
     }
     if (this.step === 2) {
@@ -329,7 +548,22 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   static async searchSource() {
     this.query = this.element.querySelector('[name="sourceQuery"]')?.value ?? "";
-    this.results = await lsSearchPacks({ documentName: "Item", query: this.query, types: [this.item.type], limit: 100 });
+    this.sourceLevel = this.element.querySelector('[name="sourceLevel"]')?.value ?? "";
+    this.sourceTrait = this.element.querySelector('[name="sourceTrait"]')?.value ?? "";
+    this.sourcePage = 0;
+    await this.loadSources();
+    await this.render();
+  }
+
+  static async previousSources() {
+    this.sourcePage = Math.max(0, this.sourcePage - 1);
+    await this.loadSources();
+    await this.render();
+  }
+
+  static async nextSources() {
+    this.sourcePage += 1;
+    await this.loadSources();
     await this.render();
   }
 
@@ -358,11 +592,83 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     await this.render();
   }
 
+  static async addTrait() {
+    const trait = this.element.querySelector('[name="traitToAdd"]')?.value;
+    if (!trait) return;
+    const traits = new Set(lsTraits(this.item));
+    traits.add(trait);
+    await this.item.update({ "system.traits.value": [...traits] });
+    await this.render();
+  }
+
+  static async removeTrait(_event, target) {
+    const traits = lsTraits(this.item).filter((trait) => trait !== target.dataset.trait);
+    await this.item.update({ "system.traits.value": traits });
+    await this.render();
+  }
+
   static async finish() {
     await this.saveStep();
     await this.item.setFlag(LS_MODULE_ID, "builderComplete", true);
     await this.close();
     this.item.sheet.render(true);
+  }
+}
+
+class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
+  static DEFAULT_OPTIONS = {
+    id: "lore-smith-live-log",
+    classes: ["lore-smith-live-log"],
+    position: { width: 520, height: 640, right: 340, top: 80 },
+    window: { title: "Lore Smith Live Combat", icon: "fa-solid fa-swords", resizable: true },
+  };
+
+  static PARTS = {
+    log: { template: `modules/${LS_MODULE_ID}/templates/live-combat.hbs` },
+  };
+
+  entries = [];
+  running = true;
+
+  async _prepareContext(options) {
+    return {
+      ...await super._prepareContext(options),
+      entries: this.entries,
+      delay: game.settings.get(LS_MODULE_ID, "liveActionDelay"),
+      delaySeconds: (game.settings.get(LS_MODULE_ID, "liveActionDelay") / 1000).toFixed(2),
+      running: this.running,
+    };
+  }
+
+  _onRender(context, options) {
+    super._onRender(context, options);
+    const slider = this.element?.querySelector('[name="liveDelay"]');
+    const label = this.element?.querySelector('[data-role="delayLabel"]');
+    slider?.addEventListener("input", async () => {
+      const value = Number(slider.value);
+      if (label) label.textContent = `${(value / 1000).toFixed(2)} seconds`;
+      await game.settings.set(LS_MODULE_ID, "liveActionDelay", value);
+    });
+    const log = this.element?.querySelector(".ls-live-entries");
+    if (log) log.scrollTop = log.scrollHeight;
+  }
+
+  async add(entry) {
+    this.entries.push(entry);
+    if (this.entries.length > 500) this.entries.shift();
+    const list = this.element?.querySelector(".ls-live-entries");
+    if (!list) return this.render();
+    list.querySelector(".empty")?.remove();
+    const row = document.createElement("p");
+    row.className = entry.kind ?? "action";
+    row.textContent = entry.text;
+    list.append(row);
+    list.scrollTop = list.scrollHeight;
+  }
+
+  async complete() {
+    this.running = false;
+    await this.render();
   }
 }
 
@@ -426,8 +732,190 @@ async function lsRunLiveCombat() {
   if (!sides.combat.started) await sides.combat.startCombat();
   const missingInitiative = sides.combat.combatants.filter((combatant) => combatant.initiative === null).map((combatant) => combatant.id);
   if (missingInitiative.length) await sides.combat.rollInitiative(missingInitiative);
-  ui.notifications.info("Lore Smith live combat started on the current Scene. Actions are recorded in Chat.");
-  await game.loreSmith.runLiveReplay(sides.tokens, sides.partyIds, sides.enemyIds, { combat: sides.combat });
+  const log = new LoreSmithLiveLog();
+  await log.render(true);
+  ui.notifications.info("Lore Smith live combat started. The dedicated combat window contains the log.");
+  try {
+    await game.loreSmith.runLiveReplay(sides.tokens, sides.partyIds, sides.enemyIds, {
+      combat: sides.combat,
+      onLog: (entry) => log.add(entry),
+      delay: () => game.settings.get(LS_MODULE_ID, "liveActionDelay"),
+    });
+  } finally {
+    await log.complete();
+  }
+}
+
+function lsActivateNativeWikiLinks(editor) {
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (node.parentElement?.closest(".ls-wiki-link")) return NodeFilter.FILTER_REJECT;
+      return /\[\[[^\]\n]{1,100}\]\]/.test(node.nodeValue ?? "") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const textNode of nodes) {
+    const text = textNode.nodeValue ?? "";
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    for (const match of text.matchAll(/\[\[([^\]\n]{1,100})\]\]/g)) {
+      fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+      const name = match[1].trim();
+      const link = document.createElement("span");
+      link.className = "ls-wiki-link";
+      link.dataset.noteName = name;
+      link.contentEditable = "false";
+      link.tabIndex = 0;
+      link.title = `Open or create "${name}"`;
+      link.textContent = name;
+      fragment.append(link);
+      cursor = match.index + match[0].length;
+    }
+    fragment.append(document.createTextNode(text.slice(cursor)));
+    textNode.replaceWith(fragment);
+  }
+}
+
+function lsEmbeddedJournalRoot(app, html) {
+  const supplied = lsRoot(html);
+  return supplied?.classList?.contains("window-content")
+    ? supplied
+    : supplied?.querySelector?.(".window-content") ?? app.element?.querySelector?.(".window-content") ?? supplied;
+}
+
+async function lsRenderEmbeddedJournal(app, html) {
+  if (!game.user.isGM) return;
+  const opened = app.document;
+  if (opened?.documentName !== "JournalEntry") return;
+  if (!opened.getFlag(LS_MODULE_ID, "note")) await opened.setFlag(LS_MODULE_ID, "note", true);
+  const root = lsEmbeddedJournalRoot(app, html);
+  if (!root || root.dataset.loreSmithEmbedded === "ready") return;
+  root.dataset.loreSmithEmbedded = "ready";
+  root.classList.add("ls-native-journal-host");
+
+  const draw = async () => {
+    const notes = game.journal
+      .filter((entry) => entry.getFlag(LS_MODULE_ID, "note"))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    let journal = game.journal.get(app._loreSmithActiveNoteId) ?? opened;
+    if (!journal?.getFlag(LS_MODULE_ID, "note")) journal = notes[0] ?? opened;
+    app._loreSmithActiveNoteId = journal.id;
+    const page = journal.pages.find((candidate) => candidate.type === "text") ?? journal.pages.contents[0];
+
+    root.replaceChildren();
+    const shell = document.createElement("section");
+    shell.className = "ls-native-journal";
+    const sidebar = document.createElement("aside");
+    sidebar.innerHTML = `<header><strong>Lore Smith Notes</strong><button type="button" data-action="new-note" data-tooltip="New note"><i class="fa-solid fa-plus"></i></button></header><nav></nav>`;
+    const navigation = sidebar.querySelector("nav");
+    for (const note of notes) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = note.id === journal.id ? "active" : "";
+      button.dataset.noteId = note.id;
+      button.textContent = note.name;
+      navigation.append(button);
+    }
+
+    const paper = document.createElement("main");
+    paper.className = "ls-native-journal-paper";
+    const title = document.createElement("input");
+    title.className = "ls-native-journal-title";
+    title.value = journal.name;
+    title.setAttribute("aria-label", "Note title");
+    const editor = document.createElement("div");
+    editor.className = "ls-native-journal-editor";
+    editor.contentEditable = "true";
+    editor.spellcheck = true;
+    editor.dataset.placeholder = "Start writing. Use [[Note Name]] to link or create another note.";
+    editor.innerHTML = page?.text?.content ?? "";
+    lsActivateNativeWikiLinks(editor);
+    const status = document.createElement("footer");
+    status.textContent = "Saved in Foundry Journal Entries";
+    paper.append(title, editor, status);
+    shell.append(sidebar, paper);
+    root.append(shell);
+
+    let saveTimer;
+    const save = async () => {
+      window.clearTimeout(saveTimer);
+      const name = title.value.trim() || "Untitled Note";
+      const updates = [];
+      if (journal.name !== name) updates.push(journal.update({ name }));
+      if (page && page.text?.content !== editor.innerHTML) updates.push(page.update({ name, "text.content": editor.innerHTML }));
+      await Promise.all(updates);
+      status.textContent = "Saved";
+    };
+    const scheduleSave = () => {
+      status.textContent = "Saving...";
+      window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(save, 350);
+    };
+    title.addEventListener("input", scheduleSave);
+    title.addEventListener("change", save);
+    editor.addEventListener("input", () => {
+      lsActivateNativeWikiLinks(editor);
+      scheduleSave();
+    });
+    editor.addEventListener("blur", save);
+    editor.addEventListener("click", async (event) => {
+      const link = event.target.closest?.(".ls-wiki-link");
+      if (!link) return;
+      event.preventDefault();
+      await save();
+      const noteName = link.dataset.noteName.trim();
+      let linked = game.journal.find((entry) =>
+        entry.getFlag(LS_MODULE_ID, "note")
+        && entry.name.localeCompare(noteName, undefined, { sensitivity: "accent" }) === 0);
+      if (!linked) {
+        linked = await JournalEntry.create({
+          name: noteName,
+          flags: { [LS_MODULE_ID]: { note: true } },
+          pages: [{ name: noteName, type: "text", text: { content: "" } }],
+        });
+      }
+      app._loreSmithActiveNoteId = linked.id;
+      await draw();
+    });
+    editor.addEventListener("dblclick", (event) => {
+      const link = event.target.closest?.(".ls-wiki-link");
+      if (!link) return;
+      event.preventDefault();
+      const text = document.createTextNode(`[[${link.dataset.noteName}]]`);
+      link.replaceWith(text);
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      editor.focus();
+      scheduleSave();
+    });
+    navigation.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-note-id]");
+      if (!button) return;
+      await save();
+      app._loreSmithActiveNoteId = button.dataset.noteId;
+      await draw();
+    });
+    sidebar.querySelector('[data-action="new-note"]').addEventListener("click", async () => {
+      await save();
+      const existing = new Set(game.journal.map((entry) => entry.name.toLowerCase()));
+      let name = "New Note";
+      let suffix = 2;
+      while (existing.has(name.toLowerCase())) name = `New Note ${suffix++}`;
+      const created = await JournalEntry.create({
+        name,
+        flags: { [LS_MODULE_ID]: { note: true } },
+        pages: [{ name, type: "text", text: { content: "" } }],
+      });
+      app._loreSmithActiveNoteId = created.id;
+      await draw();
+    });
+  };
+
+  await draw();
 }
 
 function lsAddCombatTrackerButtons(_app, html) {
@@ -448,9 +936,14 @@ function lsAddCombatTrackerButtons(_app, html) {
 function lsAddSheetButton(app, html, { kind, icon, title, onClick }) {
   if (!game.user.isGM) return;
   const root = lsRoot(html);
-  if (!root || root.querySelector(`[data-lore-smith-builder="${kind}"]`)) return;
+  if (!root) return;
   const header = root.closest(".app")?.querySelector(".window-header") ?? root.querySelector(".window-header");
   if (!header) return;
+  const existing = [...header.querySelectorAll(`[data-lore-smith-builder="${kind}"]`)];
+  if (existing.length) {
+    for (const duplicate of existing.slice(1)) duplicate.remove();
+    return;
+  }
   const button = document.createElement("button");
   button.type = "button";
   button.className = "header-control icon lore-smith-sheet-builder";
@@ -476,6 +969,23 @@ Hooks.once("init", () => {
     type: Number,
     default: 100,
     range: { min: 1, max: 1000, step: 1 },
+  });
+  game.settings.register(LS_MODULE_ID, "liveActionDelay", {
+    name: "Live combat action delay",
+    hint: "Milliseconds between live actions. This can also be changed while the live combat window is open.",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 1750,
+    range: { min: 250, max: 10000, step: 250 },
+  });
+  game.settings.register(LS_MODULE_ID, "mirrorLiveToChat", {
+    name: "Copy live combat to Chat",
+    hint: "Disabled by default. Enable this only if you also want Lore Smith actions copied to Foundry Chat.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
   });
 });
 
@@ -504,6 +1014,10 @@ Hooks.on("renderItemSheet", (app, html) => {
   });
 });
 
+Hooks.on("renderJournalSheet", (app, html) => {
+  void lsRenderEmbeddedJournal(app, html);
+});
+
 Hooks.on("renderApplicationV2", (app, html) => {
   const document = app.document ?? app.actor ?? app.item;
   if (document?.documentName === "Actor" && document.type === "npc") {
@@ -520,6 +1034,8 @@ Hooks.on("renderApplicationV2", (app, html) => {
       title: "Open Lore Smith Item Builder",
       onClick: () => new LoreSmithItemBuilder(document).render(true),
     });
+  } else if (document?.documentName === "JournalEntry") {
+    void lsRenderEmbeddedJournal(app, html);
   }
   if (/CombatTracker/i.test(app.constructor?.name ?? "")) lsAddCombatTrackerButtons(app, html);
 });

@@ -15,16 +15,24 @@
     {{#if steps.source}}
       <section class="ls-builder-step">
         <h2>Choose a starting point</h2>
-        <p>Search installed PF2e compendiums for another {{item.typeLabel}} or continue with the current blank item.</p>
-        <div class="ls-builder-search">
-          <input name="sourceQuery" value="{{query}}" placeholder="Search {{item.typeLabel}} entries">
-          <button data-action="searchSource"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
-          <button class="secondary" data-action="useCurrent"><i class="fa-regular fa-file"></i> Start from current / blank item</button>
+        <p>Browse every installed PF2e {{item.typeLabel}} by default, or narrow the list by name, keyword, level, and trait.</p>
+        <div class="ls-builder-filters">
+          <input name="sourceQuery" value="{{query}}" placeholder="Name or keyword">
+          <select name="sourceLevel"><option value="">All levels</option>{{#each levelFilters}}<option value="{{value}}" {{#if selected}}selected{{/if}}>Level {{label}}</option>{{/each}}</select>
+          <select name="sourceTrait"><option value="">All traits</option>{{#each itemTraitOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
+          <button data-action="searchSource"><i class="fa-solid fa-filter"></i> Apply filters</button>
+          <button class="secondary" data-action="useCurrent"><i class="fa-regular fa-file"></i> Start blank</button>
         </div>
-        <div class="ls-builder-results">
+        <div class="ls-browser-summary"><span>{{sourceCount}} matching items</span><span>Page {{sourcePageLabel}}</span></div>
+        <div class="ls-builder-results compact tall">
           {{#each results}}
-            <article><img src="{{img}}"><div><strong>{{name}}</strong><small>Level {{level}} · {{pack}}</small></div><button data-action="useSource" data-uuid="{{uuid}}">Use as base</button></article>
-          {{else}}<div class="ls-builder-empty">Search to browse native PF2e items of this type.</div>{{/each}}
+            <article><img src="{{img}}"><div><strong>{{name}}</strong><small>Level {{level}} &middot; {{traits}} &middot; {{pack}}</small></div><button data-action="useSource" data-uuid="{{uuid}}">Use as base</button></article>
+          {{else}}<div class="ls-builder-empty">No installed PF2e item matches these filters.</div>{{/each}}
+        </div>
+        <div class="ls-browser-pages">
+          <button data-action="previousSources" {{#unless hasPreviousSources}}disabled{{/unless}}><i class="fa-solid fa-arrow-left"></i> Previous</button>
+          <span>Page {{sourcePageLabel}}</span>
+          <button data-action="nextSources" {{#unless hasNextSources}}disabled{{/unless}}>Next <i class="fa-solid fa-arrow-right"></i></button>
         </div>
       </section>
     {{/if}}
@@ -34,9 +42,12 @@
         <h2>Item identity</h2>
         <div class="ls-form-grid">
           <label class="wide">Item name<input name="name" value="{{item.name}}"></label>
-          <label>Level<input name="level" type="number" min="0" max="30" value="{{item.level}}"></label>
+          <label>Level<select name="level">{{#each itemLevels}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
           <label>Rarity<select name="rarity"><option value="{{item.rarity}}" selected>Current: {{item.rarity}}</option><option value="common">Common</option><option value="uncommon">Uncommon</option><option value="rare">Rare</option><option value="unique">Unique</option></select></label>
-          <label class="wide">Traits<input name="traits" value="{{item.traits}}" placeholder="magical, fire, invested"></label>
+          <label class="wide">Add an item trait
+            <span class="ls-inline-control"><select name="traitToAdd"><option value="">Choose a trait</option>{{#each itemTraitOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button type="button" data-action="addTrait">Add</button></span>
+          </label>
+          <div class="ls-trait-chips wide">{{#each item.traits}}<button type="button" class="ls-trait-chip" data-action="removeTrait" data-trait="{{value}}">{{label}} <i class="fa-solid fa-xmark"></i></button>{{else}}<span>No traits selected.</span>{{/each}}</div>
         </div>
       </section>
     {{/if}}
@@ -44,21 +55,21 @@
     {{#if steps.mechanics}}
       <section class="ls-builder-step">
         <h2>Rules and activation</h2>
-        <p>Only fields supported by this PF2e item type are shown. Detailed type-specific values remain available on the native sheet.</p>
+        <p>Only entries supported by this PF2e item type are shown. The native sheet remains available for every type-specific field and rule element.</p>
         <div class="ls-form-grid">
           {{#if item.hasActionType}}<label>Activation<select name="actionType"><option value="{{item.actionType}}" selected>Current: {{item.actionType}}</option><option value="passive">Passive</option><option value="free">Free action</option><option value="reaction">Reaction</option><option value="action">Action</option></select></label>{{/if}}
           {{#if item.hasActions}}<label>Actions<input name="actions" type="number" min="0" max="3" value="{{item.actions}}"></label>{{/if}}
           {{#if item.hasFrequency}}<label>Uses<input name="frequencyMax" type="number" min="0" value="{{item.frequencyMax}}"></label><label>Frequency period<input name="frequencyPer" value="{{item.frequencyPer}}" placeholder="day, hour, round"></label>{{/if}}
           <label class="wide">Description and rules<textarea name="description" rows="14">{{item.description}}</textarea></label>
         </div>
-        <div class="ls-builder-tip"><i class="fa-solid fa-wand-magic-sparkles"></i><span>PF2e inline automation such as <strong>@Check</strong>, <strong>@Damage</strong>, traits, rule elements, price, bulk, usage, and subitems can be finalized on the native sheet.</span></div>
+        <div class="ls-builder-tip"><i class="fa-solid fa-wand-magic-sparkles"></i><span>PF2e inline checks, damage, prices, bulk, usage, subitems, and detailed automation can be finalized on the native item sheet.</span></div>
       </section>
     {{/if}}
 
     {{#if steps.review}}
       <section class="ls-builder-step ls-builder-review">
         <i class="fa-solid fa-hammer"></i><h2>{{item.name}} is ready</h2>
-        <p>Level {{item.level}} · {{item.rarity}} {{item.typeLabel}}</p>
+        <p>Level {{item.level}} &middot; {{item.rarity}} {{item.typeLabel}}</p>
         <p>Finish to return to the native PF2e item sheet and use every system-specific field.</p>
         <button data-action="finish"><i class="fa-solid fa-check"></i> Finish item</button>
       </section>

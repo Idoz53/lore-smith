@@ -15,6 +15,7 @@ const templateFiles = [
   "templates/dashboard.hbs",
   "templates/creature-builder.hbs",
   "templates/item-builder.hbs",
+  "templates/live-combat.hbs",
 ];
 
 for (const relativePath of [...manifest.esmodules, ...manifest.styles, ...templateFiles]) {

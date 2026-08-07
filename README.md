@@ -9,8 +9,12 @@ The module provides:
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
 - encounter setup using actors and tokens already in the Foundry world;
 - Combat Tracker buttons for randomized iteration logs and live Scene combat;
-- detailed combat logs;
-- a live scene replay that moves tokens and posts actions to Foundry chat.
+- spell-, ability-, item-, strike-, save-, condition-, and area-template-aware combat choices;
+- detailed iteration logs and a separate live-combat log window;
+- adjustable live action pacing without Chat spam by default;
+- browse-all compendium source libraries with keyword, level, trait, and type filters;
+- GM Core level benchmark menus for creature statistics;
+- an embedded native Journal editor that opens and creates `[[wiki links]]` without a separate page window.
 
 ## Prototype warning
 
@@ -29,6 +33,9 @@ added to the Scene controls for GMs.
 The Creature Builder icon appears in the title bar of native PF2e NPC sheets.
 The Item Builder icon appears in native PF2e Item sheets. The Combat Tracker
 adds **Simulate Logs** and **Live Combat** controls when an encounter is active.
+Use the slider in the Live Combat window to change the delay from 0.25 to 10
+seconds per action. Chat mirroring is optional in Module Settings and is off by
+default.
 
 ## Content and licensing
 
