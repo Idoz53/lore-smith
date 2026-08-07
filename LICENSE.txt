@@ -1,0 +1,11 @@
+Copyright (c) 2026 Idoz53. All rights reserved.
+
+Lore Smith is proprietary software. No permission is granted to copy, modify,
+redistribute, sublicense, sell, reverse engineer, or create derivative works
+from the source code or packaged module except where applicable law expressly
+requires otherwise.
+
+Pathfinder Second Edition names and game mechanics remain the property of their
+respective owners and are used according to the applicable licenses and
+community-use terms. Lore Smith does not include or redistribute paid artwork,
+adventure text, or other restricted content.

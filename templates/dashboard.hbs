@@ -1,0 +1,94 @@
+<div class="lore-smith">
+  <aside class="ls-sidebar">
+    <div class="ls-brand">
+      <i class="fa-solid fa-book-sparkles"></i>
+      <div><strong>Lore Smith</strong><small>PF2e GM Workspace</small></div>
+    </div>
+    <nav>
+      <button data-action="tab" data-tab="notes" class="{{#if tabs.notes}}active{{/if}}"><i class="fa-solid fa-book-open"></i> Notes</button>
+      <button data-action="tab" data-tab="creatures" class="{{#if tabs.creatures}}active{{/if}}"><i class="fa-solid fa-dragon"></i> Creatures</button>
+      <button data-action="tab" data-tab="items" class="{{#if tabs.items}}active{{/if}}"><i class="fa-solid fa-hammer"></i> Items</button>
+      <button data-action="tab" data-tab="encounter" class="{{#if tabs.encounter}}active{{/if}}"><i class="fa-solid fa-swords"></i> Encounter Lab</button>
+    </nav>
+    <p class="ls-prototype">Prototype: simulator results can contain bugs or unusual AI choices.</p>
+  </aside>
+
+  <main class="ls-main">
+    {{#if tabs.notes}}
+      <section class="ls-panel">
+        <header><div><span>Native Foundry Journals</span><h1>Campaign Notes</h1></div><button data-action="createNote"><i class="fa-solid fa-plus"></i> New note</button></header>
+        <p class="ls-lead">Lore Smith notes are normal Journal Entries. Foundry handles rich text, images, links, permissions, and drag-and-drop references.</p>
+        <div class="ls-card-list">
+          {{#each notes}}
+            <article class="ls-list-card">
+              <i class="fa-solid fa-book"></i>
+              <div><strong>{{name}}</strong><small>{{pages}} page(s)</small></div>
+              <button data-action="openNote" data-id="{{id}}">Open</button>
+            </article>
+          {{else}}
+            <div class="ls-empty">No Lore Smith notes yet.</div>
+          {{/each}}
+        </div>
+      </section>
+    {{/if}}
+
+    {{#if tabs.creatures}}
+      <section class="ls-panel">
+        <header><div><span>PF2e Actor Workshop</span><h1>Creature Builder</h1></div><button data-action="blankCreature"><i class="fa-solid fa-plus"></i> Blank NPC</button></header>
+        <p class="ls-lead">Search installed PF2e Actor compendia, create an editable world copy, and continue editing it on the native PF2e NPC sheet.</p>
+        <div class="ls-search-row"><input name="creatureSearch" value="{{creatureSearch}}" placeholder="Search creature names…"><button data-action="searchCreatures">Search compendia</button></div>
+        <div class="ls-card-list">
+          {{#each creatureResults}}
+            <article class="ls-list-card">
+              <img src="{{img}}">
+              <div><strong>{{name}}</strong><small>Level {{level}} · {{packLabel}}</small></div>
+              <button data-action="cloneCreature" data-uuid="{{uuid}}">Create copy</button>
+            </article>
+          {{else}}
+            <div class="ls-empty">Search to browse creatures installed with the PF2e system.</div>
+          {{/each}}
+        </div>
+      </section>
+    {{/if}}
+
+    {{#if tabs.items}}
+      <section class="ls-panel">
+        <header><div><span>PF2e Item Workshop</span><h1>Item Builder</h1></div><button data-action="blankItem"><i class="fa-solid fa-plus"></i> Blank item</button></header>
+        <p class="ls-lead">Search every installed PF2e Item compendium. Copies keep native traits, usage, price, activation, rules, and system automation.</p>
+        <div class="ls-search-row"><input name="itemSearch" value="{{itemSearch}}" placeholder="Search equipment, spells, feats, or effects…"><select name="itemType"><option value="">All item types</option>{{#each itemTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><button data-action="searchItems">Search compendia</button></div>
+        <div class="ls-card-list">
+          {{#each itemResults}}
+            <article class="ls-list-card">
+              <img src="{{img}}">
+              <div><strong>{{name}}</strong><small>{{type}} · Level {{level}} · {{packLabel}}</small></div>
+              <button data-action="cloneItem" data-uuid="{{uuid}}">Create copy</button>
+            </article>
+          {{else}}
+            <div class="ls-empty">Search to browse native PF2e items, spells, feats, and effects.</div>
+          {{/each}}
+        </div>
+      </section>
+    {{/if}}
+
+    {{#if tabs.encounter}}
+      <section class="ls-panel">
+        <header><div><span>Foundry Scene + PF2e Actors</span><h1>Encounter Lab</h1></div><button data-action="refreshEncounter"><i class="fa-solid fa-rotate"></i> Refresh scene</button></header>
+        <p class="ls-lead">Choose tokens from the active scene. Lore Smith uses their prepared PF2e statistics; live replay uses the real canvas, grid, walls, tokens, and Chat log.</p>
+        {{#unless sceneReady}}<div class="ls-warning">Open a Scene with tokens before building an encounter.</div>{{/unless}}
+        <div class="ls-encounter-grid">
+          <section><h2>Characters</h2>{{#each sceneTokens}}{{#if isCharacter}}<label class="ls-token-choice"><input type="checkbox" name="partyToken" value="{{id}}" {{#if party}}checked{{/if}}><img src="{{img}}"><span>{{name}}<small>Level {{level}} · HP {{hp}} · AC {{ac}}</small></span></label>{{/if}}{{/each}}</section>
+          <section><h2>Opposition</h2>{{#each sceneTokens}}{{#unless isCharacter}}<label class="ls-token-choice"><input type="checkbox" name="enemyToken" value="{{id}}" {{#if enemy}}checked{{/if}}><img src="{{img}}"><span>{{name}}<small>Level {{level}} · HP {{hp}} · AC {{ac}}</small></span></label>{{/unless}}{{/each}}</section>
+        </div>
+        <div class="ls-run-row"><label>Iterations <input name="iterations" type="number" min="1" max="1000" value="{{iterations}}"></label><button data-action="runEstimate"><i class="fa-solid fa-chart-line"></i> Run estimate</button><button class="live" data-action="runLive"><i class="fa-solid fa-play"></i> Watch live combat</button></div>
+        {{#if result}}
+          <div class="ls-results">
+            <article><span>Character victory</span><strong>{{result.winRate}}%</strong><small>{{result.wins}}/{{result.iterations}} combats</small></article>
+            <article><span>PF2e XP difficulty</span><strong>{{result.difficulty}}</strong><small>{{result.xp}} adjusted XP · party level {{result.partyLevel}}</small></article>
+            <article><span>Average duration</span><strong>{{result.averageRounds}}</strong><small>rounds</small></article>
+          </div>
+          <details class="ls-log" open><summary>Combat log · sample iteration</summary>{{#each result.log}}<p class="{{kind}}">{{text}}</p>{{/each}}</details>
+        {{/if}}
+      </section>
+    {{/if}}
+  </main>
+</div>
