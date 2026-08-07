@@ -1038,20 +1038,73 @@ function lsFindOpenJournalSheet(journal) {
   }) ?? journal._sheet ?? journal.sheet;
 }
 
-function lsEmbedNativeJournalEditor(pageSheet, html, retry = true) {
+async function lsOpenInlineNativeJournalEditor(journalSheet, page, pageNode) {
+  if (!journalSheet || !page || !pageNode) return;
+  const existing = pageNode.querySelector(".ls-inline-journal-editor");
+  if (existing) return;
+  const SheetClass = page._getSheetClass?.();
+  if (!SheetClass?.isV2) {
+    page.sheet.render(true);
+    return;
+  }
+  const pageSheet = new SheetClass({
+    id: `lore-smith-${page.id}-inline-edit`,
+    tag: "div",
+    document: page,
+    mode: "edit",
+    includeTOC: true,
+    window: { frame: false, positioned: false },
+  });
+  pageSheet._loreSmithInline = true;
+  await pageSheet.render({ force: true });
+  const editor = lsRoot(pageSheet.element);
+  if (!editor) return;
+  editor.classList.add("ls-inline-journal-page-sheet");
+
+  const host = document.createElement("section");
+  host.className = "ls-inline-journal-editor";
+  const toolbar = document.createElement("header");
+  toolbar.className = "ls-inline-journal-editor-header";
+  toolbar.innerHTML = `
+    <strong><i class="fa-solid fa-feather-pointed"></i> Editing ${foundry.utils.escapeHTML(page.name)}</strong>
+    <button type="button"><i class="fa-solid fa-check"></i> Done</button>`;
+  toolbar.querySelector("button").addEventListener("click", async () => {
+    await pageSheet.close();
+    await journalSheet.render({ force: true, pageId: page.id });
+  });
+  host.append(toolbar, editor);
+  pageNode.replaceChildren(host);
+  journalSheet.bringToTop?.();
+}
+
+function lsEmbedNativeJournalEditor(pageSheet, html, attempt = 0) {
+  if (pageSheet._loreSmithInline) return;
   const page = pageSheet.object ?? pageSheet.document;
   const journal = page?.parent;
   if (journal?.documentName !== "JournalEntry" || pageSheet.options?.editable === false) return;
-  const journalSheet = lsFindOpenJournalSheet(journal);
+  const parentApp = pageSheet.parent ?? pageSheet.options?.parent;
+  const parentDocument = parentApp?.document ?? parentApp?.object;
+  const journalSheet = parentDocument?.id === journal.id ? parentApp : lsFindOpenJournalSheet(journal);
   const journalRoot = lsRoot(journalSheet?.element);
-  const pageNode = journalRoot?.querySelector(`[data-page-id="${page.id}"].journal-entry-page`)
-    ?? journalRoot?.querySelector(`.journal-entry-page[data-page-id="${page.id}"]`);
+  const exactPage = journalRoot?.querySelector(`article.journal-entry-page[data-page-id="${page.id}"]`)
+    ?? journalRoot?.querySelector(`[data-page-id="${page.id}"].journal-entry-page`)
+    ?? journalRoot?.querySelector(`.journal-entry-page[data-page-id="${page.id}"]`)
+    ?? journalRoot?.querySelector(`[data-document-id="${page.id}"].journal-entry-page`);
+  const selectedControl = journalRoot?.querySelector(`[data-page-id="${page.id}"].active, [data-page-id="${page.id}"][aria-selected="true"]`);
+  const pageNode = exactPage
+    ?? (selectedControl ? journalRoot?.querySelector("article.journal-entry-page, .journal-entry-page") : null);
   const rendered = lsRoot(html);
   const wrapper = lsRoot(pageSheet.element)
     ?? rendered?.closest?.(".window-app, .application")
     ?? rendered;
   if (!pageNode || !wrapper) {
-    if (retry) setTimeout(() => lsEmbedNativeJournalEditor(pageSheet, html, false), 0);
+    if (attempt < 30) setTimeout(() => lsEmbedNativeJournalEditor(pageSheet, html, attempt + 1), 50);
+    else console.warn("Lore Smith | Could not locate the native Journal page host for inline editing.", {
+      page: page.id,
+      journal: journal.id,
+      journalSheet: journalSheet?.constructor?.name,
+      pageSheet: pageSheet.constructor?.name,
+    });
     return;
   }
   if (wrapper.dataset.loreSmithEmbeddedEditor === "ready") return;
@@ -1088,6 +1141,16 @@ function lsEnhanceNativeJournal(app, html) {
   for (const container of new Set(containers)) lsActivateJournalWikiLinks(container);
   if (root.dataset.loreSmithWikiLinks === "ready") return;
   root.dataset.loreSmithWikiLinks = "ready";
+  root.addEventListener("click", (event) => {
+    const edit = event.target.closest?.('[data-action="editPage"]');
+    if (!edit) return;
+    const pageNode = edit.closest(".journal-entry-page[data-page-id]");
+    const page = journal.pages.get(pageNode?.dataset.pageId);
+    if (!page || !pageNode) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void lsOpenInlineNativeJournalEditor(app, page, pageNode);
+  }, { capture: true });
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const added of mutation.addedNodes) {
@@ -1238,8 +1301,10 @@ Hooks.on("renderApplication", (app, html) => {
 });
 
 Hooks.on("renderApplicationV2", (app, html) => {
-  const document = app.document ?? app.actor ?? app.item;
-  if (document?.documentName === "Actor" && document.type === "npc") {
+  const document = app.document ?? app.object ?? app.actor ?? app.item;
+  if (document?.documentName === "JournalEntryPage") {
+    lsEmbedNativeJournalEditor(app, html);
+  } else if (document?.documentName === "Actor" && document.type === "npc") {
     lsAddSheetButton(app, html, {
       kind: "creature",
       icon: "fa-solid fa-dragon",

@@ -13,8 +13,11 @@ The module provides:
 - detailed iteration logs and a separate live-combat log window;
 - pause, resume, stop, and adjustable pacing controls for live combat without
   Chat spam by default;
-- prepared, spontaneous, innate, focus, and cantrip resource tracking during
-  simulations, with repeated-action avoidance;
+- native PF2e spellcasting-entry casts for prepared, flexible, spontaneous,
+  innate, focus, at-will, and cantrip spells, using the same slot and use
+  validation as the PF2e Cast control;
+- native PF2e spell override variants, so variable-action spells use the
+  system-defined action cost, target, range, area, and damage or healing data;
 - browse-all compendium source libraries with keyword, level, trait, and type filters;
 - an optional Bestiary Ability Glossary-only filter for creature abilities;
 - GM Core level benchmark menus for creature statistics;
@@ -33,6 +36,9 @@ The module provides:
   actor's Class item rather than a character's name;
 - a per-encounter coverage report that identifies native, modeled, partial, and
   unsupported actions for every combatant.
+- schema-driven effect ownership and linked condition operations: self effects
+  stay on the user, explicit removals remove conditions, and a condition word in
+  descriptive, prerequisite, or future-effect text is never applied by itself.
 
 ## Prototype warning
 
@@ -63,6 +69,11 @@ Both simulation modes include a collapsible **Simulation coverage** report.
 Review partial and unsupported entries before treating an encounter estimate as
 reliable; the report is deliberately explicit about mechanics that still need a
 dedicated adapter.
+
+Lore Smith does not maintain exceptions for named actors, NPCs, spells, or
+abilities. It reads the mechanics declared by each installed PF2e document. An
+entry without a safe structured resolution path is excluded from tactical
+selection and identified by the coverage report rather than guessed from prose.
 
 ## Content and licensing
 

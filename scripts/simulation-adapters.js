@@ -34,6 +34,7 @@ export function attachSimulationAdapters(option) {
   if (option.damage) adapters.push("damage", "iwr");
   if (option.healing) adapters.push("healing");
   if (option.conditions?.length) adapters.push("condition");
+  if (option.selfEffect || option.conditionOperations?.length) adapters.push("condition");
   if (option.conditions?.some((condition) => condition.slug === "persistent-damage")) {
     adapters.push("persistent-damage");
   }
@@ -45,23 +46,28 @@ export function attachSimulationAdapters(option) {
 
   const unsupported = [];
   if (!option.costs?.some(Number.isFinite)) unsupported.push("No supported action cost");
+  if (option.supportedResolution === false) {
+    unsupported.push(option.unsupportedReason || "No safe structured resolution path");
+  }
   if (!adapters.length) unsupported.push("No mechanical fields were found");
-  if (option.utility && !option.conditions?.length && !option.defensive) {
+  if (option.utility && !option.conditions?.length && !option.selfEffect
+    && !option.conditionOperations?.length && !option.defensive) {
     unsupported.push("Rules text has no explicit numeric or condition effect");
   }
   if (option.damage && !/\d|@/.test(option.damage)) unsupported.push("Damage formula is not evaluable");
   if (option.healing && !/\d|@/.test(option.healing)) unsupported.push("Healing formula is not evaluable");
+  unsupported.push(...(option.mechanicsWarnings ?? []));
 
   const native = {
     check: option.kind === "strike" && Boolean(option.nativeAction?.variants?.[0]?.roll)
       || Boolean(option.nativeStatistic?.check?.roll),
     damage: Boolean(option.damage),
     healing: Boolean(option.healing),
-    condition: Boolean(option.conditions?.length),
+    condition: Boolean(option.conditions?.length || option.selfEffect || option.conditionOperations?.length),
     template: Boolean(option.area),
     resource: option.limitedUses !== null,
   };
-  const status = unsupported.length
+  const status = option.supportedResolution === false ? "unsupported" : unsupported.length
     ? adapters.length ? "partial" : "unsupported"
     : native.check || option.automatic || option.save ? "native" : "modeled";
 
@@ -292,59 +298,123 @@ export function adjustDamageForIwr(amount, damageType, target) {
   };
 }
 
+function spellCastContext(option, actor) {
+  const spell = option.item;
+  const location = spell?.system?.location ?? {};
+  const entryId = location.value;
+  const entry = actor.spellcasting?.get?.(entryId) ?? actor.items?.get?.(entryId);
+  const rank = Math.max(0, Number(location.heightenedLevel ?? spell?.rank ?? spell?.system?.level?.value ?? spell?.system?.level ?? 0));
+  const mode = entry?.system?.prepared?.value ?? "";
+  const slot = entry?.system?.slots?.[`slot${Math.max(1, rank)}`];
+  const traits = option.traits ?? [];
+  if (!entry?.cast) return { available: false, source: "No owning PF2e spellcasting entry" };
+  if (traits.includes("cantrip") || spell.isCantrip || spell.atWill) {
+    return { available: true, entry, rank, source: traits.includes("cantrip") || spell.isCantrip ? "PF2e cantrip" : "PF2e at-will spell" };
+  }
+  if (mode === "focus" || traits.includes("focus")) {
+    const focus = Number(actor.system?.resources?.focus?.value ?? 0);
+    return focus > 0
+      ? { available: true, entry, rank, source: "PF2e focus pool" }
+      : { available: false, source: "No PF2e focus points remaining" };
+  }
+  if (mode === "prepared" && !entry.isFlexible) {
+    const slotId = [...(slot?.prepared ?? [])].findIndex((prepared) =>
+      prepared?.id === spell.id && prepared?.expended !== true);
+    return slotId >= 0
+      ? { available: true, entry, rank, slotId, source: "PF2e prepared slot" }
+      : { available: false, source: "No unexpended PF2e prepared slot" };
+  }
+  const innateUses = location.uses ?? spell.system?.uses;
+  if (innateUses && Number.isFinite(Number(innateUses.value))) {
+    return Number(innateUses.value) > 0
+      ? { available: true, entry, rank, source: "PF2e innate use" }
+      : { available: false, source: "No PF2e innate uses remaining" };
+  }
+  if (slot) {
+    return Number(slot.value) > 0
+      ? { available: true, entry, rank, source: `PF2e ${mode || "spell"} slot` }
+      : { available: false, source: `No PF2e rank ${rank} slots remaining` };
+  }
+  return { available: false, source: "PF2e reports no castable slot or use" };
+}
+
 export async function consumeNativeResource(option, actor) {
-  if (option.limitedUses === null || !option.item) return { consumed: false, source: "Unlimited" };
+  if (!option.item) return { available: true, consumed: false, source: "Unlimited" };
   const item = option.item;
   try {
     if (item.type === "spell") {
-      if (option.traits?.includes("cantrip")) return { consumed: false, source: "Cantrip" };
-      const location = item.system?.location ?? {};
-      const entryId = location.value;
-      const entry = actor.spellcasting?.get?.(entryId) ?? actor.items?.get?.(entryId);
-      const mode = entry?.system?.prepared?.value ?? "";
-      const rank = Math.max(1, Number(location.heightenedLevel ?? item.system?.level?.value ?? item.system?.level ?? 1));
-      if (mode === "focus" || option.traits?.includes("focus")) {
-        const current = Number(actor.system?.resources?.focus?.value ?? 0);
-        if (current > 0) {
-          await actor.update({ "system.resources.focus.value": current - 1 });
-          return { consumed: true, source: "PF2e focus pool" };
-        }
-      }
-      const slotKey = `slot${rank}`;
-      const slot = entry?.system?.slots?.[slotKey];
-      if (mode === "prepared" && slot?.prepared) {
-        const index = slot.prepared.findIndex((prepared) =>
-          prepared?.id === item.id && prepared?.expended !== true);
-        if (index >= 0) {
-          await entry.update({ [`system.slots.${slotKey}.prepared.${index}.expended`]: true });
-          return { consumed: true, source: "PF2e prepared slot" };
-        }
-      }
-      if (entry && slot && Number(slot.value) > 0) {
-        await entry.update({ [`system.slots.${slotKey}.value`]: Number(slot.value) - 1 });
-        return { consumed: true, source: `PF2e ${mode || "spell"} slot` };
-      }
-      const uses = location.uses ?? item.system?.uses;
-      if (Number(uses?.value) > 0) {
-        const path = location.uses ? "system.location.uses.value" : "system.uses.value";
-        await item.update({ [path]: Number(uses.value) - 1 });
-        return { consumed: true, source: "PF2e innate uses" };
-      }
+      const cast = spellCastContext(option, actor);
+      if (!cast.available) return { available: false, consumed: false, source: cast.source };
+      await cast.entry.cast(item, {
+        rank: cast.rank,
+        slotId: cast.slotId,
+        consume: true,
+        message: false,
+      });
+      const unlimited = option.traits?.includes("cantrip") || item.isCantrip || item.atWill;
+      return { available: true, consumed: !unlimited, source: cast.source };
     }
 
     const frequency = item.system?.frequency;
     if (Number(frequency?.value) > 0) {
       await item.update({ "system.frequency.value": Number(frequency.value) - 1 });
-      return { consumed: true, source: "PF2e frequency" };
+      return { available: true, consumed: true, source: "PF2e frequency" };
+    }
+    if (frequency && Number(frequency?.value) <= 0) {
+      return { available: false, consumed: false, source: "No PF2e frequency uses remaining" };
     }
     if (item.type === "consumable" && Number(item.system?.quantity) > 0) {
       await item.update({ "system.quantity": Number(item.system.quantity) - 1 });
-      return { consumed: true, source: "PF2e consumable quantity" };
+      return { available: true, consumed: true, source: "PF2e consumable quantity" };
     }
+    if (item.type === "consumable") return { available: false, consumed: false, source: "No PF2e quantity remaining" };
   } catch (error) {
     console.warn("Lore Smith | Could not consume the native PF2e resource.", error);
+    return { available: false, consumed: false, source: "PF2e rejected the cast or use" };
   }
-  return { consumed: false, source: "Virtual resource tracker" };
+  return { available: true, consumed: false, source: "Unlimited PF2e action" };
+}
+
+async function resolveEffectDocument(effect) {
+  if (!effect?.uuid) return null;
+  try {
+    const direct = await fromUuid(effect.uuid);
+    if (direct) return direct;
+  } catch (_error) {
+    // Some PF2e source documents retain a human-readable compendium identifier.
+  }
+  const parts = effect.uuid.split(".");
+  const packKey = parts[0] === "Compendium" ? `${parts[1]}.${parts[2]}` : "";
+  const pack = game.packs.get(packKey);
+  if (!pack) return null;
+  const index = await pack.getIndex({ fields: ["name"] });
+  const match = index.find((entry) => entry.name === effect.name);
+  return match ? pack.getDocument(match._id) : null;
+}
+
+export async function applyNativeStructuredEffects(option, attacker, target) {
+  const applied = [];
+  if (option.selfEffect) {
+    const effect = await resolveEffectDocument(option.selfEffect);
+    if (effect) {
+      const source = effect.toObject();
+      delete source._id;
+      await attacker.actor.createEmbeddedDocuments("Item", [source]);
+      applied.push(effect.name);
+    }
+  }
+  for (const operation of option.conditionOperations ?? []) {
+    const recipient = operation.target === "self" ? attacker : target;
+    if (!recipient?.actor) continue;
+    if (operation.operation === "remove") {
+      await recipient.actor.decreaseCondition?.(operation.slug, { forceRemove: true });
+      applied.push(`removed ${operation.slug}`);
+    } else if (operation.operation === "apply") {
+      await recipient.actor.increaseCondition?.(operation.slug, { value: operation.value ?? 1 });
+      applied.push(`${operation.slug}${Number(operation.value) > 1 ? ` ${operation.value}` : ""}`);
+    }
+  }
+  return applied;
 }
 
 export async function applyNativeDefense(option, actor) {

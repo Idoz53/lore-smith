@@ -1,14 +1,6 @@
 import { attachSimulationAdapters, buildCoverageReport } from "./simulation-adapters.js";
 import { getTacticalProfile, tacticalOptionScore } from "./tactical-profiles.js";
 
-const CONDITION_NAMES = [
-  "blinded", "clumsy", "confused", "controlled", "dazzled", "deafened", "doomed",
-  "drained", "dying", "enfeebled", "fascinated", "fatigued", "fleeing", "frightened",
-  "grabbed", "immobilized", "off-guard", "paralyzed", "persistent damage", "prone",
-  "quickened", "restrained", "sickened", "slowed", "stunned", "stupefied", "unconscious",
-  "wounded",
-];
-
 function numberValue(value, fallback = 0) {
   const result = Number(value?.value ?? value?.mod ?? value?.modifier ?? value);
   return Number.isFinite(result) ? result : fallback;
@@ -82,13 +74,6 @@ function rangeFeet(item, description) {
   return 5;
 }
 
-function saveType(description = "") {
-  return /\breflex\b/i.test(description) ? "reflex"
-    : /\bfortitude\b/i.test(description) ? "fortitude"
-      : /\bwill\b/i.test(description) ? "will"
-        : null;
-}
-
 function spellStatistic(actor, item) {
   const locationId = item.system?.location?.value;
   const entry = actor.spellcasting?.get?.(locationId) ?? actor.items?.get?.(locationId);
@@ -101,13 +86,59 @@ function spellStatistic(actor, item) {
   };
 }
 
-function conditionData(description = "") {
-  const normalized = description.toLowerCase();
-  return CONDITION_NAMES.flatMap((name) => {
-    if (!new RegExp(`\\b${name.replace("-", "[- ]")}\\b`, "i").test(normalized)) return [];
-    const value = Number(new RegExp(`${name.replace("-", "[- ]")}\\s+(\\d+)`, "i").exec(normalized)?.[1] ?? 1);
-    return [{ slug: name.replace("persistent damage", "persistent-damage"), value }];
+function structuredSave(item) {
+  return item.system?.defense?.save?.statistic ?? item.system?.save?.value ?? null;
+}
+
+function uuidReferences(description = "") {
+  return [...String(description).matchAll(/@UUID\[([^\]]+)](?:\{([^}]+)})?/gi)].map((match) => ({
+    uuid: match[1],
+    label: match[2] ?? match[1].split(".").at(-1),
+    index: match.index ?? 0,
+  }));
+}
+
+/**
+ * Interpret only explicit operations surrounding a linked PF2e condition.
+ * Merely mentioning a condition never applies it: this prevents future,
+ * prerequisite, and explanatory text from becoming an immediate effect.
+ */
+function linkedConditionOperations(description = "") {
+  return uuidReferences(description).flatMap((reference) => {
+    if (!/conditionitems\.Item\./i.test(reference.uuid)) return [];
+    const before = String(description).slice(Math.max(0, reference.index - 110), reference.index)
+      .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").toLowerCase();
+    const slug = reference.uuid.split(".").at(-1).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    if (/(?:target|creature|ally|enemy|you)\s+(?:also\s+)?(?:loses?|removes?|reduces?)[^.]{0,55}$/.test(before)) {
+      return [{ operation: "remove", slug, value: 1, target: /\byou\b/.test(before) ? "self" : "target" }];
+    }
+    if (/(?:target|creature|ally|enemy|you)\s+(?:also\s+)?(?:gains?|becomes?|is made)[^.]{0,55}$/.test(before)) {
+      return [{ operation: "apply", slug, value: 1, target: /\byou\b/.test(before) ? "self" : "target" }];
+    }
+    return [];
   });
+}
+
+function structuredSelfEffect(item) {
+  const effect = item.system?.selfEffect;
+  return effect?.uuid ? { uuid: effect.uuid, name: effect.name ?? item.name, target: "self" } : null;
+}
+
+function structuredRequirements(item, rawDescription = "") {
+  const description = plainText(rawDescription);
+  const embedded = /\bRequirements?\b(.+?)(?:\bEffect\b|$)/i.exec(description)?.[1] ?? "";
+  const text = `${item.system?.requirements ?? ""} ${embedded}`.trim();
+  const conditionLinks = uuidReferences(rawDescription).filter((reference) =>
+    /conditionitems\.Item\./i.test(reference.uuid)
+    && reference.index <= String(rawDescription).search(/<strong>Effect<\/strong>|\bEffect\b/i));
+  const forbiddenConditions = /\b(?:neither|not|isn't|is not|without|no)\b/i.test(text)
+    ? conditionLinks.map((reference) => reference.uuid.split(".").at(-1).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-"))
+    : [];
+  return {
+    text,
+    requiresDamageTaken: /\bhas taken damage\b/i.test(text),
+    forbiddenConditions,
+  };
 }
 
 function frequencyUses(item) {
@@ -141,7 +172,7 @@ function spellResource(item, actor, traits, description) {
   const entryId = location.value;
   const entry = actor.spellcasting?.get?.(entryId) ?? actor.items?.get?.(entryId);
   const mode = entry?.system?.prepared?.value ?? "";
-  const rank = Math.max(1, numberValue(location.heightenedLevel, numberValue(item.system?.level, 1)));
+  const rank = Math.max(1, numberValue(location.heightenedLevel, numberValue(item.rank, numberValue(item.system?.level, 1))));
 
   if (mode === "focus" || traits.includes("focus")) {
     const focus = actor.system?.resources?.focus;
@@ -158,7 +189,7 @@ function spellResource(item, actor, traits, description) {
   }
 
   const slot = entry?.system?.slots?.[`slot${rank}`];
-  if (mode === "prepared") {
+  if (mode === "prepared" && !entry?.isFlexible) {
     const prepared = [...(slot?.prepared ?? [])];
     const available = prepared.filter((candidate) =>
       candidate?.id === item.id && candidate?.expended !== true).length;
@@ -182,11 +213,28 @@ function spellResource(item, actor, traits, description) {
 }
 
 function optionFromItem(item, actor) {
-  const description = plainText(item.system?.description?.value);
+  const rawDescription = item.system?.description?.value ?? "";
+  const description = plainText(rawDescription);
   const costs = actionCosts(item);
   const damage = firstFormula(item, "damage");
   const healing = firstFormula(item, "healing");
-  const conditions = conditionData(description);
+  const conditionOperations = linkedConditionOperations(rawDescription);
+  // Item-linked condition changes are executed from conditionOperations so
+  // their direction (apply/remove and self/target) cannot be lost.
+  const conditions = [];
+  const selfEffect = structuredSelfEffect(item);
+  const requirements = structuredRequirements(item, rawDescription);
+  const unresolvedConditionLinks = uuidReferences(rawDescription).filter((reference) =>
+    /conditionitems\.Item\./i.test(reference.uuid)
+    && !conditionOperations.some((operation) => reference.uuid.toLowerCase().endsWith(`.${operation.slug}`)));
+  const unresolvedEffectLinks = uuidReferences(rawDescription).filter((reference) =>
+    /(?:spell-effects|bestiary-effects|equipment-effects)\.Item\./i.test(reference.uuid)
+    && reference.uuid !== selfEffect?.uuid);
+  const mechanicsWarnings = [
+    selfEffect ? "Linked self-effect Rule Elements apply natively in live combat; Monte Carlo records the effect but may not reproduce every modifier" : "",
+    unresolvedConditionLinks.length ? `${unresolvedConditionLinks.length} mentioned condition link(s) are explanatory or not an explicit apply/remove operation` : "",
+    unresolvedEffectLinks.length ? `${unresolvedEffectLinks.length} linked effect document(s) require timing or choice not declared by this item` : "",
+  ].filter(Boolean);
   const traits = [...(item.system?.traits?.value ?? [])];
   const area = item.system?.area?.value
     ? { type: item.system.area.type ?? "burst", value: numberValue(item.system.area.value) }
@@ -195,13 +243,31 @@ function optionFromItem(item, actor) {
   const active = costs.length > 0;
   if (!active) return null;
   const statistic = spell ? spellStatistic(actor, item) : { attack: numberValue(actor.system?.attributes?.classDC?.mod, numberValue(actor.system?.details?.level, 0) + 7), dc: numberValue(actor.system?.attributes?.classDC?.dc, numberValue(actor.system?.details?.level, 0) + 17) };
-  const save = saveType(description);
+  const save = structuredSave(item);
+  const basicSave = Boolean(item.system?.defense?.save?.basic);
   const automatic = /\bautomatically hits?\b/i.test(description)
-    || (!damage && !healing && !save && !traits.includes("attack"));
-  const defensive = /\braise a shield|take cover|gain[^.]{0,30}(?:bonus|status bonus)[^.]{0,20}\bAC\b|\bshield\b/i.test(`${item.name} ${description}`) && !damage;
+    || Boolean(selfEffect)
+    || Boolean(conditionOperations.length && !save && !traits.includes("attack"));
+  // Item prose alone is not enough to infer a defensive state. Native system
+  // actions and linked self-effect documents are handled elsewhere.
+  const defensive = false;
   const resource = spellResource(item, actor, traits, description);
+  const resolvableRoll = traits.includes("attack") || !save || basicSave;
+  const explicitMechanic = Boolean(
+    healing || selfEffect || conditionOperations.length || defensive
+    || (damage && resolvableRoll),
+  );
+  const targetText = String(item.system?.target?.value ?? "").toLowerCase();
+  const targetRequirement = /\bdying\b/.test(targetText) ? "dying"
+    : /\bundead\b/.test(targetText) && !/\b(?:living|willing)\b/.test(targetText) ? "undead"
+      : null;
+  const targetMode = selfEffect ? "self"
+    : targetRequirement === "undead" ? "enemy"
+    : healing || traits.includes("healing") || /\b(?:willing|ally|allies)\b/.test(targetText) ? "ally"
+      : /\bself\b/.test(targetText) ? "self"
+        : "enemy";
   return {
-    id: item.id,
+    id: `${item.id}:${[...(item.appliedOverlays?.values?.() ?? [])].join("+") || "base"}`,
     item,
     name: item.name,
     kind: spell ? "spell" : item.type === "consumable" ? "item" : "ability",
@@ -214,17 +280,28 @@ function optionFromItem(item, actor) {
     range: rangeFeet(item, description),
     area,
     save,
+    basicSave,
     dc: statistic.dc,
     attack: statistic.attack,
     nativeStatistic: statistic.nativeStatistic ?? null,
     automatic,
+    supportedResolution: explicitMechanic,
+    unsupportedReason: explicitMechanic ? ""
+      : save && !basicSave ? "Non-basic save outcomes require a dedicated structured PF2e effect"
+        : "No structured PF2e roll, damage, healing, effect, or condition operation",
+    selfEffect,
+    mechanicsWarnings,
+    requirements,
+    conditionOperations,
+    targetMode,
+    targetRequirement,
     defensive,
     utility: !damage && !healing && !conditions.length,
     attackTrait: traits.includes("attack"),
     limitedUses: resource.limitedUses,
     useKey: resource.useKey,
     recharge: rechargeData(description),
-    targetOnce: /temporarily immune|can't be affected again|cannot be affected again/i.test(description),
+    targetOnce: Boolean(selfEffect) || /temporarily immune|can't be affected again|cannot be affected again/i.test(description),
     description,
   };
 }
@@ -257,8 +334,21 @@ function strikeOptions(actor) {
       limitedUses: null,
       useKey: item?.id ?? action.slug ?? action.label,
       description: "",
+      supportedResolution: true,
+      selfEffect: null,
+      conditionOperations: [],
+      targetMode: "enemy",
+      targetRequirement: null,
+      requirements: { text: "", requiresDamageTaken: false, forbiddenConditions: [] },
     };
   });
+}
+
+function optionsFromItem(item, actor) {
+  if (item.type !== "spell") return [optionFromItem(item, actor)].filter(Boolean);
+  const variants = [...(item.overlays?.overrideVariants ?? [])];
+  const documents = variants.length ? variants : [item];
+  return documents.map((variant) => optionFromItem(variant, actor)).filter(Boolean);
 }
 
 function actorStatistic(actor, statistic) {
@@ -310,6 +400,12 @@ function systemActionOptions(actor) {
       nativeStatistic: statistic,
       nativeSystemAction: game.pf2e?.actions?.get?.(definition.slug) ?? null,
       description: `${definition.name} uses ${definition.skill} against ${definition.defense}.`,
+      supportedResolution: true,
+      selfEffect: null,
+      conditionOperations: [],
+      targetMode: "enemy",
+      targetRequirement: null,
+      requirements: { text: "", requiresDamageTaken: false, forbiddenConditions: [] },
     }];
   });
 
@@ -341,6 +437,12 @@ function systemActionOptions(actor) {
       nativeStatistic: null,
       nativeSystemAction: game.pf2e?.actions?.get?.("raise-a-shield") ?? null,
       description: "Raise the equipped shield and gain its circumstance bonus to AC.",
+      supportedResolution: true,
+      selfEffect: null,
+      conditionOperations: [],
+      targetMode: "self",
+      targetRequirement: null,
+      requirements: { text: "", requiresDamageTaken: false, forbiddenConditions: [] },
     });
   }
   return actions;
@@ -350,11 +452,11 @@ export function buildActionCatalog(actor) {
   const options = [
     ...strikeOptions(actor),
     ...systemActionOptions(actor),
-    ...actor.items.map((item) => optionFromItem(item, actor)).filter(Boolean),
+    ...[...actor.items].flatMap((item) => optionsFromItem(item, actor)),
   ];
   const seen = new Set();
   return options.filter((option) => {
-    const key = `${option.kind}:${option.name}:${option.damage}:${option.healing}`;
+    const key = `${option.kind}:${option.id}:${option.name}:${option.costs.join("/")}:${option.range}:${option.area?.type ?? ""}:${option.area?.value ?? ""}:${option.damage}:${option.healing}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -362,17 +464,37 @@ export function buildActionCatalog(actor) {
 }
 
 export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0, round = 1) {
+  const meetsRequirements = (option) => {
+    if (option.requirements?.requiresDamageTaken && actor.hp >= actor.maxHp) return false;
+    if (option.requirements?.forbiddenConditions?.some((condition) => actor.conditions?.has(condition))) return false;
+    if (option.selfEffect) {
+      const effectKey = `effect:${String(option.selfEffect.name ?? option.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+      if (actor.conditions?.has(effectKey)) return false;
+      if (actor.actor?.items?.some?.((item) => item.type === "effect" && item.name === option.selfEffect.name)) return false;
+    }
+    return true;
+  };
+  const validTargetFor = (option, candidate) => {
+    if (!candidate) return false;
+    const canRestoreDefeated = Boolean(option.healing || option.traits?.includes("healing"));
+    if (candidate.defeated && option.targetRequirement !== "dying" && !canRestoreDefeated) return false;
+    if (option.targetRequirement === "dying") return candidate.conditions?.has("dying") || candidate.hp <= 0;
+    if (option.targetRequirement === "undead") return candidate.actor?.traits?.has?.("undead")
+      || candidate.actor?.system?.traits?.value?.includes?.("undead");
+    return true;
+  };
   let available = actor.options.filter((option) => {
     const minimumCost = Math.min(...option.costs.filter(Number.isFinite));
     const uses = actor.uses.get(option.useKey ?? option.id);
     const cooldown = actor.cooldowns?.get(option.useKey ?? option.id) ?? 0;
-    return minimumCost <= actionsRemaining && cooldown <= 0 && (uses === undefined || uses > 0);
+    return option.supportedResolution !== false && meetsRequirements(option)
+      && minimumCost <= actionsRemaining && cooldown <= 0 && (uses === undefined || uses > 0);
   });
   const varied = available.filter((option) =>
     option.kind === "strike" || !actor.turnUses?.has(option.id));
   available = varied;
   const injured = combatants
-    .filter((candidate) => candidate.team === actor.team && !candidate.defeated && candidate.hp < candidate.maxHp)
+    .filter((candidate) => candidate.team === actor.team && candidate.hp < candidate.maxHp)
     .sort((left, right) => left.hp / left.maxHp - right.hp / right.maxHp)[0];
   const profile = actor.profile ?? getTacticalProfile(actor.actor);
   if (injured && injured.hp / injured.maxHp <= (profile.healingThreshold ?? 0.6)) {
@@ -383,11 +505,18 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
     .sort((left, right) => left.hp - right.hp)[0];
   if (!target) return null;
   const scored = available.map((option) => {
+    const allies = combatants.filter((candidate) => candidate.team === actor.team && validTargetFor(option, candidate));
+    const enemies = combatants.filter((candidate) => candidate.team !== actor.team && validTargetFor(option, candidate));
+    const optionTarget = option.targetMode === "self" || option.defensive ? actor
+      : option.targetMode === "ally"
+        ? allies.sort((left, right) => left.hp / left.maxHp - right.hp / right.maxHp)[0]
+        : enemies.sort((left, right) => left.hp - right.hp)[0];
+    if (!optionTarget) return null;
     const validCosts = option.costs.filter((cost) => Number.isFinite(cost) && cost <= actionsRemaining);
     const cost = Math.max(...validCosts);
     const areaTargets = option.area ? Math.min(3, combatants.filter((candidate) => candidate.team !== actor.team && !candidate.defeated).length) : 1;
     const expected = averageFormula(option.damage) * areaTargets;
-    const conditionValue = option.conditions.length * 6;
+    const conditionValue = (option.conditions.length + (option.selfEffect ? 1 : 0) + (option.conditionOperations?.length ?? 0)) * 6;
     const defensiveValue = option.defensive && actor.hp / actor.maxHp < 0.55 ? 7 : 0;
     const utilityValue = option.utility ? 3 : 0;
     const mapCost = option.attackTrait ? mapPenalty / 2 : 0;
@@ -398,23 +527,23 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
       : actor.uses.get(option.useKey ?? option.id) ?? option.limitedUses;
     const profileValue = tacticalOptionScore(profile, option, {
       actor,
-      target,
+      target: optionTarget,
       round,
       remainingUses,
       actionsRemaining,
       mapPenalty,
     });
-    const targetImmunityPenalty = option.targetOnce && actor.targetUses?.has(`${option.id}:${target.id}`)
+    const targetImmunityPenalty = option.targetOnce && actor.targetUses?.has(`${option.id}:${optionTarget.id}`)
       ? 1000
       : 0;
     return {
       option,
-      target: option.defensive || option.utility ? actor : target,
+      target: optionTarget,
       cost,
       score: (expected + conditionValue + defensiveValue + utilityValue + spellBias) / Math.max(1, cost)
         - mapCost - repetitionPenalty + profileValue - targetImmunityPenalty,
     };
-  }).sort((left, right) => right.score - left.score);
+  }).filter(Boolean).sort((left, right) => right.score - left.score);
   return scored[0] ?? null;
 }
 

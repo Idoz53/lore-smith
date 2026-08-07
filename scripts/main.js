@@ -15,6 +15,7 @@ import {
   adjustDamageForIwr,
   applyNativeDefense,
   consumeNativeResource,
+  applyNativeStructuredEffects,
   resolveModeledCheck,
   resolveNativeCheck,
 } from "./simulation-adapters.js";
@@ -254,6 +255,11 @@ function virtualCombatant(token, team) {
     const key = option.useKey ?? option.id;
     if (!uses.has(key)) uses.set(key, option.limitedUses);
   }
+  const conditions = new Map();
+  for (const condition of actor.conditions ?? []) {
+    const conditionSlug = condition.slug ?? condition.system?.slug;
+    if (conditionSlug) conditions.set(conditionSlug, numeric(condition.value ?? condition.system?.value, 1));
+  }
   return {
     id: token.id,
     token,
@@ -273,7 +279,7 @@ function virtualCombatant(token, team) {
     actionHistory: new Map(),
     targetUses: new Set(),
     cooldowns: new Map(),
-    conditions: new Map(),
+    conditions,
     profile: getTacticalProfile(actor),
     defeated: false,
   };
@@ -288,6 +294,26 @@ function chooseHealingTarget(actor, combatants) {
   return combatants
     .filter((candidate) => candidate.team === actor.team && !candidate.defeated && candidate.hp / candidate.maxHp <= 0.35)
     .sort((left, right) => left.hp / left.maxHp - right.hp / right.maxHp)[0] ?? null;
+}
+
+function applyVirtualStructuredEffects(option, attacker, target) {
+  const notes = [];
+  if (option.selfEffect) {
+    const key = `effect:${slug(option.selfEffect.name ?? option.name)}`;
+    attacker.conditions.set(key, 1);
+    notes.push(option.selfEffect.name ?? option.name);
+  }
+  for (const operation of option.conditionOperations ?? []) {
+    const recipient = operation.target === "self" ? attacker : target;
+    if (operation.operation === "remove") {
+      recipient.conditions.delete(operation.slug);
+      notes.push(`removed ${operation.slug}`);
+    } else if (operation.operation === "apply") {
+      recipient.conditions.set(operation.slug, Math.max(recipient.conditions.get(operation.slug) ?? 0, operation.value ?? 1));
+      notes.push(`${operation.slug}${Number(operation.value) > 1 ? ` ${operation.value}` : ""}`);
+    }
+  }
+  return notes;
 }
 
 function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = {}) {
@@ -356,7 +382,7 @@ function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = 
           const outcome = option.save
             ? `${affected.name} rolls ${option.save}: ${modeledCheck.total} vs DC ${modeledCheck.dc}, ${degreeText(modeledCheck.degree)} [explicit adapter]`
             : option.automatic
-              ? `${affected.name} is automatically affected [explicit adapter]`
+              ? `${affected.name}: no check is required by the PF2e entry`
               : `${affected.name}: ${modeledCheck.total} vs AC ${modeledCheck.dc}, ${degreeText(modeledCheck.degree)} [explicit adapter]`;
           let damage = 0;
           let damageNotes = [];
@@ -373,7 +399,8 @@ function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = 
               affected.conditions.set(condition.slug, Math.max(affected.conditions.get(condition.slug) ?? 0, condition.value));
             }
           }
-          outcomes.push(`${outcome}${option.damage && multiplier > 0 ? `; ${damage} ${option.damageType || ""} damage${damageNotes.length ? ` (${damageNotes.join(", ")})` : ""}, HP ${affected.hp}/${affected.maxHp}` : ""}${option.conditions.length && effectApplies ? `; ${option.conditions.map((condition) => `${condition.slug} ${condition.value}`).join(", ")}` : ""}`);
+          const structured = effectApplies ? applyVirtualStructuredEffects(option, attacker, affected) : [];
+          outcomes.push(`${outcome}${option.damage && multiplier > 0 ? `; ${damage} ${option.damageType || ""} damage${damageNotes.length ? ` (${damageNotes.join(", ")})` : ""}, HP ${affected.hp}/${affected.maxHp}` : ""}${option.conditions.length && effectApplies ? `; ${option.conditions.map((condition) => `${condition.slug} ${condition.value}`).join(", ")}` : ""}${structured.length ? `; ${structured.join(", ")}` : ""}`);
         }
         push(`${attacker.name} uses ${option.name}${option.kind === "spell" ? " (spell)" : ""}, spending ${cost} action${cost === 1 ? "" : "s"}: ${outcomes.join(" | ")}.`, option.damage ? "damage" : "action");
         if (option.attackTrait) map += 5;
@@ -625,16 +652,21 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             continue;
           }
         }
+        const nativeUse = await consumeNativeResource(option, attacker.actor);
+        if (!nativeUse.available) {
+          const key = option.useKey ?? option.id;
+          attacker.uses.set(key, 0);
+          await emit(`${attacker.name} cannot use ${option.name}: ${nativeUse.source}. The action is not spent.`, "error");
+          continue;
+        }
         actionsRemaining -= cost;
         consumeUse(attacker, option, target);
         if (option.healing) {
-          await consumeNativeResource(option, attacker.actor);
           const restored = await applyLiveHealing(target, option.healing);
-          await emit(`${attacker.name} uses ${option.name} on ${target.name}, restoring ${restored} HP; ${target.name} has ${target.hp}/${target.maxHp} HP.`, "heal");
+          await emit(`${attacker.name} casts ${option.name} through ${nativeUse.source} on ${target.name}, restoring ${restored} HP; ${target.name} has ${target.hp}/${target.maxHp} HP.`, "heal");
           await pause(actionDelay());
           continue;
         }
-        await consumeNativeResource(option, attacker.actor);
         if (option.defensive && !option.damage) {
           const nativeDefense = await applyNativeDefense(option, attacker.actor);
           const applied = await applyConditions(attacker, option.conditions);
@@ -680,7 +712,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
               ? `${affected.name} rolls ${option.save}: ${nativeCheck.total} vs DC ${option.dc}, ${degreeText(degree)} [PF2e native]`
               : `${affected.name}: ${nativeCheck.total} vs ${option.defenseStatistic ?? "AC"} ${nativeCheck.dc}, ${degreeText(degree)} [PF2e native]`
             : option.automatic
-              ? `${affected.name} is automatically affected [explicit adapter]`
+              ? `${affected.name}: no check is required by the PF2e entry`
               : option.save
                 ? `${affected.name} rolls ${option.save}: ${check.total} vs DC ${check.dc}, ${degreeText(degree)} [modeled adapter]`
                 : `${affected.name}: ${check.total} vs ${option.defenseStatistic ?? "AC"} ${check.dc}, ${degreeText(degree)} [modeled adapter]`;
@@ -688,13 +720,14 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           let damage = 0;
           if (option.damage && multiplier > 0) damage = await applyLiveDamage(affected, option.damage, degree, multiplier);
           const conditions = effectApplies ? await applyConditions(affected, option.conditions) : [];
-          outcomes.push(`${outcome}${damage ? `; ${damage} ${option.damageType || ""} damage, HP ${affected.hp}/${affected.maxHp}` : ""}${conditions.length ? `; ${conditions.join(", ")}` : ""}`);
+          const structured = effectApplies ? await applyNativeStructuredEffects(option, attacker, affected) : [];
+          outcomes.push(`${outcome}${damage ? `; ${damage} ${option.damageType || ""} damage, HP ${affected.hp}/${affected.maxHp}` : ""}${conditions.length || structured.length ? `; ${[...conditions, ...structured].join(", ")}` : ""}`);
           if (affected.defeated) {
             const trackedTarget = activeCombat()?.combatants?.find((candidate) => candidate.tokenId === affected.id);
             await trackedTarget?.update({ defeated: true });
           }
         }
-        await emit(`${attacker.name} uses ${option.name}${option.kind === "spell" ? " (spell)" : ""}, spending ${cost} action${cost === 1 ? "" : "s"}: ${outcomes.join(" | ")}.`, option.damage ? "damage" : "action");
+        await emit(`${attacker.name} uses ${option.name}${option.kind === "spell" ? ` through ${nativeUse.source}` : ""}, spending ${cost} action${cost === 1 ? "" : "s"}: ${outcomes.join(" | ")}.`, option.damage ? "damage" : "action");
         target.token.object?.control({ releaseOthers: true });
         await canvas.animatePan({ x: target.token.object?.center.x, y: target.token.object?.center.y, duration: Math.min(500, actionDelay() / 3) });
         await pause(actionDelay());
