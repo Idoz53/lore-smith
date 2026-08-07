@@ -1,3 +1,6 @@
+import { attachSimulationAdapters, buildCoverageReport } from "./simulation-adapters.js";
+import { getTacticalProfile, tacticalOptionScore } from "./tactical-profiles.js";
+
 const CONDITION_NAMES = [
   "blinded", "clumsy", "confused", "controlled", "dazzled", "deafened", "doomed",
   "drained", "dying", "enfeebled", "fascinated", "fatigued", "fleeing", "frightened",
@@ -94,6 +97,7 @@ function spellStatistic(actor, item) {
   return {
     attack: numberValue(statistic?.check, numberValue(entry?.system?.spelldc?.value, level + 7)),
     dc: numberValue(statistic?.dc, numberValue(entry?.system?.spelldc?.dc, level + 17)),
+    nativeStatistic: statistic ?? null,
   };
 }
 
@@ -113,6 +117,14 @@ function frequencyUses(item) {
   const description = plainText(item.system?.description?.value);
   if (/\bonce per (?:day|hour|minute|round)\b/i.test(description)) return 1;
   return null;
+}
+
+function rechargeData(description = "") {
+  const match = description.match(
+    /(?:can't|cannot)\s+use[^.]{0,80}again\s+for\s+(\d+d\d+|\d+)\s+rounds?|recharge(?:s|d)?[^.]{0,40}(\d+d\d+|\d+)\s+rounds?/i,
+  );
+  const formula = match?.[1] ?? match?.[2];
+  return formula ? { formula } : null;
 }
 
 function spellResource(item, actor, traits, description) {
@@ -204,12 +216,15 @@ function optionFromItem(item, actor) {
     save,
     dc: statistic.dc,
     attack: statistic.attack,
+    nativeStatistic: statistic.nativeStatistic ?? null,
     automatic,
     defensive,
     utility: !damage && !healing && !conditions.length,
     attackTrait: traits.includes("attack"),
     limitedUses: resource.limitedUses,
     useKey: resource.useKey,
+    recharge: rechargeData(description),
+    targetOnce: /temporarily immune|can't be affected again|cannot be affected again/i.test(description),
     description,
   };
 }
@@ -237,6 +252,8 @@ function strikeOptions(actor) {
       automatic: false,
       defensive: false,
       attackTrait: true,
+      nativeAction: action,
+      nativeStatistic: null,
       limitedUses: null,
       useKey: item?.id ?? action.slug ?? action.label,
       description: "",
@@ -244,9 +261,95 @@ function strikeOptions(actor) {
   });
 }
 
+function actorStatistic(actor, statistic) {
+  return actor.getStatistic?.(statistic) ?? actor.skills?.[statistic] ?? null;
+}
+
+function statisticRank(statistic) {
+  return numberValue(statistic?.rank, numberValue(statistic?.proficient, 0));
+}
+
+function systemActionOptions(actor) {
+  const definitions = [
+    { slug: "demoralize", name: "Demoralize", skill: "intimidation", defense: "will", range: 30, condition: "frightened", map: false },
+    { slug: "trip", name: "Trip", skill: "athletics", defense: "reflex", range: 5, condition: "prone", map: true },
+    { slug: "grapple", name: "Grapple", skill: "athletics", defense: "fortitude", range: 5, condition: "grabbed", map: true },
+    { slug: "shove", name: "Shove", skill: "athletics", defense: "fortitude", range: 5, condition: null, map: true },
+    { slug: "feint", name: "Feint", skill: "deception", defense: "perception", range: 5, condition: "off-guard", map: false },
+    { slug: "tumble-through", name: "Tumble Through", skill: "acrobatics", defense: "reflex", range: 5, condition: null, map: false },
+  ];
+  const actions = definitions.flatMap((definition) => {
+    const statistic = actorStatistic(actor, definition.skill);
+    if (!statistic || statisticRank(statistic) < 1) return [];
+    return [{
+      id: `pf2e-action:${definition.slug}`,
+      item: null,
+      name: definition.name,
+      kind: "skill",
+      costs: [1],
+      damage: "",
+      healing: "",
+      damageType: "",
+      conditions: definition.condition ? [{ slug: definition.condition, value: 1 }] : [],
+      traits: definition.map ? ["attack", "skill"] : ["skill"],
+      range: definition.range,
+      area: null,
+      save: null,
+      defenseStatistic: definition.defense,
+      checkStatistic: definition.skill,
+      dc: 0,
+      attack: numberValue(statistic?.check, numberValue(statistic, 0)),
+      automatic: false,
+      defensive: false,
+      utility: !definition.condition,
+      attackTrait: definition.map,
+      limitedUses: null,
+      useKey: `pf2e-action:${definition.slug}`,
+      recharge: null,
+      targetOnce: definition.slug === "demoralize",
+      nativeStatistic: statistic,
+      nativeSystemAction: game.pf2e?.actions?.get?.(definition.slug) ?? null,
+      description: `${definition.name} uses ${definition.skill} against ${definition.defense}.`,
+    }];
+  });
+
+  const shield = actor.items?.find?.((item) =>
+    item.type === "shield" || item.type === "armor" && item.system?.category === "shield");
+  if (shield) {
+    actions.push({
+      id: "pf2e-action:raise-a-shield",
+      item: shield,
+      name: "Raise a Shield",
+      kind: "skill",
+      costs: [1],
+      damage: "",
+      healing: "",
+      damageType: "",
+      conditions: [],
+      traits: [],
+      range: 0,
+      area: null,
+      save: null,
+      dc: 0,
+      attack: 0,
+      automatic: true,
+      defensive: true,
+      utility: false,
+      attackTrait: false,
+      limitedUses: null,
+      useKey: "pf2e-action:raise-a-shield",
+      nativeStatistic: null,
+      nativeSystemAction: game.pf2e?.actions?.get?.("raise-a-shield") ?? null,
+      description: "Raise the equipped shield and gain its circumstance bonus to AC.",
+    });
+  }
+  return actions;
+}
+
 export function buildActionCatalog(actor) {
   const options = [
     ...strikeOptions(actor),
+    ...systemActionOptions(actor),
     ...actor.items.map((item) => optionFromItem(item, actor)).filter(Boolean),
   ];
   const seen = new Set();
@@ -255,14 +358,15 @@ export function buildActionCatalog(actor) {
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  });
+  }).map(attachSimulationAdapters);
 }
 
-export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0) {
+export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0, round = 1) {
   let available = actor.options.filter((option) => {
     const minimumCost = Math.min(...option.costs.filter(Number.isFinite));
     const uses = actor.uses.get(option.useKey ?? option.id);
-    return minimumCost <= actionsRemaining && (uses === undefined || uses > 0);
+    const cooldown = actor.cooldowns?.get(option.useKey ?? option.id) ?? 0;
+    return minimumCost <= actionsRemaining && cooldown <= 0 && (uses === undefined || uses > 0);
   });
   const varied = available.filter((option) =>
     option.kind === "strike" || !actor.turnUses?.has(option.id));
@@ -270,7 +374,8 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
   const injured = combatants
     .filter((candidate) => candidate.team === actor.team && !candidate.defeated && candidate.hp < candidate.maxHp)
     .sort((left, right) => left.hp / left.maxHp - right.hp / right.maxHp)[0];
-  if (injured && injured.hp / injured.maxHp <= 0.6) {
+  const profile = actor.profile ?? getTacticalProfile(actor.actor);
+  if (injured && injured.hp / injured.maxHp <= (profile.healingThreshold ?? 0.6)) {
     const healing = available.filter((option) => option.healing).sort((left, right) => averageFormula(right.healing) - averageFormula(left.healing))[0];
     if (healing) return { option: healing, target: injured, cost: Math.min(...healing.costs.filter(Number.isFinite)) };
   }
@@ -288,20 +393,38 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
     const mapCost = option.attackTrait ? mapPenalty / 2 : 0;
     const spellBias = option.kind === "spell" ? 8 : option.kind === "ability" ? 4 : option.kind === "item" ? 2 : 0;
     const repetitionPenalty = (actor.actionHistory?.get(option.id) ?? 0) * (option.kind === "strike" ? 0.25 : 2.5);
+    const remainingUses = option.limitedUses === null
+      ? null
+      : actor.uses.get(option.useKey ?? option.id) ?? option.limitedUses;
+    const profileValue = tacticalOptionScore(profile, option, {
+      actor,
+      target,
+      round,
+      remainingUses,
+      actionsRemaining,
+      mapPenalty,
+    });
+    const targetImmunityPenalty = option.targetOnce && actor.targetUses?.has(`${option.id}:${target.id}`)
+      ? 1000
+      : 0;
     return {
       option,
       target: option.defensive || option.utility ? actor : target,
       cost,
       score: (expected + conditionValue + defensiveValue + utilityValue + spellBias) / Math.max(1, cost)
-        - mapCost - repetitionPenalty,
+        - mapCost - repetitionPenalty + profileValue - targetImmunityPenalty,
     };
   }).sort((left, right) => right.score - left.score);
   return scored[0] ?? null;
 }
 
-export function consumeUse(actor, option) {
+export function consumeUse(actor, option, target = null) {
   actor.turnUses?.add(option.id);
   actor.actionHistory?.set(option.id, (actor.actionHistory.get(option.id) ?? 0) + 1);
+  if (target && option.targetOnce) actor.targetUses?.add(`${option.id}:${target.id}`);
+  if (option.recharge) {
+    actor.cooldowns?.set(option.useKey ?? option.id, Math.max(1, rollFormulaValue(option.recharge.formula)));
+  }
   if (option.limitedUses === null) return;
   const key = option.useKey ?? option.id;
   const remaining = actor.uses.get(key) ?? option.limitedUses;
@@ -382,6 +505,11 @@ export async function applyConditions(target, conditions) {
   const applied = [];
   for (const condition of conditions) {
     try {
+      if (typeof target.actor.increaseCondition === "function") {
+        await target.actor.increaseCondition(condition.slug, { value: condition.value });
+        applied.push(`${condition.slug}${condition.value > 1 ? ` ${condition.value}` : ""}`);
+        continue;
+      }
       const source = game.pf2e.ConditionManager.getCondition(condition.slug)?.toObject();
       if (!source) continue;
       delete source._id;
@@ -393,4 +521,8 @@ export async function applyConditions(target, conditions) {
     }
   }
   return applied;
+}
+
+export function actionCoverageReport(tokens, partyIds = null, enemyIds = null) {
+  return buildCoverageReport(tokens, partyIds, enemyIds, buildActionCatalog);
 }

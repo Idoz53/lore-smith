@@ -24,6 +24,15 @@ The module provides:
 - side-by-side creature and item source previews before copying a compendium entry.
 - PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
   separately from the randomized character victory estimate.
+- PF2e-native live checks for prepared strikes, spellcasting statistics, saving
+  throws, skill actions, damage, healing, conditions, shield state, and finite
+  resources, with explicit modeled fallbacks when a native call is unavailable;
+- explicit adapters for attacks, saves, damage, healing, IWR, conditions, area
+  templates, spell slots, frequencies, recharge timers, and common skill actions;
+- data-driven tactical profiles for all 29 PF2e classes, selected from the
+  actor's Class item rather than a character's name;
+- a per-encounter coverage report that identifies native, modeled, partial, and
+  unsupported actions for every combatant.
 
 ## Prototype warning
 
@@ -49,6 +58,11 @@ optional in Module Settings and is off by default.
 Selecting **Live Combat** opens a separate Lore Smith window immediately. It
 shows preparation errors as well as the complete action log, so failed setup is
 visible instead of silently stopping.
+
+Both simulation modes include a collapsible **Simulation coverage** report.
+Review partial and unsupported entries before treating an encounter estimate as
+reliable; the report is deliberately explicit about mechanics that still need a
+dedicated adapter.
 
 ## Content and licensing
 

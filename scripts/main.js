@@ -1,5 +1,6 @@
 import {
   actionTargets,
+  actionCoverageReport,
   applyConditions,
   buildActionCatalog,
   checkDegree,
@@ -10,6 +11,14 @@ import {
   saveModifier,
   templateData,
 } from "./combat-engine.js";
+import {
+  adjustDamageForIwr,
+  applyNativeDefense,
+  consumeNativeResource,
+  resolveModeledCheck,
+  resolveNativeCheck,
+} from "./simulation-adapters.js";
+import { getTacticalProfile } from "./tactical-profiles.js";
 
 const MODULE_ID = "lore-smith";
 const FLAG_SCOPE = MODULE_ID;
@@ -262,7 +271,10 @@ function virtualCombatant(token, team) {
     uses,
     turnUses: new Set(),
     actionHistory: new Map(),
+    targetUses: new Set(),
+    cooldowns: new Map(),
     conditions: new Map(),
+    profile: getTacticalProfile(actor),
     defeated: false,
   };
 }
@@ -297,14 +309,18 @@ function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = 
       const attacker = turn.combatant;
       if (attacker.defeated) continue;
       attacker.turnUses.clear();
+      attacker.conditions.delete("defended");
+      for (const [key, roundsLeft] of attacker.cooldowns) {
+        attacker.cooldowns.set(key, Math.max(0, roundsLeft - 1));
+      }
       let actionsRemaining = 3;
       let map = 0;
       while (actionsRemaining > 0) {
-        const choice = chooseCatalogAction(attacker, combatants, actionsRemaining, map);
+        const choice = chooseCatalogAction(attacker, combatants, actionsRemaining, map, rounds);
         if (!choice) break;
         const { option, target, cost } = choice;
         actionsRemaining -= cost;
-        consumeUse(attacker, option);
+        consumeUse(attacker, option, target);
         if (option.healing) {
           const amount = Math.max(1, rollFormulaValue(option.healing));
           const before = target.hp;
@@ -321,42 +337,43 @@ function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = 
         const targets = actionTargets(option, target, combatants);
         const outcomes = [];
         for (const affected of targets) {
-          let multiplier = 0;
-          let outcome = "no effect";
-          if (option.save) {
-            const natural = rollDie(20);
-            const modifier = saveModifier(affected, option.save);
-            const total = natural + modifier;
-            const degree = checkDegree(total, option.dc, natural);
-            multiplier = [2, 1, 0.5, 0][degree];
-            outcome = `${affected.name} rolls ${option.save}: d20 ${natural} ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)} = ${total} vs DC ${option.dc}, ${degreeText(degree)}`;
-          } else if (option.automatic) {
-            multiplier = 1;
-            outcome = `${affected.name} is automatically affected`;
-          } else {
-            const natural = rollDie(20);
-            const modifier = option.attack - (option.attackTrait ? map : 0);
-            const baseAc = affected.ac;
-            const conditionPenalty = (affected.conditions.has("off-guard") || affected.conditions.has("prone") ? 2 : 0)
-              + Math.max(affected.conditions.get("frightened") ?? 0, affected.conditions.get("sickened") ?? 0);
-            const effectiveAc = Math.max(0, baseAc - conditionPenalty);
-            const total = natural + modifier;
-            const degree = checkDegree(total, effectiveAc, natural);
-            multiplier = degree === 3 ? 2 : degree === 2 ? 1 : 0;
-            outcome = `${affected.name}: d20 ${natural} ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)} = ${total} vs AC ${effectiveAc}${conditionPenalty ? ` (base ${baseAc}, conditions −${conditionPenalty})` : ""}, ${degreeText(degree)}`;
-          }
+          const modeledCheck = resolveModeledCheck({
+            option,
+            attacker,
+            target: affected,
+            mapPenalty: map,
+            ac: (candidate) => {
+              const penalty = (candidate.conditions.has("off-guard") || candidate.conditions.has("prone") ? 2 : 0)
+                + Math.max(candidate.conditions.get("frightened") ?? 0, candidate.conditions.get("sickened") ?? 0);
+              return Math.max(0, candidate.ac - penalty);
+            },
+            saveModifier,
+            rollDie,
+            checkDegree,
+          });
+          const multiplier = modeledCheck.multiplier;
+          const effectApplies = option.save ? modeledCheck.degree <= 1 : option.automatic || modeledCheck.degree >= 2;
+          const outcome = option.save
+            ? `${affected.name} rolls ${option.save}: ${modeledCheck.total} vs DC ${modeledCheck.dc}, ${degreeText(modeledCheck.degree)} [explicit adapter]`
+            : option.automatic
+              ? `${affected.name} is automatically affected [explicit adapter]`
+              : `${affected.name}: ${modeledCheck.total} vs AC ${modeledCheck.dc}, ${degreeText(modeledCheck.degree)} [explicit adapter]`;
           let damage = 0;
+          let damageNotes = [];
           if (option.damage && multiplier > 0) {
-            damage = Math.max(1, Math.floor(rollFormulaValue(option.damage) * multiplier));
+            const rolledDamage = Math.max(1, Math.floor(rollFormulaValue(option.damage) * multiplier));
+            const adjusted = adjustDamageForIwr(rolledDamage, option.damageType, affected);
+            damage = adjusted.amount;
+            damageNotes = adjusted.notes;
             affected.hp = Math.max(0, affected.hp - damage);
             affected.defeated = affected.hp <= 0;
           }
-          if (option.conditions.length && multiplier > 0) {
+          if (option.conditions.length && effectApplies) {
             for (const condition of option.conditions) {
               affected.conditions.set(condition.slug, Math.max(affected.conditions.get(condition.slug) ?? 0, condition.value));
             }
           }
-          outcomes.push(`${outcome}${damage ? `; ${damage} ${option.damageType || ""} damage, HP ${affected.hp}/${affected.maxHp}` : ""}${option.conditions.length && multiplier > 0 ? `; ${option.conditions.map((condition) => `${condition.slug} ${condition.value}`).join(", ")}` : ""}`);
+          outcomes.push(`${outcome}${option.damage && multiplier > 0 ? `; ${damage} ${option.damageType || ""} damage${damageNotes.length ? ` (${damageNotes.join(", ")})` : ""}, HP ${affected.hp}/${affected.maxHp}` : ""}${option.conditions.length && effectApplies ? `; ${option.conditions.map((condition) => `${condition.slug} ${condition.value}`).join(", ")}` : ""}`);
         }
         push(`${attacker.name} uses ${option.name}${option.kind === "spell" ? " (spell)" : ""}, spending ${cost} action${cost === 1 ? "" : "s"}: ${outcomes.join(" | ")}.`, option.damage ? "damage" : "action");
         if (option.attackTrait) map += 5;
@@ -466,6 +483,25 @@ async function applyLiveDamage(target, formula, degree, multiplierOverride = nul
 
 async function applyLiveHealing(target, formula) {
   const hp = actorHp(target.actor);
+  const DamageRollClass = CONFIG.Dice.rolls?.find((RollClass) => RollClass.name === "DamageRoll");
+  if (DamageRollClass && typeof target.actor.applyDamage === "function") {
+    try {
+      const healing = await new DamageRollClass(`{${formula}[healing]}`).evaluate();
+      await target.actor.applyDamage({
+        damage: healing,
+        token: target.token.object,
+        item: null,
+        rollOptions: new Set(["lore-smith", "action:live-combat", "healing"]),
+      });
+      const afterNative = actorHp(target.actor);
+      target.hp = afterNative.value;
+      target.maxHp = afterNative.max;
+      target.defeated = false;
+      return Math.max(0, afterNative.value - hp.value);
+    } catch (error) {
+      console.warn(`${MODULE_ID} | PF2e healing application failed; using HP fallback.`, error);
+    }
+  }
   const amount = Math.max(1, rollFormula(formula));
   const after = Math.min(hp.max, hp.value + amount);
   await target.actor.update({ "system.attributes.hp.value": after });
@@ -553,6 +589,13 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
       const attacker = entry.combatant;
       if (attacker.defeated) continue;
       attacker.turnUses.clear();
+      attacker.conditions.delete("defended");
+      for (const [key, roundsLeft] of attacker.cooldowns) {
+        attacker.cooldowns.set(key, Math.max(0, roundsLeft - 1));
+      }
+      if (attacker.actor.system?.attributes?.shield?.raised) {
+        await attacker.actor.update({ "system.attributes.shield.raised": false });
+      }
       const turnCombat = activeCombat();
       if (turnCombat && entry.tracked) {
         const actualIndex = turnCombat.turns.findIndex((candidate) => candidate.id === entry.tracked.id);
@@ -565,7 +608,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           await emit("Live combat stopped by the GM.", "round");
           return { stopped: true, round };
         }
-        const choice = chooseCatalogAction(attacker, combatants, actionsRemaining, map);
+        const choice = chooseCatalogAction(attacker, combatants, actionsRemaining, map, round);
         if (!choice) break;
         const { option, target, cost } = choice;
         if (!option.defensive && target !== attacker) {
@@ -583,16 +626,19 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           }
         }
         actionsRemaining -= cost;
-        consumeUse(attacker, option);
+        consumeUse(attacker, option, target);
         if (option.healing) {
+          await consumeNativeResource(option, attacker.actor);
           const restored = await applyLiveHealing(target, option.healing);
           await emit(`${attacker.name} uses ${option.name} on ${target.name}, restoring ${restored} HP; ${target.name} has ${target.hp}/${target.maxHp} HP.`, "heal");
           await pause(actionDelay());
           continue;
         }
+        await consumeNativeResource(option, attacker.actor);
         if (option.defensive && !option.damage) {
+          const nativeDefense = await applyNativeDefense(option, attacker.actor);
           const applied = await applyConditions(attacker, option.conditions);
-          await emit(`${attacker.name} uses ${option.name}${applied.length ? ` and gains ${applied.join(", ")}` : ""}; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "action");
+          await emit(`${attacker.name} uses ${option.name}${applied.length ? ` and gains ${applied.join(", ")}` : ""} [${nativeDefense.source}]; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "action");
           await pause(actionDelay());
           continue;
         }
@@ -605,32 +651,43 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         }
         const outcomes = [];
         for (const affected of targetList) {
-          let multiplier = 0;
-          let degree = 1;
-          let outcome;
-          if (option.save) {
-            const natural = rollDie(20);
-            const modifier = saveModifier(affected, option.save);
-            const total = natural + modifier;
-            degree = checkDegree(total, option.dc, natural);
-            multiplier = [2, 1, 0.5, 0][degree];
-            outcome = `${affected.name} rolls ${option.save}: d20 ${natural} ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)} = ${total} vs DC ${option.dc}, ${degreeText(degree)}`;
-          } else if (option.automatic) {
-            degree = 2;
-            multiplier = 1;
-            outcome = `${affected.name} is automatically affected`;
-          } else {
-            const natural = rollDie(20);
-            const modifier = option.attack - (option.attackTrait ? map : 0);
-            const dc = actorAc(affected.actor);
-            const total = natural + modifier;
-            degree = checkDegree(total, dc, natural);
-            multiplier = degree === 3 ? 2 : degree === 2 ? 1 : 0;
-            outcome = `${affected.name}: d20 ${natural} ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)} = ${total} vs AC ${dc}, ${degreeText(degree)}`;
-          }
+          const nativeCheck = option.automatic ? null : await resolveNativeCheck({
+            option,
+            attacker,
+            target: affected,
+            mapPenalty: map,
+            dc: option.save ? option.dc : actorAc(affected.actor),
+            checkDegree,
+          });
+          const check = nativeCheck ?? resolveModeledCheck({
+            option,
+            attacker,
+            target: affected,
+            mapPenalty: map,
+            ac: (candidate) => actorAc(candidate.actor),
+            saveModifier,
+            rollDie,
+            checkDegree,
+          });
+          const degree = check.degree;
+          const multiplier = nativeCheck
+            ? option.save
+              ? [2, 1, 0.5, 0][degree]
+              : degree === 3 ? 2 : degree === 2 ? 1 : 0
+            : check.multiplier;
+          const outcome = nativeCheck
+            ? option.save
+              ? `${affected.name} rolls ${option.save}: ${nativeCheck.total} vs DC ${option.dc}, ${degreeText(degree)} [PF2e native]`
+              : `${affected.name}: ${nativeCheck.total} vs ${option.defenseStatistic ?? "AC"} ${nativeCheck.dc}, ${degreeText(degree)} [PF2e native]`
+            : option.automatic
+              ? `${affected.name} is automatically affected [explicit adapter]`
+              : option.save
+                ? `${affected.name} rolls ${option.save}: ${check.total} vs DC ${check.dc}, ${degreeText(degree)} [modeled adapter]`
+                : `${affected.name}: ${check.total} vs ${option.defenseStatistic ?? "AC"} ${check.dc}, ${degreeText(degree)} [modeled adapter]`;
+          const effectApplies = option.save ? degree <= 1 : option.automatic || degree >= 2;
           let damage = 0;
           if (option.damage && multiplier > 0) damage = await applyLiveDamage(affected, option.damage, degree, multiplier);
-          const conditions = multiplier > 0 ? await applyConditions(affected, option.conditions) : [];
+          const conditions = effectApplies ? await applyConditions(affected, option.conditions) : [];
           outcomes.push(`${outcome}${damage ? `; ${damage} ${option.damageType || ""} damage, HP ${affected.hp}/${affected.maxHp}` : ""}${conditions.length ? `; ${conditions.join(", ")}` : ""}`);
           if (affected.defeated) {
             const trackedTarget = activeCombat()?.combatants?.find((candidate) => candidate.tokenId === affected.id);
@@ -1170,7 +1227,13 @@ Hooks.once("ready", () => {
     ui.notifications.error("Lore Smith requires the Pathfinder Second Edition system.");
     return;
   }
-  game.loreSmith = { open: openLoreSmith, simulateEncounter, runLiveReplay };
+  game.loreSmith = {
+    open: openLoreSmith,
+    simulateEncounter,
+    runLiveReplay,
+    buildCoverageReport: (tokens, partyIds = null, enemyIds = null) =>
+      actionCoverageReport(tokens, partyIds, enemyIds),
+  };
 });
 
 Hooks.on("getSceneControlButtons", (controls) => {

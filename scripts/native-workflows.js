@@ -1,3 +1,5 @@
+import { coverageReportHtml } from "./simulation-adapters.js";
+
 const LS_MODULE_ID = "lore-smith";
 const { ApplicationV2: LSApplicationV2, HandlebarsApplicationMixin: LSHandlebarsMixin, DialogV2: LSDialogV2 } = foundry.applications.api;
 
@@ -743,6 +745,7 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
   stopped = false;
   status = "Preparing encounter";
   summary = null;
+  coverageHtml = "";
 
   async _prepareContext(options) {
     return {
@@ -755,6 +758,9 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
       stopped: this.stopped,
       status: this.status,
       summary: this.summary,
+      coverageHtml: this.coverageHtml
+        ? new Handlebars.SafeString(this.coverageHtml)
+        : null,
     };
   }
 
@@ -912,6 +918,8 @@ async function lsRunIterations() {
   }
   const iterations = Math.max(1, Math.min(1000, game.settings.get(LS_MODULE_ID, "combatIterations")));
   const report = lsRunEncounterSample(sides, iterations, 20);
+  const coverage = game.loreSmith.buildCoverageReport(sides.tokens, sides.partyIds, sides.enemyIds);
+  const coverageHtml = coverageReportHtml(coverage, foundry.utils.escapeHTML);
   const logHtml = report.samples.map((sample, index) => `
     <details ${index === 0 ? "open" : ""}>
       <summary>Iteration ${index + 1} · ${sample.partyWon ? "Characters win" : "Opposition wins"} · ${sample.rounds} rounds</summary>
@@ -925,6 +933,7 @@ async function lsRunIterations() {
     </header>
     <p>Victory is a randomized simulation estimate. Difficulty is calculated separately from PF2e encounter XP, adjusted for a ${report.difficulty.partySize}-character party.</p>
     <p>Iterations are configured in <strong>Game Settings → Configure Settings → Module Settings → Lore Smith</strong>.</p>
+    ${coverageHtml}
     <section>${logHtml}</section>
   </div>`;
   new LSDialogV2({
@@ -952,6 +961,8 @@ async function lsRunLiveCombat() {
   try {
     const previewIterations = Math.max(20, Math.min(200, game.settings.get(LS_MODULE_ID, "combatIterations")));
     const preview = lsRunEncounterSample(sides, previewIterations);
+    const coverage = game.loreSmith.buildCoverageReport(sides.tokens, sides.partyIds, sides.enemyIds);
+    log.coverageHtml = coverageReportHtml(coverage, foundry.utils.escapeHTML);
     log.summary = {
       victoryRate: `${preview.victoryRate}%`,
       difficulty: preview.difficulty.label,

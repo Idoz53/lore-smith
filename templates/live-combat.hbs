@@ -21,6 +21,12 @@
       <article><span>Expected length</span><strong>{{summary.averageRounds}}</strong><small>rounds</small></article>
     </section>
   {{/if}}
+  {{#if coverageHtml}}
+    <details class="ls-live-coverage">
+      <summary><i class="fa-solid fa-clipboard-check"></i> Simulation coverage</summary>
+      {{{coverageHtml}}}
+    </details>
+  {{/if}}
   <div class="ls-live-notice"><i class="fa-solid fa-comment-slash"></i> This log stays in Lore Smith. Chat mirroring is optional in Module Settings.</div>
   <div class="ls-live-entries">
     {{#each entries}}<p class="{{kind}}">{{text}}</p>{{else}}<p class="empty">Waiting for the first action...</p>{{/each}}
