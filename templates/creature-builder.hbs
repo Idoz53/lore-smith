@@ -1,0 +1,108 @@
+<section class="ls-builder">
+  <header class="ls-builder-heading">
+    <div><span>PF2e native actor</span><h1>Creature Builder</h1><p>Step {{stepNumber}} of 5</p></div>
+    <div class="ls-builder-actor"><img src="{{actor.img}}"><strong>{{actor.name}}</strong><small>Level {{actor.level}} NPC</small></div>
+  </header>
+
+  <div class="ls-step-track">
+    <span class="{{#if steps.source}}active{{/if}}">1. Starting point</span>
+    <span class="{{#if steps.identity}}active{{/if}}">2. Identity</span>
+    <span class="{{#if steps.defenses}}active{{/if}}">3. Statistics</span>
+    <span class="{{#if steps.content}}active{{/if}}">4. Actions & spells</span>
+    <span class="{{#if steps.review}}active{{/if}}">5. Finish</span>
+  </div>
+
+  <main class="ls-builder-body">
+    {{#if steps.source}}
+      <section class="ls-builder-step">
+        <h2>Choose a starting point</h2>
+        <p>Search every installed PF2e Actor compendium by creature name. Loading a source copies its native statistics, strikes, actions, spells, traits, and automation into this actor.</p>
+        <div class="ls-builder-search">
+          <input name="sourceQuery" value="{{sourceQuery}}" placeholder="Search creatures, e.g. flame drake">
+          <button data-action="searchSource"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+          <button class="secondary" data-action="useCurrent"><i class="fa-regular fa-file"></i> Start from current / blank NPC</button>
+        </div>
+        <div class="ls-builder-results">
+          {{#each sourceResults}}
+            <article><img src="{{img}}"><div><strong>{{name}}</strong><small>Level {{level}} · {{pack}}</small></div><button data-action="useSource" data-uuid="{{uuid}}">Use as base</button></article>
+          {{else}}
+            <div class="ls-builder-empty">Search to find official PF2e NPCs available in your installed compendiums.</div>
+          {{/each}}
+        </div>
+      </section>
+    {{/if}}
+
+    {{#if steps.identity}}
+      <section class="ls-builder-step">
+        <h2>Identity</h2>
+        <p>These values write directly to the native PF2e NPC actor.</p>
+        <div class="ls-form-grid">
+          <label class="wide">Creature name<input name="name" value="{{actor.name}}"></label>
+          <label>Level<input name="level" type="number" min="-1" max="25" value="{{actor.level}}"></label>
+          <label>Size<select name="size">
+            <option value="{{actor.size}}" selected>Current: {{actor.size}}</option>
+            <option value="tiny">Tiny</option><option value="sm">Small</option><option value="med">Medium</option>
+            <option value="lg">Large</option><option value="huge">Huge</option><option value="grg">Gargantuan</option>
+          </select></label>
+          <label class="wide">Traits<input name="traits" value="{{actor.traits}}" placeholder="dragon, fire, magical"></label>
+        </div>
+      </section>
+    {{/if}}
+
+    {{#if steps.defenses}}
+      <section class="ls-builder-step">
+        <h2>Core statistics</h2>
+        <p>Enter the final PF2e modifiers. The native sheet and PF2e system will use them for checks, saves, attacks, and encounter play.</p>
+        <div class="ls-form-grid stats">
+          <label>Armor Class<input name="ac" type="number" value="{{actor.ac}}"></label>
+          <label>Hit Points<input name="hp" type="number" min="1" value="{{actor.hp}}"></label>
+          <label>Perception<input name="perception" type="number" value="{{actor.perception}}"></label>
+          <label>Fortitude<input name="fortitude" type="number" value="{{actor.fortitude}}"></label>
+          <label>Reflex<input name="reflex" type="number" value="{{actor.reflex}}"></label>
+          <label>Will<input name="will" type="number" value="{{actor.will}}"></label>
+          <label>Land Speed (feet)<input name="speed" type="number" min="0" step="5" value="{{actor.speed}}"></label>
+        </div>
+        <div class="ls-builder-tip"><i class="fa-solid fa-circle-info"></i><span>Special speeds, senses, immunities, weaknesses, resistances, languages, and custom statistic details remain editable on the native NPC sheet after this guide.</span></div>
+      </section>
+    {{/if}}
+
+    {{#if steps.content}}
+      <section class="ls-builder-step">
+        <h2>Actions, abilities, strikes, and spells</h2>
+        <p>Search native PF2e Item compendiums. Added entries keep their PF2e rules, traits, action costs, inline rolls, spell data, and automation.</p>
+        <div class="ls-builder-search">
+          <input name="contentQuery" value="{{contentQuery}}" placeholder="Search abilities or spells, e.g. breath weapon">
+          <button data-action="searchContent"><i class="fa-solid fa-magnifying-glass"></i> Search</button>
+        </div>
+        <div class="ls-content-columns">
+          <section><h3>Search results</h3><div class="ls-builder-results compact">
+            {{#each contentResults}}
+              <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}} · Level {{level}} · {{pack}}</small></div><button data-action="addContent" data-uuid="{{uuid}}"><i class="fa-solid fa-plus"></i></button></article>
+            {{else}}<div class="ls-builder-empty">Search installed PF2e compendiums.</div>{{/each}}
+          </div></section>
+          <section><h3>On this creature</h3><div class="ls-builder-results compact">
+            {{#each actor.items}}
+              <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}}</small></div><button class="danger" data-action="removeContent" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></article>
+            {{else}}<div class="ls-builder-empty">No embedded actions or items yet.</div>{{/each}}
+          </div></section>
+        </div>
+      </section>
+    {{/if}}
+
+    {{#if steps.review}}
+      <section class="ls-builder-step ls-builder-review">
+        <i class="fa-solid fa-dragon"></i>
+        <h2>{{actor.name}} is ready</h2>
+        <p>Level {{actor.level}} · AC {{actor.ac}} · HP {{actor.hp}} · Perception {{actor.perception}}</p>
+        <p>{{actor.items.length}} native PF2e embedded entries are attached. Finish to return to the regular PF2e NPC sheet for any detailed adjustments.</p>
+        <button data-action="finish"><i class="fa-solid fa-check"></i> Finish creature</button>
+      </section>
+    {{/if}}
+  </main>
+
+  <footer class="ls-builder-navigation">
+    <div>{{#if canBack}}<button class="round" data-action="previous" data-tooltip="Previous step"><i class="fa-solid fa-arrow-left"></i></button>{{/if}}</div>
+    <span>Changes are saved to {{actor.name}}</span>
+    <div>{{#if canNext}}<button class="round" data-action="next" data-tooltip="Next step"><i class="fa-solid fa-arrow-right"></i></button>{{/if}}</div>
+  </footer>
+</section>

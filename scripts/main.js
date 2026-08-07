@@ -25,6 +25,65 @@ const ITEM_TYPE_LABELS = {
   weapon: "Weapon",
 };
 
+function getHtmlRoot(html) {
+  return html instanceof HTMLElement ? html : html?.[0] ?? html?.element ?? null;
+}
+
+function escapeHtml(value = "") {
+  const node = document.createElement("span");
+  node.textContent = String(value);
+  return node.innerHTML;
+}
+
+function activateWikiLinks(editor) {
+  if (!editor) return;
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (node.parentElement?.closest(".ls-wiki-link")) return NodeFilter.FILTER_REJECT;
+      return /\[\[[^\]\n]{1,100}\]\]/.test(node.nodeValue ?? "")
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_REJECT;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const textNode of nodes) {
+    const text = textNode.nodeValue ?? "";
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    for (const match of text.matchAll(/\[\[([^\]\n]{1,100})\]\]/g)) {
+      fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+      const link = document.createElement("span");
+      link.className = "ls-wiki-link";
+      link.dataset.noteName = match[1].trim();
+      link.contentEditable = "false";
+      link.tabIndex = 0;
+      link.title = `Open or create “${match[1].trim()}”`;
+      link.textContent = match[1].trim();
+      fragment.append(link);
+      cursor = match.index + match[0].length;
+    }
+    fragment.append(document.createTextNode(text.slice(cursor)));
+    textNode.replaceWith(fragment);
+  }
+}
+
+function insertCompletedWikiPair() {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return false;
+  const range = selection.getRangeAt(0);
+  if (!range.collapsed || range.startContainer.nodeType !== Node.TEXT_NODE) return false;
+  const textNode = range.startContainer;
+  const before = textNode.nodeValue?.slice(0, range.startOffset) ?? "";
+  if (!before.endsWith("[")) return false;
+  textNode.insertData(range.startOffset, "[]]");
+  range.setStart(textNode, range.startOffset + 1);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  return true;
+}
+
 function numeric(value, fallback = 0) {
   const result = Number(value?.value ?? value?.mod ?? value?.modifier ?? value);
   return Number.isFinite(result) ? result : fallback;
@@ -251,6 +310,48 @@ async function pause(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+async function applyLiveDamage(target, formula, degree) {
+  const before = actorHp(target.actor).value;
+  const multiplier = degree === 3 ? 2 : 1;
+  const DamageRollClass = CONFIG.Dice.rolls?.find((RollClass) => RollClass.name === "DamageRoll");
+  if (DamageRollClass && typeof target.actor.applyDamage === "function") {
+    try {
+      const damage = await new DamageRollClass(`{(${formula}) * ${multiplier}}`).evaluate();
+      await target.actor.applyDamage({
+        damage,
+        token: target.token.object,
+        item: null,
+        rollOptions: new Set(["lore-smith", "action:live-combat"]),
+        outcome: degree === 3 ? "criticalSuccess" : "success",
+      });
+      const after = actorHp(target.actor).value;
+      target.hp = after;
+      target.maxHp = actorHp(target.actor).max;
+      target.defeated = after <= 0;
+      return Math.max(1, before - after);
+    } catch (error) {
+      console.warn(`${MODULE_ID} | PF2e damage application failed; using HP fallback.`, error);
+    }
+  }
+  const rolled = Math.max(1, rollFormula(formula)) * multiplier;
+  const after = Math.max(0, before - rolled);
+  await target.actor.update({ "system.attributes.hp.value": after });
+  target.hp = after;
+  target.defeated = after <= 0;
+  return Math.max(1, before - after);
+}
+
+async function applyLiveHealing(target, formula) {
+  const hp = actorHp(target.actor);
+  const amount = Math.max(1, rollFormula(formula));
+  const after = Math.min(hp.max, hp.value + amount);
+  await target.actor.update({ "system.attributes.hp.value": after });
+  target.hp = after;
+  target.maxHp = hp.max;
+  target.defeated = false;
+  return after - hp.value;
+}
+
 async function sceneDistance(left, right) {
   const grid = canvas.grid;
   const leftCenter = left.center ?? { x: left.x + left.w / 2, y: left.y + left.h / 2 };
@@ -284,45 +385,84 @@ async function moveToward(attacker, target) {
   return true;
 }
 
-async function runLiveReplay(tokens, partyIds, enemyIds) {
+async function runLiveReplay(tokens, partyIds, enemyIds, { combat = game.combat } = {}) {
   const combatants = tokens
     .filter((token) => partyIds.has(token.id) || enemyIds.has(token.id))
     .map((token) => virtualCombatant(token, partyIds.has(token.id) ? "party" : "enemy"));
-  const order = combatants
-    .map((combatant) => ({ combatant, score: rollDie(20) + combatant.initiative }))
-    .sort((left, right) => right.score - left.score);
+  const order = combatants.map((combatant) => {
+    const tracked = combat?.combatants?.find((entry) => entry.tokenId === combatant.id);
+    return { combatant, score: tracked?.initiative ?? rollDie(20) + combatant.initiative, tracked };
+  }).sort((left, right) => right.score - left.score);
   await ChatMessage.create({
     speaker: { alias: "Lore Smith" },
     content: `<h3>Lore Smith live encounter</h3><p><strong>Initiative</strong> ${order.map(({ combatant, score }) => `${combatant.name} ${score}`).join(", ")}</p>`,
   });
   for (let round = 1; round <= 20; round += 1) {
+    if (combat) await combat.update({ round, turn: 0 });
     await ChatMessage.create({ speaker: { alias: "Lore Smith" }, content: `<h3>Round ${round}</h3>` });
-    for (const entry of order) {
+    for (let turnIndex = 0; turnIndex < order.length; turnIndex += 1) {
+      const entry = order[turnIndex];
       const attacker = entry.combatant;
       if (attacker.defeated) continue;
-      const target = chooseTarget(attacker, combatants);
-      if (!target) return;
-      const moved = await moveToward(attacker, target);
-      if (moved) {
-        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: attacker.actor, token: attacker.token }), content: `<p><strong>${attacker.name}</strong> Strides toward ${target.name}.</p>` });
+      if (combat && entry.tracked) {
+        const actualIndex = combat.turns.findIndex((candidate) => candidate.id === entry.tracked.id);
+        if (actualIndex >= 0) await combat.update({ round, turn: actualIndex });
+      }
+      let actions = 3;
+      let map = 0;
+      const healingTarget = attacker.heals.length ? chooseHealingTarget(attacker, combatants) : null;
+      if (healingTarget && actions > 0) {
+        const healing = attacker.heals[0];
+        const restored = await applyLiveHealing(healingTarget, healing.formula);
+        actions -= 1;
+        await ChatMessage.create({
+          speaker: ChatMessage.getSpeaker({ actor: attacker.actor, token: attacker.token }),
+          content: `<p><strong>${attacker.name}</strong> uses <strong>${healing.name}</strong> on ${healingTarget.name}, restoring <strong>${restored} HP</strong>. ${healingTarget.name} has ${healingTarget.hp}/${healingTarget.maxHp} HP.</p>`,
+        });
+      }
+      while (actions > 0) {
+        const target = chooseTarget(attacker, combatants);
+        if (!target) return;
+        const strike = attacker.strikes[0];
+        const distance = await sceneDistance(attacker.token.object, target.token.object);
+        if (distance > Math.max(5, strike.range)) {
+          const moved = await moveToward(attacker, target);
+          actions -= 1;
+          if (!moved) {
+            await ChatMessage.create({
+              speaker: ChatMessage.getSpeaker({ actor: attacker.actor, token: attacker.token }),
+              content: `<p><strong>${attacker.name}</strong> cannot find a legal path toward ${target.name}; the action is not spent.</p>`,
+            });
+            actions += 1;
+            break;
+          }
+          await ChatMessage.create({
+            speaker: ChatMessage.getSpeaker({ actor: attacker.actor, token: attacker.token }),
+            content: `<p><strong>${attacker.name}</strong> Strides toward ${target.name}. <em>${actions} actions remaining.</em></p>`,
+          });
+          await pause(450);
+          continue;
+        }
+        const natural = rollDie(20);
+        const modifier = strike.modifier - map;
+        const total = natural + modifier;
+        const degree = degreeOfSuccess(total, actorAc(target.actor), natural);
+        actions -= 1;
+        let content = `<p><strong>${attacker.name}</strong> targets <strong>${target.name}</strong> with ${strike.name}: [[1d20 + ${modifier}]] → ${total} vs AC ${actorAc(target.actor)}, <strong>${degreeLabel(degree)}</strong>.</p>`;
+        if (degree >= 2) {
+          const damage = await applyLiveDamage(target, strike.damage, degree);
+          content += `<p>${target.name} takes <strong>${damage} damage</strong> and has ${target.hp}/${target.maxHp} HP.</p>`;
+          if (target.defeated) {
+            const trackedTarget = combat?.combatants?.find((candidate) => candidate.tokenId === target.id);
+            await trackedTarget?.update({ defeated: true });
+          }
+        }
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: attacker.actor, token: attacker.token }), content });
+        target.token.object?.control({ releaseOthers: true });
+        await canvas.animatePan({ x: target.token.object?.center.x, y: target.token.object?.center.y, duration: 300 });
         await pause(500);
+        map += 5;
       }
-      const strike = attacker.strikes[0];
-      const natural = rollDie(20);
-      const total = natural + strike.modifier;
-      const degree = degreeOfSuccess(total, target.ac, natural);
-      let content = `<p><strong>${attacker.name}</strong> targets <strong>${target.name}</strong> with ${strike.name}: [[${natural} + ${strike.modifier}]] = ${total} vs AC ${target.ac}, <strong>${degreeLabel(degree)}</strong>.</p>`;
-      if (degree >= 2) {
-        const rolled = Math.max(1, rollFormula(strike.damage));
-        const damage = degree === 3 ? rolled * 2 : rolled;
-        target.hp = Math.max(0, target.hp - damage);
-        target.defeated = target.hp <= 0;
-        content += `<p>${target.name} takes <strong>${damage} damage</strong> and has ${target.hp}/${target.maxHp} virtual HP.</p>`;
-      }
-      await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: attacker.actor, token: attacker.token }), content });
-      target.token.object?.control({ releaseOthers: true });
-      await canvas.animatePan({ x: target.token.object?.center.x, y: target.token.object?.center.y, duration: 350 });
-      await pause(650);
       if (!combatants.some((candidate) => candidate.team === "party" && !candidate.defeated)
         || !combatants.some((candidate) => candidate.team === "enemy" && !candidate.defeated)) {
         const winner = combatants.some((candidate) => candidate.team === "party" && !candidate.defeated) ? "Characters" : "Opposition";
@@ -363,6 +503,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   };
 
   activeTab = "notes";
+  activeNoteId = null;
   creatureSearch = "";
   itemSearch = "";
   itemType = "";
@@ -389,13 +530,29 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         enemy: this.enemyIds.has(token.id),
       };
     });
-    const notes = game.journal
+    const noteEntries = game.journal
       .filter((entry) => entry.getFlag(FLAG_SCOPE, "note"))
-      .map((entry) => ({ id: entry.id, name: entry.name, pages: entry.pages.size }));
+      .sort((left, right) => left.name.localeCompare(right.name));
+    if (!this.activeNoteId && noteEntries.length) this.activeNoteId = noteEntries[0].id;
+    const notes = noteEntries
+      .map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        pages: entry.pages.size,
+        active: entry.id === this.activeNoteId,
+      }));
+    const activeJournal = this.activeNoteId ? game.journal.get(this.activeNoteId) : null;
+    const activePage = activeJournal?.pages?.find((page) => page.type === "text") ?? activeJournal?.pages?.contents?.[0] ?? null;
+    const activeNote = activeJournal ? {
+      id: activeJournal.id,
+      name: activeJournal.name,
+      content: activePage?.text?.content ?? "",
+    } : null;
     return {
       ...await super._prepareContext(options),
       tabs: { [this.activeTab]: true },
       notes,
+      activeNote,
       creatureSearch: this.creatureSearch,
       itemSearch: this.itemSearch,
       itemTypes: Object.entries(ITEM_TYPE_LABELS).map(([value, label]) => ({ value, label, selected: value === this.itemType })),
@@ -403,9 +560,87 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       itemResults: this.itemResults,
       sceneReady: Boolean(canvas?.scene),
       sceneTokens,
-      iterations: this.iterations,
+      iterations: game.settings.settings.has(`${MODULE_ID}.combatIterations`)
+        ? game.settings.get(MODULE_ID, "combatIterations")
+        : this.iterations,
       result: this.result,
     };
+  }
+
+  _onRender(context, options) {
+    super._onRender(context, options);
+    if (this.activeTab !== "notes") return;
+    const editor = this.element?.querySelector('[data-role="note-editor"]');
+    const title = this.element?.querySelector('[data-role="note-title"]');
+    activateWikiLinks(editor);
+    const scheduleSave = () => {
+      window.clearTimeout(this._noteSaveTimer);
+      this._noteSaveTimer = window.setTimeout(() => this.saveActiveNote(), 350);
+    };
+    editor?.addEventListener("input", () => {
+      activateWikiLinks(editor);
+      scheduleSave();
+    });
+    editor?.addEventListener("keydown", (event) => {
+      if (event.key === "[" && insertCompletedWikiPair()) {
+        event.preventDefault();
+        scheduleSave();
+      }
+    });
+    editor?.addEventListener("click", (event) => {
+      const link = event.target.closest?.(".ls-wiki-link");
+      if (!link) return;
+      event.preventDefault();
+      if (event.detail > 1) return;
+      window.clearTimeout(this._wikiClickTimer);
+      this._wikiClickTimer = window.setTimeout(() => this.openOrCreateLinkedNote(link.dataset.noteName), 240);
+    });
+    editor?.addEventListener("dblclick", (event) => {
+      const link = event.target.closest?.(".ls-wiki-link");
+      if (!link) return;
+      event.preventDefault();
+      window.clearTimeout(this._wikiClickTimer);
+      const text = document.createTextNode(`[[${link.dataset.noteName}]]`);
+      link.replaceWith(text);
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      editor.focus();
+    });
+    title?.addEventListener("input", scheduleSave);
+    title?.addEventListener("change", () => this.saveActiveNote());
+  }
+
+  async saveActiveNote() {
+    const journal = this.activeNoteId ? game.journal.get(this.activeNoteId) : null;
+    if (!journal) return;
+    const title = this.element?.querySelector('[data-role="note-title"]')?.value.trim() || "Untitled Note";
+    const content = this.element?.querySelector('[data-role="note-editor"]')?.innerHTML ?? "";
+    const page = journal.pages.find((candidate) => candidate.type === "text") ?? journal.pages.contents[0];
+    const updates = [];
+    if (journal.name !== title) updates.push(journal.update({ name: title }));
+    if (page && page.text?.content !== content) updates.push(page.update({ name: title, "text.content": content }));
+    await Promise.all(updates);
+  }
+
+  async openOrCreateLinkedNote(name) {
+    const noteName = String(name ?? "").trim();
+    if (!noteName) return;
+    await this.saveActiveNote();
+    let journal = game.journal.find((entry) =>
+      entry.getFlag(FLAG_SCOPE, "note") && entry.name.localeCompare(noteName, undefined, { sensitivity: "accent" }) === 0);
+    if (!journal) {
+      journal = await JournalEntry.create({
+        name: noteName,
+        flags: { [FLAG_SCOPE]: { note: true } },
+        pages: [{ name: noteName, type: "text", text: { content: "" } }],
+      });
+      ui.notifications.info(`Created Lore Smith note “${noteName}”.`);
+    }
+    this.activeNoteId = journal.id;
+    await this.render();
   }
 
   captureEncounterSelection() {
@@ -413,7 +648,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!root) return;
     this.partyIds = new Set([...root.querySelectorAll('input[name="partyToken"]:checked')].map((input) => input.value));
     this.enemyIds = new Set([...root.querySelectorAll('input[name="enemyToken"]:checked')].map((input) => input.value));
-    this.iterations = Math.max(1, Math.min(1000, numeric(root.querySelector('input[name="iterations"]')?.value, 100)));
+    this.iterations = game.settings.settings.has(`${MODULE_ID}.combatIterations`)
+      ? Math.max(1, Math.min(1000, game.settings.get(MODULE_ID, "combatIterations")))
+      : 100;
   }
 
   static async changeTab(event, target) {
@@ -423,25 +660,24 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   static async createNote() {
-    const response = await foundry.applications.api.DialogV2.input({
-      window: { title: "New Lore Smith Note" },
-      content: '<label>Note name <input type="text" name="name" value="New Note" autofocus></label>',
-      ok: { label: "Create note" },
-      rejectClose: false,
-    });
-    if (!response) return;
-    const noteName = response.name?.trim() || "New Note";
+    await this.saveActiveNote();
+    const existing = new Set(game.journal.map((entry) => entry.name.toLowerCase()));
+    let noteName = "New Note";
+    let suffix = 2;
+    while (existing.has(noteName.toLowerCase())) noteName = `New Note ${suffix++}`;
     const journal = await JournalEntry.create({
       name: noteName,
       flags: { [FLAG_SCOPE]: { note: true } },
       pages: [{ name: noteName, type: "text", text: { content: "" } }],
     });
-    journal.sheet.render(true);
+    this.activeNoteId = journal.id;
     await this.render();
   }
 
   static async openNote(_event, target) {
-    game.journal.get(target.dataset.id)?.sheet.render(true);
+    await this.saveActiveNote();
+    this.activeNoteId = target.dataset.id;
+    await this.render();
   }
 
   static async searchCreatures() {

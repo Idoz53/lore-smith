@@ -17,17 +17,26 @@
     {{#if tabs.notes}}
       <section class="ls-panel">
         <header><div><span>Native Foundry Journals</span><h1>Campaign Notes</h1></div><button data-action="createNote"><i class="fa-solid fa-plus"></i> New note</button></header>
-        <p class="ls-lead">Lore Smith notes are normal Journal Entries. Foundry handles rich text, images, links, permissions, and drag-and-drop references.</p>
-        <div class="ls-card-list">
-          {{#each notes}}
-            <article class="ls-list-card">
-              <i class="fa-solid fa-book"></i>
-              <div><strong>{{name}}</strong><small>{{pages}} page(s)</small></div>
-              <button data-action="openNote" data-id="{{id}}">Open</button>
-            </article>
-          {{else}}
-            <div class="ls-empty">No Lore Smith notes yet.</div>
-          {{/each}}
+        <p class="ls-lead">Write directly here. Type <strong>[[Note Name]]</strong> to create a link; clicking it opens the note here and creates it when it does not exist.</p>
+        <div class="ls-note-workspace">
+          <aside class="ls-note-list">
+            {{#each notes}}
+              <button data-action="openNote" data-id="{{id}}" class="{{#if active}}active{{/if}}">
+                <i class="fa-solid fa-file-lines"></i><span>{{name}}</span>
+              </button>
+            {{else}}
+              <div class="ls-empty">No notes yet. Select <strong>New note</strong> to begin.</div>
+            {{/each}}
+          </aside>
+          <section class="ls-note-paper">
+            {{#if activeNote}}
+              <input class="ls-note-title" data-role="note-title" value="{{activeNote.name}}" aria-label="Note title">
+              <div class="ls-note-editor" data-role="note-editor" contenteditable="true" spellcheck="true">{{{activeNote.content}}}</div>
+              <footer><span><i class="fa-solid fa-circle-check"></i> Saved automatically</span><span>Double-click a wiki link to edit its <strong>[[name]]</strong>.</span></footer>
+            {{else}}
+              <div class="ls-empty ls-note-empty"><i class="fa-solid fa-feather-pointed"></i><strong>Your chronicle is empty.</strong><span>Create a note to start writing.</span></div>
+            {{/if}}
+          </section>
         </div>
       </section>
     {{/if}}
@@ -79,7 +88,7 @@
           <section><h2>Characters</h2>{{#each sceneTokens}}{{#if isCharacter}}<label class="ls-token-choice"><input type="checkbox" name="partyToken" value="{{id}}" {{#if party}}checked{{/if}}><img src="{{img}}"><span>{{name}}<small>Level {{level}} · HP {{hp}} · AC {{ac}}</small></span></label>{{/if}}{{/each}}</section>
           <section><h2>Opposition</h2>{{#each sceneTokens}}{{#unless isCharacter}}<label class="ls-token-choice"><input type="checkbox" name="enemyToken" value="{{id}}" {{#if enemy}}checked{{/if}}><img src="{{img}}"><span>{{name}}<small>Level {{level}} · HP {{hp}} · AC {{ac}}</small></span></label>{{/unless}}{{/each}}</section>
         </div>
-        <div class="ls-run-row"><label>Iterations <input name="iterations" type="number" min="1" max="1000" value="{{iterations}}"></label><button data-action="runEstimate"><i class="fa-solid fa-chart-line"></i> Run estimate</button><button class="live" data-action="runLive"><i class="fa-solid fa-play"></i> Watch live combat</button></div>
+        <div class="ls-run-row"><span class="ls-iteration-setting"><strong>{{iterations}} iterations</strong><small>Change this in Module Settings → Lore Smith.</small></span><button data-action="runEstimate"><i class="fa-solid fa-chart-line"></i> Run estimate</button><button class="live" data-action="runLive"><i class="fa-solid fa-play"></i> Watch live combat</button></div>
         {{#if result}}
           <div class="ls-results">
             <article><span>Character victory</span><strong>{{result.winRate}}%</strong><small>{{result.wins}}/{{result.iterations}} combats</small></article>
