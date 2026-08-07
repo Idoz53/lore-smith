@@ -30,7 +30,7 @@
     "styles/lore-smith.css"
   ],
   "manifest": "https://raw.githubusercontent.com/Idoz53/lore-smith/main/module.json",
-  "download": "https://github.com/Idoz53/lore-smith/releases/latest/download/lore-smith.zip",
+  "download": "https://raw.githubusercontent.com/Idoz53/lore-smith/main/lore-smith.zip",
   "url": "https://github.com/Idoz53/lore-smith",
   "license": "All Rights Reserved"
 }
