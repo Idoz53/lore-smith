@@ -115,6 +115,60 @@ function frequencyUses(item) {
   return null;
 }
 
+function spellResource(item, actor, traits, description) {
+  if (item.type !== "spell") return { limitedUses: frequencyUses(item), useKey: item.id };
+  if (traits.includes("cantrip")) {
+    const targetImmunity = /temporarily immune|can(?:not|'t) benefit again/i.test(description);
+    return {
+      limitedUses: targetImmunity ? 1 : null,
+      useKey: targetImmunity ? `spell-immunity:${item.id}` : item.id,
+    };
+  }
+
+  const location = item.system?.location ?? {};
+  const entryId = location.value;
+  const entry = actor.spellcasting?.get?.(entryId) ?? actor.items?.get?.(entryId);
+  const mode = entry?.system?.prepared?.value ?? "";
+  const rank = Math.max(1, numberValue(location.heightenedLevel, numberValue(item.system?.level, 1)));
+
+  if (mode === "focus" || traits.includes("focus")) {
+    const focus = actor.system?.resources?.focus;
+    const available = numberValue(focus?.value, numberValue(focus?.max, 1));
+    return { limitedUses: Math.max(0, available), useKey: "focus-pool" };
+  }
+
+  const innateUses = location.uses ?? item.system?.uses;
+  if (innateUses && (Number.isFinite(Number(innateUses.value)) || Number.isFinite(Number(innateUses.max)))) {
+    return {
+      limitedUses: Math.max(0, numberValue(innateUses.value, numberValue(innateUses.max, 0))),
+      useKey: `innate:${entryId ?? item.id}:${item.id}`,
+    };
+  }
+
+  const slot = entry?.system?.slots?.[`slot${rank}`];
+  if (mode === "prepared") {
+    const prepared = [...(slot?.prepared ?? [])];
+    const available = prepared.filter((candidate) =>
+      candidate?.id === item.id && candidate?.expended !== true).length;
+    return {
+      limitedUses: available,
+      useKey: `prepared:${entryId ?? "unknown"}:${rank}:${item.id}`,
+    };
+  }
+
+  if (slot) {
+    return {
+      limitedUses: Math.max(0, numberValue(slot.value, numberValue(slot.max, 0))),
+      useKey: `slots:${entryId ?? "unknown"}:${rank}`,
+    };
+  }
+
+  return {
+    limitedUses: Math.max(0, frequencyUses(item) ?? 0),
+    useKey: `spell:${entryId ?? "unknown"}:${rank}:${item.id}`,
+  };
+}
+
 function optionFromItem(item, actor) {
   const description = plainText(item.system?.description?.value);
   const costs = actionCosts(item);
@@ -133,6 +187,7 @@ function optionFromItem(item, actor) {
   const automatic = /\bautomatically hits?\b/i.test(description)
     || (!damage && !healing && !save && !traits.includes("attack"));
   const defensive = /\braise a shield|take cover|gain[^.]{0,30}(?:bonus|status bonus)[^.]{0,20}\bAC\b|\bshield\b/i.test(`${item.name} ${description}`) && !damage;
+  const resource = spellResource(item, actor, traits, description);
   return {
     id: item.id,
     item,
@@ -153,7 +208,8 @@ function optionFromItem(item, actor) {
     defensive,
     utility: !damage && !healing && !conditions.length,
     attackTrait: traits.includes("attack"),
-    limitedUses: frequencyUses(item) ?? (spell && !traits.includes("cantrip") ? 1 : null),
+    limitedUses: resource.limitedUses,
+    useKey: resource.useKey,
     description,
   };
 }
@@ -182,6 +238,7 @@ function strikeOptions(actor) {
       defensive: false,
       attackTrait: true,
       limitedUses: null,
+      useKey: item?.id ?? action.slug ?? action.label,
       description: "",
     };
   });
@@ -202,11 +259,14 @@ export function buildActionCatalog(actor) {
 }
 
 export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0) {
-  const available = actor.options.filter((option) => {
+  let available = actor.options.filter((option) => {
     const minimumCost = Math.min(...option.costs.filter(Number.isFinite));
-    const uses = actor.uses.get(option.id);
+    const uses = actor.uses.get(option.useKey ?? option.id);
     return minimumCost <= actionsRemaining && (uses === undefined || uses > 0);
   });
+  const varied = available.filter((option) =>
+    option.kind === "strike" || !actor.turnUses?.has(option.id));
+  available = varied;
   const injured = combatants
     .filter((candidate) => candidate.team === actor.team && !candidate.defeated && candidate.hp < candidate.maxHp)
     .sort((left, right) => left.hp / left.maxHp - right.hp / right.maxHp)[0];
@@ -227,15 +287,25 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
     const utilityValue = option.utility ? 3 : 0;
     const mapCost = option.attackTrait ? mapPenalty / 2 : 0;
     const spellBias = option.kind === "spell" ? 8 : option.kind === "ability" ? 4 : option.kind === "item" ? 2 : 0;
-    return { option, target: option.defensive || option.utility ? actor : target, cost, score: (expected + conditionValue + defensiveValue + utilityValue + spellBias) / Math.max(1, cost) - mapCost };
+    const repetitionPenalty = (actor.actionHistory?.get(option.id) ?? 0) * (option.kind === "strike" ? 0.25 : 2.5);
+    return {
+      option,
+      target: option.defensive || option.utility ? actor : target,
+      cost,
+      score: (expected + conditionValue + defensiveValue + utilityValue + spellBias) / Math.max(1, cost)
+        - mapCost - repetitionPenalty,
+    };
   }).sort((left, right) => right.score - left.score);
   return scored[0] ?? null;
 }
 
 export function consumeUse(actor, option) {
+  actor.turnUses?.add(option.id);
+  actor.actionHistory?.set(option.id, (actor.actionHistory.get(option.id) ?? 0) + 1);
   if (option.limitedUses === null) return;
-  const remaining = actor.uses.get(option.id) ?? option.limitedUses;
-  actor.uses.set(option.id, Math.max(0, remaining - 1));
+  const key = option.useKey ?? option.id;
+  const remaining = actor.uses.get(key) ?? option.limitedUses;
+  actor.uses.set(key, Math.max(0, remaining - 1));
 }
 
 export function rollFormulaValue(formula = "0") {

@@ -5,11 +5,11 @@
   </header>
 
   <div class="ls-step-track">
-    <span class="{{#if steps.source}}active{{/if}}">1. Starting point</span>
-    <span class="{{#if steps.identity}}active{{/if}}">2. Identity</span>
-    <span class="{{#if steps.defenses}}active{{/if}}">3. Statistics</span>
-    <span class="{{#if steps.content}}active{{/if}}">4. Actions & spells</span>
-    <span class="{{#if steps.review}}active{{/if}}">5. Finish</span>
+    <button type="button" data-action="goToStep" data-step="0" class="{{#if steps.source}}active{{/if}}">1. Starting point</button>
+    <button type="button" data-action="goToStep" data-step="1" class="{{#if steps.identity}}active{{/if}}">2. Identity</button>
+    <button type="button" data-action="goToStep" data-step="2" class="{{#if steps.defenses}}active{{/if}}">3. Statistics</button>
+    <button type="button" data-action="goToStep" data-step="3" class="{{#if steps.content}}active{{/if}}">4. Actions & spells</button>
+    <button type="button" data-action="goToStep" data-step="4" class="{{#if steps.review}}active{{/if}}">5. Finish</button>
   </div>
 
   <main class="ls-builder-body">
@@ -95,6 +95,7 @@
         <div class="ls-builder-filters content">
           <input name="contentQuery" value="{{contentQuery}}" placeholder="Name, trait, or keyword">
           <select name="contentType">{{#each contentTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
+          <label class="ls-glossary-filter"><input name="contentGlossaryOnly" type="checkbox" {{#if contentGlossaryOnly}}checked{{/if}}> Bestiary Ability Glossary only</label>
           <button data-action="searchContent"><i class="fa-solid fa-filter"></i> Browse</button>
         </div>
         <div class="ls-content-columns">

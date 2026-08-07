@@ -27,10 +27,17 @@ const nativeScript = await readFile(resolve(root, "scripts/native-workflows.js")
 const template = await readFile(resolve(root, "templates/dashboard.hbs"), "utf8");
 const creatureTemplate = await readFile(resolve(root, "templates/creature-builder.hbs"), "utf8");
 const itemTemplate = await readFile(resolve(root, "templates/item-builder.hbs"), "utf8");
+const liveTemplate = await readFile(resolve(root, "templates/live-combat.hbs"), "utf8");
 const templateActions = [...template.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]);
 for (const action of new Set(templateActions)) {
   if (!new RegExp(`\\b${action}:\\s*LoreSmithDashboard\\.`).test(script)) {
     throw new Error(`Template action "${action}" is not wired in the dashboard.`);
+  }
+}
+
+for (const action of new Set([...liveTemplate.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))) {
+  if (!new RegExp(`\\b${action}:\\s*LoreSmithLiveLog\\.`).test(nativeScript)) {
+    throw new Error(`Template action "${action}" is not wired in the live combat window.`);
   }
 }
 

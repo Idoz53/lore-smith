@@ -239,6 +239,12 @@ function virtualCombatant(token, team) {
   const actor = token.actor;
   const hp = actorHp(actor);
   const options = buildActionCatalog(actor);
+  const uses = new Map();
+  for (const option of options) {
+    if (option.limitedUses === null) continue;
+    const key = option.useKey ?? option.id;
+    if (!uses.has(key)) uses.set(key, option.limitedUses);
+  }
   return {
     id: token.id,
     token,
@@ -253,7 +259,9 @@ function virtualCombatant(token, team) {
     strikes: actorStrikes(actor),
     heals: healingOptions(actor),
     options,
-    uses: new Map(options.filter((option) => option.limitedUses !== null).map((option) => [option.id, option.limitedUses])),
+    uses,
+    turnUses: new Set(),
+    actionHistory: new Map(),
     conditions: new Map(),
     defeated: false,
   };
@@ -288,6 +296,7 @@ function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = 
     for (const turn of initiatives) {
       const attacker = turn.combatant;
       if (attacker.defeated) continue;
+      attacker.turnUses.clear();
       let actionsRemaining = 3;
       let map = 0;
       while (actionsRemaining > 0) {
@@ -503,8 +512,17 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
   combat = game.combat,
   onLog = null,
   delay = game.settings.settings.has(`${MODULE_ID}.liveActionDelay`) ? game.settings.get(MODULE_ID, "liveActionDelay") : 1500,
+  control = null,
 } = {}) {
   const actionDelay = () => Math.max(100, Number(typeof delay === "function" ? delay() : delay) || 1500);
+  const waitForControl = async () => {
+    while (control?.isPaused?.() && !control?.isStopped?.()) await pause(100);
+    return Boolean(control?.isStopped?.());
+  };
+  const activeCombat = () => {
+    const candidate = (combat?.id && game.combats?.get(combat.id)) ?? game.combat;
+    return candidate?.id && game.combats?.get(candidate.id) ? candidate : null;
+  };
   const combatants = tokens
     .filter((token) => partyIds.has(token.id) || enemyIds.has(token.id))
     .map((token) => virtualCombatant(token, partyIds.has(token.id) ? "party" : "enemy"));
@@ -520,18 +538,33 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
   };
   await emit(`Initiative: ${order.map(({ combatant, score }) => `${combatant.name} ${score}`).join(", ")}.`, "round");
   for (let round = 1; round <= 20; round += 1) {
-    if (combat) await combat.update({ round, turn: 0 });
+    if (await waitForControl()) {
+      await emit("Live combat stopped by the GM.", "round");
+      return { stopped: true, round };
+    }
+    const roundCombat = activeCombat();
+    if (roundCombat) await roundCombat.update({ round, turn: 0 });
     await emit(`Round ${round}`, "round");
     for (const entry of order) {
+      if (await waitForControl()) {
+        await emit("Live combat stopped by the GM.", "round");
+        return { stopped: true, round };
+      }
       const attacker = entry.combatant;
       if (attacker.defeated) continue;
-      if (combat && entry.tracked) {
-        const actualIndex = combat.turns.findIndex((candidate) => candidate.id === entry.tracked.id);
-        if (actualIndex >= 0) await combat.update({ round, turn: actualIndex });
+      attacker.turnUses.clear();
+      const turnCombat = activeCombat();
+      if (turnCombat && entry.tracked) {
+        const actualIndex = turnCombat.turns.findIndex((candidate) => candidate.id === entry.tracked.id);
+        if (actualIndex >= 0) await turnCombat.update({ round, turn: actualIndex });
       }
       let actionsRemaining = 3;
       let map = 0;
       while (actionsRemaining > 0) {
+        if (await waitForControl()) {
+          await emit("Live combat stopped by the GM.", "round");
+          return { stopped: true, round };
+        }
         const choice = chooseCatalogAction(attacker, combatants, actionsRemaining, map);
         if (!choice) break;
         const { option, target, cost } = choice;
@@ -600,7 +633,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           const conditions = multiplier > 0 ? await applyConditions(affected, option.conditions) : [];
           outcomes.push(`${outcome}${damage ? `; ${damage} ${option.damageType || ""} damage, HP ${affected.hp}/${affected.maxHp}` : ""}${conditions.length ? `; ${conditions.join(", ")}` : ""}`);
           if (affected.defeated) {
-            const trackedTarget = combat?.combatants?.find((candidate) => candidate.tokenId === affected.id);
+            const trackedTarget = activeCombat()?.combatants?.find((candidate) => candidate.tokenId === affected.id);
             await trackedTarget?.update({ defeated: true });
           }
         }
@@ -615,10 +648,11 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         || !combatants.some((candidate) => candidate.team === "enemy" && !candidate.defeated)) {
         const winner = combatants.some((candidate) => candidate.team === "party" && !candidate.defeated) ? "Characters" : "Opposition";
         await emit(`${winner} win the encounter.`, "victory");
-        return;
+        return { stopped: false, round, winner };
       }
     }
   }
+  return { stopped: false, round: 20, winner: null };
 }
 
 async function runLiveReplayLegacy(tokens, partyIds, enemyIds, { combat = game.combat } = {}) {

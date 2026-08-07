@@ -5,10 +5,10 @@
   </header>
 
   <div class="ls-step-track four">
-    <span class="{{#if steps.source}}active{{/if}}">1. Starting point</span>
-    <span class="{{#if steps.basics}}active{{/if}}">2. Identity</span>
-    <span class="{{#if steps.mechanics}}active{{/if}}">3. Mechanics</span>
-    <span class="{{#if steps.review}}active{{/if}}">4. Finish</span>
+    <button type="button" data-action="goToStep" data-step="0" class="{{#if steps.source}}active{{/if}}">1. Starting point</button>
+    <button type="button" data-action="goToStep" data-step="1" class="{{#if steps.basics}}active{{/if}}">2. Identity</button>
+    <button type="button" data-action="goToStep" data-step="2" class="{{#if steps.mechanics}}active{{/if}}">3. Mechanics</button>
+    <button type="button" data-action="goToStep" data-step="3" class="{{#if steps.review}}active{{/if}}">4. Finish</button>
   </div>
 
   <main class="ls-builder-body">

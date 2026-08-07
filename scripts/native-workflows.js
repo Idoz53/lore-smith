@@ -72,10 +72,25 @@ function lsItemTraitConfig() {
     CONFIG.PF2E.weaponTraits);
 }
 
-async function lsSearchPacks({ documentName, query = "", types = [], level = "", trait = "", limit = Number.POSITIVE_INFINITY }) {
+function lsIsBestiaryAbilityGlossary(pack) {
+  const identity = `${pack.collection ?? ""} ${pack.metadata?.label ?? ""}`.toLowerCase();
+  return /bestiary[\s._-]*abilit(?:y|ies)[\s._-]*glossary/.test(identity)
+    || identity.includes("bestiary ability glossary");
+}
+
+async function lsSearchPacks({
+  documentName,
+  query = "",
+  types = [],
+  level = "",
+  trait = "",
+  limit = Number.POSITIVE_INFINITY,
+  bestiaryGlossaryOnly = false,
+}) {
   const normalized = String(query ?? "").trim().toLowerCase();
   const results = [];
   for (const pack of game.packs.filter((candidate) => candidate.documentName === documentName)) {
+    if (bestiaryGlossaryOnly && !lsIsBestiaryAbilityGlossary(pack)) continue;
     const fields = documentName === "Actor"
       ? ["name", "img", "type", "system.details.level.value", "system.traits.value", "system.traits.size.value"]
       : ["name", "img", "type", "system.level.value", "system.traits.value", ...(normalized ? ["system.description.value"] : [])];
@@ -161,6 +176,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       useCurrent: LoreSmithCreatureBuilder.useCurrent,
       addTrait: LoreSmithCreatureBuilder.addTrait,
       removeTrait: LoreSmithCreatureBuilder.removeTrait,
+      goToStep: LoreSmithCreatureBuilder.goToStep,
       searchContent: LoreSmithCreatureBuilder.searchContent,
       addContent: LoreSmithCreatureBuilder.addContent,
       removeContent: LoreSmithCreatureBuilder.removeContent,
@@ -187,6 +203,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   sourcesLoaded = false;
   contentQuery = "";
   contentType = "";
+  contentGlossaryOnly = false;
   sourceResults = [];
   sourcePreview = null;
   contentResults = [];
@@ -262,6 +279,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         will: markSelected(benchmarkRows.saves, lsNumber(system.saves?.will, 0)),
       },
       contentType: this.contentType,
+      contentGlossaryOnly: this.contentGlossaryOnly,
       contentTypes: [
         { value: "", label: "All actions, abilities, and spells" },
         { value: "spell", label: "Spells" },
@@ -340,6 +358,12 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static async next() {
     await this.saveStep();
     this.step = Math.min(4, this.step + 1);
+    await this.render();
+  }
+
+  static async goToStep(_event, target) {
+    await this.saveStep();
+    this.step = Math.max(0, Math.min(4, Number(target.dataset.step) || 0));
     await this.render();
   }
 
@@ -422,11 +446,13 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static async searchContent() {
     this.contentQuery = this.element.querySelector('[name="contentQuery"]')?.value ?? "";
     this.contentType = this.element.querySelector('[name="contentType"]')?.value ?? "";
+    this.contentGlossaryOnly = Boolean(this.element.querySelector('[name="contentGlossaryOnly"]')?.checked);
     this.contentResults = await lsSearchPacks({
       documentName: "Item",
       query: this.contentQuery,
       types: this.contentType ? [this.contentType] : ["action", "feat", "melee", "spell", "effect"],
       limit: 250,
+      bestiaryGlossaryOnly: this.contentGlossaryOnly,
     });
     await this.render();
   }
@@ -471,6 +497,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       useCurrent: LoreSmithItemBuilder.useCurrent,
       addTrait: LoreSmithItemBuilder.addTrait,
       removeTrait: LoreSmithItemBuilder.removeTrait,
+      goToStep: LoreSmithItemBuilder.goToStep,
       finish: LoreSmithItemBuilder.finish,
     },
   };
@@ -614,6 +641,12 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     await this.render();
   }
 
+  static async goToStep(_event, target) {
+    await this.saveStep();
+    this.step = Math.max(0, Math.min(3, Number(target.dataset.step) || 0));
+    await this.render();
+  }
+
   static async searchSource() {
     this.query = this.element.querySelector('[name="sourceQuery"]')?.value ?? "";
     this.sourceLevel = this.element.querySelector('[name="sourceLevel"]')?.value ?? "";
@@ -694,6 +727,10 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     classes: ["lore-smith-live-log"],
     position: { width: 560, height: 680, left: 70, top: 70 },
     window: { title: "Lore Smith Live Combat", icon: "fa-solid fa-swords", resizable: true },
+    actions: {
+      togglePause: LoreSmithLiveLog.togglePause,
+      stop: LoreSmithLiveLog.stop,
+    },
   };
 
   static PARTS = {
@@ -702,7 +739,10 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
 
   entries = [];
   running = true;
+  paused = false;
+  stopped = false;
   status = "Preparing encounter";
+  summary = null;
 
   async _prepareContext(options) {
     return {
@@ -711,7 +751,10 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
       delay: game.settings.get(LS_MODULE_ID, "liveActionDelay"),
       delaySeconds: (game.settings.get(LS_MODULE_ID, "liveActionDelay") / 1000).toFixed(2),
       running: this.running,
+      paused: this.paused,
+      stopped: this.stopped,
       status: this.status,
+      summary: this.summary,
     };
   }
 
@@ -744,7 +787,31 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
 
   async complete() {
     this.running = false;
-    this.status = this.status === "Running" ? "Simulation complete" : this.status;
+    this.status = this.stopped ? "Stopped by the GM"
+      : this.status === "Running" ? "Simulation complete" : this.status;
+    await this.render({ force: true });
+  }
+
+  isPaused() {
+    return this.paused;
+  }
+
+  isStopped() {
+    return this.stopped;
+  }
+
+  static async togglePause() {
+    if (!this.running || this.stopped) return;
+    this.paused = !this.paused;
+    this.status = this.paused ? "Paused" : "Running";
+    await this.render({ force: true });
+  }
+
+  static async stop() {
+    if (!this.running) return;
+    this.stopped = true;
+    this.paused = false;
+    this.status = "Stopping";
     await this.render({ force: true });
   }
 }
@@ -767,29 +834,96 @@ function lsCombatSides() {
   return { combat, tokens, partyIds, enemyIds };
 }
 
+const LS_CREATURE_XP = new Map([
+  [-4, 10], [-3, 15], [-2, 20], [-1, 30], [0, 40],
+  [1, 60], [2, 80], [3, 120], [4, 160],
+]);
+
+const LS_DIFFICULTY_BUDGETS = [
+  { name: "Trivial", xp: 40 },
+  { name: "Low", xp: 60 },
+  { name: "Moderate", xp: 80 },
+  { name: "Severe", xp: 120 },
+  { name: "Extreme", xp: 160 },
+];
+
+function lsInterpolatedDifficulty(xp) {
+  if (xp < LS_DIFFICULTY_BUDGETS[0].xp) return "Trivial-";
+  for (let index = 0; index < LS_DIFFICULTY_BUDGETS.length; index += 1) {
+    const current = LS_DIFFICULTY_BUDGETS[index];
+    if (xp === current.xp) return current.name;
+    const next = LS_DIFFICULTY_BUDGETS[index + 1];
+    if (!next || xp > next.xp) continue;
+    const progress = (xp - current.xp) / (next.xp - current.xp);
+    if (progress < 0.25) return current.name;
+    if (progress < 0.58) return `${current.name}+`;
+    return `${next.name}-`;
+  }
+  return "Extreme+";
+}
+
+function lsEncounterDifficulty(sides) {
+  const party = sides.tokens.filter((token) => sides.partyIds.has(token.id));
+  const enemies = sides.tokens.filter((token) => sides.enemyIds.has(token.id));
+  const partyLevel = Math.round(party.reduce((sum, token) =>
+    sum + lsNumber(token.actor?.system?.details?.level, 0), 0) / Math.max(1, party.length));
+  const creatureXp = enemies.reduce((sum, token) => {
+    const difference = lsNumber(token.actor?.system?.details?.level, 0) - partyLevel;
+    if (difference > 4) return sum + 240;
+    if (difference < -4) return sum;
+    return sum + (LS_CREATURE_XP.get(difference) ?? 0);
+  }, 0);
+  const adjustedXp = creatureXp * 4 / Math.max(1, party.length);
+  return {
+    label: lsInterpolatedDifficulty(adjustedXp),
+    creatureXp,
+    adjustedXp: Math.round(adjustedXp),
+    partyLevel,
+    partySize: party.length,
+  };
+}
+
+function lsRunEncounterSample(sides, iterations, captureCount = 0) {
+  let wins = 0;
+  let rounds = 0;
+  const samples = [];
+  for (let index = 0; index < iterations; index += 1) {
+    const result = game.loreSmith.simulateEncounter(sides.tokens, sides.partyIds, sides.enemyIds, {
+      captureLog: index < captureCount,
+    });
+    if (result.partyWon) wins += 1;
+    rounds += result.rounds;
+    if (index < captureCount) samples.push(result);
+  }
+  return {
+    wins,
+    iterations,
+    victoryRate: ((wins / iterations) * 100).toFixed(1),
+    averageRounds: (rounds / iterations).toFixed(1),
+    samples,
+    difficulty: lsEncounterDifficulty(sides),
+  };
+}
+
 async function lsRunIterations() {
   const sides = lsCombatSides();
   if (!sides || !sides.partyIds.size || !sides.enemyIds.size) {
     return ui.notifications.error("Start an encounter with at least one friendly and one hostile combatant.");
   }
   const iterations = Math.max(1, Math.min(1000, game.settings.get(LS_MODULE_ID, "combatIterations")));
-  let wins = 0;
-  let rounds = 0;
-  const samples = [];
-  for (let index = 0; index < iterations; index += 1) {
-    const result = game.loreSmith.simulateEncounter(sides.tokens, sides.partyIds, sides.enemyIds, { captureLog: index < 20 });
-    if (result.partyWon) wins += 1;
-    rounds += result.rounds;
-    if (index < 20) samples.push(result);
-  }
-  const logHtml = samples.map((sample, index) => `
+  const report = lsRunEncounterSample(sides, iterations, 20);
+  const logHtml = report.samples.map((sample, index) => `
     <details ${index === 0 ? "open" : ""}>
       <summary>Iteration ${index + 1} · ${sample.partyWon ? "Characters win" : "Opposition wins"} · ${sample.rounds} rounds</summary>
       ${sample.log.map((entry) => `<p class="${entry.kind}">${foundry.utils.escapeHTML(entry.text)}</p>`).join("")}
     </details>`).join("");
   const content = `<div class="ls-combat-report">
-    <header><article><span>Character victory</span><strong>${((wins / iterations) * 100).toFixed(1)}%</strong><small>${wins}/${iterations}</small></article>
-    <article><span>Average duration</span><strong>${(rounds / iterations).toFixed(1)}</strong><small>rounds</small></article></header>
+    <header>
+      <article><span>Character victory</span><strong>${report.victoryRate}%</strong><small>${report.wins}/${iterations} combats</small></article>
+      <article><span>Rules-based difficulty</span><strong>${report.difficulty.label}</strong><small>${report.difficulty.creatureXp} creature XP · ${report.difficulty.adjustedXp} party-adjusted XP · party level ${report.difficulty.partyLevel}</small></article>
+      <article><span>Average duration</span><strong>${report.averageRounds}</strong><small>rounds</small></article>
+    </header>
+    <p>Victory is a randomized simulation estimate. Difficulty is calculated separately from PF2e encounter XP, adjusted for a ${report.difficulty.partySize}-character party.</p>
     <p>Iterations are configured in <strong>Game Settings → Configure Settings → Module Settings → Lore Smith</strong>.</p>
     <section>${logHtml}</section>
   </div>`;
@@ -816,16 +950,27 @@ async function lsRunLiveCombat() {
     return;
   }
   try {
+    const previewIterations = Math.max(20, Math.min(200, game.settings.get(LS_MODULE_ID, "combatIterations")));
+    const preview = lsRunEncounterSample(sides, previewIterations);
+    log.summary = {
+      victoryRate: `${preview.victoryRate}%`,
+      difficulty: preview.difficulty.label,
+      difficultyDetail: `${preview.difficulty.creatureXp} creature XP · ${preview.difficulty.adjustedXp} adjusted XP`,
+      averageRounds: preview.averageRounds,
+      iterations: previewIterations,
+    };
     if (!sides.combat.started) await sides.combat.startCombat();
-    const missingInitiative = sides.combat.combatants.filter((combatant) => combatant.initiative === null).map((combatant) => combatant.id);
-    if (missingInitiative.length) await sides.combat.rollInitiative(missingInitiative);
+    const liveCombat = game.combat ?? sides.combat;
+    const missingInitiative = liveCombat.combatants.filter((combatant) => combatant.initiative === null).map((combatant) => combatant.id);
+    if (missingInitiative.length) await liveCombat.rollInitiative(missingInitiative);
     log.status = "Running";
     await log.render({ force: true });
     ui.notifications.info("Lore Smith live combat started. Use the separate window to read the log and change its speed.");
     await game.loreSmith.runLiveReplay(sides.tokens, sides.partyIds, sides.enemyIds, {
-      combat: sides.combat,
+      combat: liveCombat,
       onLog: (entry) => log.add(entry),
       delay: () => game.settings.get(LS_MODULE_ID, "liveActionDelay"),
+      control: log,
     });
   } catch (error) {
     console.error(`${LS_MODULE_ID} | Live combat failed`, error);
@@ -868,6 +1013,38 @@ function lsActivateJournalWikiLinks(container) {
     fragment.append(document.createTextNode(text.slice(cursor)));
     textNode.replaceWith(fragment);
   }
+}
+
+function lsEmbedNativeJournalEditor(pageSheet, html) {
+  const page = pageSheet.object ?? pageSheet.document;
+  const journal = page?.parent;
+  if (!pageSheet.isEditable || journal?.documentName !== "JournalEntry") return;
+  const journalSheet = journal.sheet;
+  const journalRoot = lsRoot(journalSheet?.element);
+  const pageNode = journalRoot?.querySelector(`.journal-entry-page[data-page-id="${page.id}"]`);
+  const wrapper = lsRoot(pageSheet.element) ?? lsRoot(html)?.closest?.(".window-app, .application");
+  if (!pageNode || !wrapper || wrapper.dataset.loreSmithEmbeddedEditor === "ready") return;
+
+  wrapper.dataset.loreSmithEmbeddedEditor = "ready";
+  wrapper.classList.add("ls-inline-journal-page-sheet");
+  const host = document.createElement("section");
+  host.className = "ls-inline-journal-editor";
+  const toolbar = document.createElement("header");
+  toolbar.className = "ls-inline-journal-editor-header";
+  toolbar.innerHTML = `
+    <strong><i class="fa-solid fa-feather-pointed"></i> Editing ${foundry.utils.escapeHTML(page.name)}</strong>
+    <button type="button"><i class="fa-solid fa-arrow-left"></i> Back to page</button>`;
+  toolbar.querySelector("button").addEventListener("click", async () => {
+    await pageSheet.close();
+    await journalSheet.render(true, { pageId: page.id });
+  });
+  host.append(toolbar, wrapper);
+  pageNode.replaceChildren(host);
+  wrapper.style.removeProperty("left");
+  wrapper.style.removeProperty("top");
+  wrapper.style.removeProperty("width");
+  wrapper.style.removeProperty("height");
+  journalSheet.bringToTop?.();
 }
 
 function lsEnhanceNativeJournal(app, html) {
@@ -1021,6 +1198,9 @@ Hooks.on("renderItemSheet", (app, html) => {
 Hooks.on("renderJournalSheet", (app, html) => {
   lsEnhanceNativeJournal(app, html);
 });
+
+Hooks.on("renderJournalPageSheet", lsEmbedNativeJournalEditor);
+Hooks.on("renderJournalTextPageSheet", lsEmbedNativeJournalEditor);
 
 Hooks.on("renderApplicationV2", (app, html) => {
   const document = app.document ?? app.actor ?? app.item;

@@ -5,7 +5,22 @@
       <input name="liveDelay" type="range" min="250" max="10000" step="250" value="{{delay}}">
       <span data-role="delayLabel">{{delaySeconds}} seconds</span>
     </label>
+    <div class="ls-live-controls">
+      <button type="button" data-action="togglePause" {{#unless running}}disabled{{/unless}}>
+        {{#if paused}}<i class="fa-solid fa-play"></i> Resume{{else}}<i class="fa-solid fa-pause"></i> Pause{{/if}}
+      </button>
+      <button type="button" class="danger" data-action="stop" {{#unless running}}disabled{{/unless}}>
+        <i class="fa-solid fa-stop"></i> Stop
+      </button>
+    </div>
   </header>
+  {{#if summary}}
+    <section class="ls-live-summary">
+      <article><span>Victory estimate</span><strong>{{summary.victoryRate}}</strong><small>{{summary.iterations}} test combats</small></article>
+      <article><span>PF2e difficulty</span><strong>{{summary.difficulty}}</strong><small>{{summary.difficultyDetail}}</small></article>
+      <article><span>Expected length</span><strong>{{summary.averageRounds}}</strong><small>rounds</small></article>
+    </section>
+  {{/if}}
   <div class="ls-live-notice"><i class="fa-solid fa-comment-slash"></i> This log stays in Lore Smith. Chat mirroring is optional in Module Settings.</div>
   <div class="ls-live-entries">
     {{#each entries}}<p class="{{kind}}">{{text}}</p>{{else}}<p class="empty">Waiting for the first action...</p>{{/each}}

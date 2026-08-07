@@ -11,12 +11,19 @@ The module provides:
 - Combat Tracker buttons for randomized iteration logs and live Scene combat;
 - spell-, ability-, item-, strike-, save-, condition-, and area-template-aware combat choices;
 - detailed iteration logs and a separate live-combat log window;
-- adjustable live action pacing without Chat spam by default;
+- pause, resume, stop, and adjustable pacing controls for live combat without
+  Chat spam by default;
+- prepared, spontaneous, innate, focus, and cantrip resource tracking during
+  simulations, with repeated-action avoidance;
 - browse-all compendium source libraries with keyword, level, trait, and type filters;
+- an optional Bestiary Ability Glossary-only filter for creature abilities;
 - GM Core level benchmark menus for creature statistics;
 - native Foundry Journal sheets with their standard formatting, images, and page
-  sidebar, plus `[[wiki links]]` that open or create pages inside the same Journal;
+  sidebar, an editor embedded inside the parent Journal window, and `[[wiki links]]`
+  that open or create pages inside the same Journal;
 - side-by-side creature and item source previews before copying a compendium entry.
+- PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
+  separately from the randomized character victory estimate.
 
 ## Prototype warning
 
@@ -36,8 +43,8 @@ The Creature Builder icon appears in the title bar of native PF2e NPC sheets.
 The Item Builder icon appears in native PF2e Item sheets. The Combat Tracker
 adds **Simulate Logs** and **Live Combat** controls when an encounter is active.
 Use the slider in the Live Combat window to change the delay from 0.25 to 10
-seconds per action. Chat mirroring is optional in Module Settings and is off by
-default.
+seconds per action, or pause, resume, and stop the replay. Chat mirroring is
+optional in Module Settings and is off by default.
 
 Selecting **Live Combat** opens a separate Lore Smith window immediately. It
 shows preparation errors as well as the complete action log, so failed setup is
