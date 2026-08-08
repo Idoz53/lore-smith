@@ -1461,12 +1461,24 @@ function lsEnhanceNativeJournal(app, html) {
   app._loreSmithJournalObserver = observer;
   observer.observe(root, { childList: true, subtree: true });
   root.addEventListener("click", async (event) => {
+    const edit = event.target.closest?.('[data-action="editPage"], .editor-edit');
+    if (edit) {
+      const pageElement = edit.closest?.("[data-page-id]");
+      const pageId = pageElement?.dataset.pageId ?? app.pageId;
+      const page = journal.pages.get(pageId) ?? (journal.pages.size === 1 ? journal.pages.first() : null);
+      if (page?.type === "text" && globalThis.LoreSmithJournalEditor?.open) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        await globalThis.LoreSmithJournalEditor.open(page, app);
+        return;
+      }
+    }
     const link = event.target.closest?.(".ls-journal-wiki-link");
     if (!link) return;
     event.preventDefault();
     event.stopPropagation();
     await lsOpenOrCreateJournalPage(app, link.dataset.pageName);
-  });
+  }, { capture: true });
 }
 
 function lsAddCombatTrackerButtons(_app, html) {

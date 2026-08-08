@@ -16,6 +16,7 @@ const templateFiles = [
   "templates/creature-builder.hbs",
   "templates/item-builder.hbs",
   "templates/live-combat.hbs",
+  "templates/journal-editor.hbs",
 ];
 
 for (const relativePath of [...manifest.esmodules, ...manifest.styles, ...templateFiles]) {
@@ -28,17 +29,26 @@ const template = await readFile(resolve(root, "templates/dashboard.hbs"), "utf8"
 const creatureTemplate = await readFile(resolve(root, "templates/creature-builder.hbs"), "utf8");
 const itemTemplate = await readFile(resolve(root, "templates/item-builder.hbs"), "utf8");
 const liveTemplate = await readFile(resolve(root, "templates/live-combat.hbs"), "utf8");
-if (nativeScript.includes("lsMountAlwaysEditableJournalPages") || nativeScript.includes('data-action="editPage"')) {
-  throw new Error("Lore Smith must leave Foundry's native read view and edit button intact.");
+if (nativeScript.includes("lsMountAlwaysEditableJournalPages")) {
+  throw new Error("Lore Smith must not mount an always-editing Journal page.");
 }
+const journalScript = await readFile(resolve(root, "scripts/journal-editor.js"), "utf8");
 if (!nativeScript.includes("lsEnableJournalWikiLinksInEditor")
   || !nativeScript.includes("lsEnhanceJournalPageEditor")
   || !nativeScript.includes("lsOpenOrCreateJournalPage")
+  || !nativeScript.includes('data-action="editPage"')
+  || !nativeScript.includes("LoreSmithJournalEditor.open")
   || !nativeScript.includes("lsJournalWikiDraftFromSelection")
   || !nativeScript.includes("ls-journal-link-autocomplete")
   || !nativeScript.includes("lore-smith-wiki-brackets")
   || !nativeScript.includes("lore-smith-wiki-links")) {
   throw new Error("Journal page-editor wiki-link handling is missing.");
+}
+if (!journalScript.includes("LoreSmithJournalEditor")
+  || !journalScript.includes("openJournalEditor")
+  || !journalScript.includes("markdownToHtml")
+  || !journalScript.includes("htmlToMarkdown")) {
+  throw new Error("The bundled Markdown Journal editor is incomplete.");
 }
 if (!script.includes("combatantInsideTemplate") || !script.includes("rollNativeDamage")) {
   throw new Error("Live area hit-testing or native PF2e damage controls are missing.");

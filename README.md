@@ -5,10 +5,9 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- a responsive, Obsidian-style single-note Journal vault with its page tree on
-  the left and one clean rendered note on the right, while retaining Foundry's
-  native page sidebar, permissions, formatting toolbar, headings, lists, tables,
-  images, and document links;
+- a responsive, Obsidian-style Journal workspace with a compact native page tree,
+  clean rendered notes, and a self-contained Markdown editing window bundled
+  directly into the module;
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
 - encounter setup using actors and tokens already in the Foundry world;
 - Combat Tracker buttons for randomized iteration logs and live Scene combat;
@@ -24,10 +23,13 @@ The module provides:
 - browse-all compendium source libraries with keyword, level, trait, and type filters;
 - an optional Bestiary Ability Glossary-only filter for creature abilities;
 - GM Core level benchmark menus for creature statistics;
-- native Foundry Journal sheets with their standard read view, compact page
-  sidebar, edit button, separate page-editor window, formatting, images, tables,
-  permissions, and Show Players controls;
-- edit-window wiki links remain first-class: typing
+- native Foundry Journal documents, page permissions, sharing, Show Players,
+  images, tables, document links, and rendered read view; no Obsidian install,
+  web service, browser extension, or other application is required;
+- the Journal edit button opens Lore Smith's bundled CodeMirror 6 editor. Existing
+  rich-text pages are safely converted to Markdown on first edit and are not
+  changed until Save is pressed;
+- editor wiki links are first-class: typing
   `[[` supplies the closing brackets and opens searchable page autocomplete;
   use the mouse wheel, arrow keys, Enter, or Tab to choose a page. After saving,
   completed links display as clean blue note names and open or create pages in

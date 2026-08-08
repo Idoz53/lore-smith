@@ -2,7 +2,7 @@
   "id": "lore-smith",
   "title": "Lore Smith",
   "description": "A PF2e-native Game Master workspace for journals, creature and item building, encounter analysis, combat logs, and scene-based live simulation.",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "authors": [
     {
       "name": "Idoz53"
@@ -25,6 +25,7 @@
   },
   "esmodules": [
     "scripts/main.js",
+    "scripts/journal-editor.js",
     "scripts/native-workflows.js"
   ],
   "styles": [
