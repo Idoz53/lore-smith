@@ -11,6 +11,8 @@ The module provides:
   saved draft that survives navigation and reopening the dashboard;
 - image-backed NPC prep cards with roles, motivations, and secrets, generated as
   linked portrait pages inside the finished session Journal;
+- a dedicated music-and-atmosphere prep step with reusable cues, Foundry Playlist
+  selection, direct audio files, mood, timing, and playback notes;
 - a responsive, wiki-style Journal workspace with a compact native page tree,
   clean rendered notes, and Foundry's visual rich-text editor integrated into
   a focused writing window;

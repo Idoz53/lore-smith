@@ -24,13 +24,13 @@
         </div>
 
         {{#if sessionSteps.goal.active}}
-          <section class="ls-session-step"><div class="ls-step-kicker">Step 1 of 5</div><h2>Choose the session's main goal</h2><p>Write the one thing the players should be able to pursue, discover, prevent, or decide tonight. It gives every later scene a purpose.</p>
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 1 of 6</div><h2>Choose the session's main goal</h2><p>Write the one thing the players should be able to pursue, discover, prevent, or decide tonight. It gives every later scene a purpose.</p>
             <div class="ls-session-form"><label>Session title<input name="sessionTitle" value="{{sessionPrep.title}}" placeholder="Session 12 — Smoke over Otari"></label><label class="wide">Main goal<textarea name="sessionGoal" rows="4" placeholder="The heroes discover who is sabotaging the lighthouse before the harbour festival begins.">{{sessionPrep.goal}}</textarea></label><label>Opening situation<textarea name="sessionOpening" rows="3" placeholder="Where the session begins and what immediately demands attention.">{{sessionPrep.opening}}</textarea></label><label>Likely ending or cliffhanger<textarea name="sessionEnding" rows="3" placeholder="A reveal, choice, fight, or question to leave the table with.">{{sessionPrep.ending}}</textarea></label></div>
           </section>
         {{/if}}
 
         {{#if sessionSteps.locations.active}}
-          <section class="ls-session-step"><div class="ls-step-kicker">Step 2 of 5</div><h2>Prepare at least three important places</h2><p>Give each place a quick image and sensory cues. You can taste the air, feel the temperature, or notice the texture of a door—small details make a place easy to run.</p>
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 2 of 6</div><h2>Prepare at least three important places</h2><p>Give each place a quick image and sensory cues. You can taste the air, feel the temperature, or notice the texture of a door—small details make a place easy to run.</p>
             <div class="ls-location-stack">{{#each sessionPrep.locations}}<article class="ls-location-card" data-location-id="{{id}}"><header><div><span>Important place {{number}}</span><strong>{{#if name}}{{name}}{{else}}Unnamed place{{/if}}</strong></div>{{#if canRemove}}<button class="danger" data-action="removeLocation" data-id="{{id}}" data-tooltip="Remove location"><i class="fa-solid fa-trash"></i></button>{{/if}}</header><div class="ls-session-form">
               <label>Place name<input name="locationName" value="{{name}}" placeholder="The flooded bell tower"></label><label>Image path or URL<span class="ls-inline-control"><input name="locationImage" value="{{image}}" placeholder="Choose an image"><button data-action="browseLocationImage" data-id="{{id}}" type="button">Browse</button></span></label>
               <label class="wide">What makes this place matter?<textarea name="locationPurpose" rows="2" placeholder="A clue, confrontation, resource, refuge, or obstacle.">{{purpose}}</textarea></label>
@@ -40,7 +40,7 @@
         {{/if}}
 
         {{#if sessionSteps.people.active}}
-          <section class="ls-session-step"><div class="ls-step-kicker">Step 3 of 5</div><h2>People, factions, and opposition</h2><p>Keep this short: who needs something, who stands in the way, and what secret can change the session?</p>
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 3 of 6</div><h2>People, factions, and opposition</h2><p>Keep this short: who needs something, who stands in the way, and what secret can change the session?</p>
             <div class="ls-npc-stack">{{#each sessionPrep.npcs}}<article class="ls-session-npc-card" data-session-npc-id="{{id}}">
               <header><div><span>Important NPC {{number}}</span><strong>{{#if name}}{{name}}{{else}}Unnamed NPC{{/if}}</strong></div><button class="danger" data-action="removeSessionNpc" data-id="{{id}}" data-tooltip="Remove NPC"><i class="fa-solid fa-trash"></i></button></header>
               <div class="ls-session-npc-body"><div class="ls-session-npc-portrait">{{#if image}}<img src="{{image}}" alt="{{name}}">{{else}}<i class="fa-solid fa-user"></i>{{/if}}</div><div class="ls-session-form">
@@ -54,14 +54,29 @@
           </section>
         {{/if}}
 
+        {{#if sessionSteps.music.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 4 of 6</div><h2>Music and atmosphere</h2><p>Prepare only the cues that matter. Choose an existing Foundry Playlist or a direct audio file, then note the moment and feeling it should support.</p>
+            <div class="ls-music-stack">{{#each sessionPrep.musicCues}}<article class="ls-music-card" data-session-music-id="{{id}}">
+              <header><div><span>Music cue {{number}}</span><strong>{{#if name}}{{name}}{{else}}{{moment}}{{/if}}</strong></div><button class="danger" data-action="removeMusicCue" data-id="{{id}}" data-tooltip="Remove music cue"><i class="fa-solid fa-trash"></i></button></header>
+              <div class="ls-music-body"><div class="ls-music-icon"><i class="fa-solid fa-music"></i></div><div class="ls-session-form">
+                <label>Cue name<input name="musicName" value="{{name}}" placeholder="The lighthouse awakens"></label><label>Moment<select name="musicMoment">{{#each momentOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label>Mood and purpose<input name="musicMood" value="{{mood}}" placeholder="Ancient wonder turning into unease"></label><label>Foundry Playlist<select name="musicPlaylist">{{#each playlistOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label class="wide">Direct audio file <span class="ls-inline-control"><input name="musicAudio" value="{{audio}}" placeholder="Optional audio file when no Playlist is used"><button data-action="browseMusicAudio" data-id="{{id}}" type="button">Browse</button></span></label>
+                <label class="wide">When should it start, change, or stop?<textarea name="musicNotes" rows="3" placeholder="Begin quietly when the lens starts turning. Stop on the first attack, then switch to the combat Playlist.">{{notes}}</textarea></label>
+              </div></div>
+            </article>{{else}}<div class="ls-empty">No music cues prepared. Deliberate silence is also a valid choice.</div>{{/each}}</div>
+            <button data-action="addMusicCue"><i class="fa-solid fa-plus"></i> Add music cue</button>
+          </section>
+        {{/if}}
+
         {{#if sessionSteps.scenes.active}}
-          <section class="ls-session-step"><div class="ls-step-kicker">Step 4 of 5</div><h2>Scenes, clues, and rewards</h2><p>Prepare situations rather than a rigid script. Give the players several clues and something meaningful to gain or lose.</p>
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 5 of 6</div><h2>Scenes, clues, and rewards</h2><p>Prepare situations rather than a rigid script. Give the players several clues and something meaningful to gain or lose.</p>
             <div class="ls-session-form"><label>Likely scenes and clues<textarea name="sessionScenes" rows="8" placeholder="1. Festival briefing — the captain gives a map.\n2. Investigate the warehouse — soot on the locks and a coded ledger.\n3. Bell tower confrontation — the saboteur chooses escape or fire.">{{sessionPrep.scenes}}</textarea></label><label>Rewards, consequences, and changes<textarea name="sessionRewards" rows="8" placeholder="Reward: harbourmaster's favour and a minor item.\nIf the villain escapes: the lighthouse burns and the Ash Knives gain influence.">{{sessionPrep.rewards}}</textarea></label></div>
           </section>
         {{/if}}
 
         {{#if sessionSteps.review.active}}
-          <section class="ls-session-step"><div class="ls-step-kicker">Step 5 of 5</div><h2>Final GM reminders</h2><p>Add anything you want visible only to you, then create the session journal. You can edit every generated page normally afterward.</p>
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 6 of 6</div><h2>Final GM reminders</h2><p>Add anything you want visible only to you, then create the session journal. You can edit every generated page normally afterward.</p>
             <div class="ls-session-form"><label class="wide">GM reminders and secrets<textarea name="sessionReminders" rows="8" placeholder="The saboteur is actually working for the mayor. Let the players learn this only if they decode the ledger or question Mira.">{{sessionPrep.reminders}}</textarea></label></div>
             {{#if sessionValidation.length}}<div class="ls-warning"><strong>Before creating the journal:</strong>{{#each sessionValidation}}<div>{{this}}</div>{{/each}}</div>{{else}}<div class="ls-session-ready"><i class="fa-solid fa-circle-check"></i><span>Your session packet is ready to create.</span></div>{{/if}}
           </section>
