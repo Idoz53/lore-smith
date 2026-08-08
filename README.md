@@ -7,7 +7,8 @@ The module provides:
 
 - a five-step Session Prep dashboard that turns a session goal, three or more
   image-backed locations, five-senses details, people, scenes, rewards, and GM
-  reminders into one linked, editable Foundry Journal;
+  reminders into one linked, editable Foundry Journal, with an automatically
+  saved draft that survives navigation and reopening the dashboard;
 - a responsive, wiki-style Journal workspace with a compact native page tree,
   clean rendered notes, and Foundry's visual rich-text editor integrated into
   a focused writing window;

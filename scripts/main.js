@@ -1065,6 +1065,8 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   result = null;
   sessionStep = 0;
   sessionPrep = newSessionPrep();
+  sessionDraftLoaded = false;
+  sessionSaveTimer = null;
   lastSessionJournalId = null;
 
   async getNotebook(create = false) {
@@ -1084,6 +1086,28 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext(options) {
+    if (!this.sessionDraftLoaded) {
+      this.sessionDraftLoaded = true;
+      try {
+        const rawDraft = game.settings.get(MODULE_ID, "sessionPrepDraft");
+        const stored = rawDraft ? JSON.parse(rawDraft) : null;
+        const storedPrep = stored?.prep ?? stored;
+        if (storedPrep && typeof storedPrep === "object") {
+          const fresh = newSessionPrep();
+          const storedLocations = Array.isArray(storedPrep.locations) ? storedPrep.locations : [];
+          this.sessionPrep = {
+            ...fresh,
+            ...storedPrep,
+            locations: storedLocations.length
+              ? storedLocations.map((location) => ({ ...newSessionLocation(), ...location, id: location.id || foundry.utils.randomID() }))
+              : fresh.locations,
+          };
+          this.sessionStep = Math.max(0, Math.min(4, Number(stored?.step) || 0));
+        }
+      } catch (error) {
+        console.warn("Lore Smith | Could not restore the Session Prep draft.", error);
+      }
+    }
     const sceneTokens = (canvas?.scene?.tokens?.contents ?? []).filter((token) => token.actor).map((token) => {
       const actor = token.actor;
       const hp = actorHp(actor);
@@ -1159,6 +1183,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onRender(context, options) {
     super._onRender(context, options);
+    if (this.activeTab === "session") {
+      for (const field of this.element?.querySelectorAll(".ls-session-panel input, .ls-session-panel textarea") ?? []) {
+        field.addEventListener("input", () => {
+          clearTimeout(this.sessionSaveTimer);
+          this.sessionSaveTimer = setTimeout(() => void this.syncSessionPrepForm(), 350);
+        });
+      }
+      return;
+    }
     if (this.activeTab !== "notes") return;
     const editor = this.element?.querySelector('[data-role="note-editor"]');
     const title = this.element?.querySelector('[data-role="note-title"]');
@@ -1244,14 +1277,22 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       : 100;
   }
 
-  syncSessionPrepForm() {
+  async saveSessionPrepDraft() {
+    await game.settings.set(MODULE_ID, "sessionPrepDraft", JSON.stringify({ step: this.sessionStep, prep: this.sessionPrep }));
+  }
+
+  async syncSessionPrepForm() {
     const root = this.element;
     if (!root || this.activeTab !== "session") return;
-    const value = (name) => root.querySelector(`[name="${name}"]`)?.value ?? "";
-    Object.assign(this.sessionPrep, {
-      title: value("sessionTitle").trim(), goal: value("sessionGoal").trim(), opening: value("sessionOpening").trim(), ending: value("sessionEnding").trim(),
-      people: value("sessionPeople").trim(), opposition: value("sessionOpposition").trim(), scenes: value("sessionScenes").trim(), rewards: value("sessionRewards").trim(), reminders: value("sessionReminders").trim(),
-    });
+    const visibleFields = {
+      title: "sessionTitle", goal: "sessionGoal", opening: "sessionOpening", ending: "sessionEnding",
+      people: "sessionPeople", opposition: "sessionOpposition", scenes: "sessionScenes",
+      rewards: "sessionRewards", reminders: "sessionReminders",
+    };
+    for (const [property, name] of Object.entries(visibleFields)) {
+      const field = root.querySelector(`[name="${name}"]`);
+      if (field) this.sessionPrep[property] = field.value.trim();
+    }
     const previous = new Map(this.sessionPrep.locations.map((location) => [location.id, location]));
     const cards = [...root.querySelectorAll("[data-location-id]")];
     if (cards.length) this.sessionPrep.locations = cards.map((card) => {
@@ -1259,11 +1300,12 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
       return { ...previous.get(id), id, name: field("locationName"), image: field("locationImage"), purpose: field("locationPurpose"), sight: field("locationSight"), hearing: field("locationHearing"), smell: field("locationSmell"), touch: field("locationTouch"), taste: field("locationTaste") };
     });
+    await this.saveSessionPrepDraft();
   }
 
   static async changeTab(event, target) {
     this.captureEncounterSelection();
-    this.syncSessionPrepForm();
+    await this.syncSessionPrepForm();
     this.activeTab = target.dataset.tab;
     await this.render();
   }
@@ -1271,52 +1313,59 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   static async newSessionPrep() {
     this.sessionStep = 0;
     this.sessionPrep = newSessionPrep();
+    await this.saveSessionPrepDraft();
     await this.render();
   }
 
   static async previousSessionStep() {
-    this.syncSessionPrepForm();
+    await this.syncSessionPrepForm();
     this.sessionStep = Math.max(0, this.sessionStep - 1);
+    await this.saveSessionPrepDraft();
     await this.render();
   }
 
   static async nextSessionStep() {
-    this.syncSessionPrepForm();
+    await this.syncSessionPrepForm();
     this.sessionStep = Math.min(4, this.sessionStep + 1);
+    await this.saveSessionPrepDraft();
     await this.render();
   }
 
   static async goToSessionStep(_event, target) {
-    this.syncSessionPrepForm();
+    await this.syncSessionPrepForm();
     this.sessionStep = Math.max(0, Math.min(4, Number(target.dataset.step) || 0));
+    await this.saveSessionPrepDraft();
     await this.render();
   }
 
   static async addLocation() {
-    this.syncSessionPrepForm();
+    await this.syncSessionPrepForm();
     this.sessionPrep.locations.push(newSessionLocation());
+    await this.saveSessionPrepDraft();
     await this.render();
   }
 
   static async removeLocation(_event, target) {
-    this.syncSessionPrepForm();
+    await this.syncSessionPrepForm();
     if (this.sessionPrep.locations.length <= 3) return;
     this.sessionPrep.locations = this.sessionPrep.locations.filter((location) => location.id !== target.dataset.id);
+    await this.saveSessionPrepDraft();
     await this.render();
   }
 
   static async browseLocationImage(_event, target) {
-    this.syncSessionPrepForm();
+    await this.syncSessionPrepForm();
     const location = this.sessionPrep.locations.find((entry) => entry.id === target.dataset.id);
     if (!location) return;
     new FilePicker({ type: "imagevideo", current: location.image, callback: async (path) => {
       location.image = path;
+      await this.saveSessionPrepDraft();
       await this.render();
     } }).browse();
   }
 
   static async createSessionJournal() {
-    this.syncSessionPrepForm();
+    await this.syncSessionPrepForm();
     const invalid = !this.sessionPrep.title.trim() || !this.sessionPrep.goal.trim()
       || this.sessionPrep.locations.length < 3 || this.sessionPrep.locations.some((location) => !location.name.trim() || !location.image.trim());
     if (invalid) {
@@ -1335,6 +1384,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     this.activeNoteId = null;
     this.sessionPrep = newSessionPrep();
     this.sessionStep = 0;
+    await this.saveSessionPrepDraft();
     ui.notifications.info(`Created session Journal: ${journal.name}.`);
     journal.sheet.render(true);
     await this.render();
@@ -1556,6 +1606,14 @@ function openLoreSmith() {
 }
 
 Hooks.once("init", () => {
+  game.settings.register(MODULE_ID, "sessionPrepDraft", {
+    name: "Session Prep Draft",
+    hint: "Automatically stores the current guided session-preparation draft.",
+    scope: "client",
+    config: false,
+    type: String,
+    default: "",
+  });
   game.settings.registerMenu(MODULE_ID, "openDashboard", {
     name: "Open Lore Smith",
     label: "Open Lore Smith",
