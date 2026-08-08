@@ -38,6 +38,7 @@ if (!nativeScript.includes("lsEnableJournalWikiLinksInEditor")
   || !nativeScript.includes("lsOpenOrCreateJournalPage")
   || !nativeScript.includes("lsJournalWikiDraftFromSelection")
   || !nativeScript.includes("ls-journal-link-autocomplete")
+  || !nativeScript.includes("lore-smith-wiki-brackets")
   || !nativeScript.includes("lore-smith-wiki-links")) {
   throw new Error("Always-editable Journal wiki-link handling is missing.");
 }

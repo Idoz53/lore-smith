@@ -1145,20 +1145,31 @@ const lsJournalWikiHighlightRanges = new Map();
 
 function lsRefreshJournalWikiHighlights() {
   if (!globalThis.CSS?.highlights || typeof globalThis.Highlight !== "function") return;
-  const ranges = [];
+  const links = [];
+  const brackets = [];
+  const active = [];
   for (const [host, hostRanges] of lsJournalWikiHighlightRanges) {
     if (!host.isConnected) {
       lsJournalWikiHighlightRanges.delete(host);
       continue;
     }
-    ranges.push(...hostRanges);
+    links.push(...hostRanges.links);
+    brackets.push(...hostRanges.brackets);
+    active.push(...hostRanges.active);
   }
-  if (ranges.length) CSS.highlights.set("lore-smith-wiki-links", new Highlight(...ranges));
-  else CSS.highlights.delete("lore-smith-wiki-links");
+  for (const [name, ranges] of [
+    ["lore-smith-wiki-links", links],
+    ["lore-smith-wiki-brackets", brackets],
+    ["lore-smith-wiki-active", active],
+  ]) {
+    if (ranges.length) CSS.highlights.set(name, new Highlight(...ranges));
+    else CSS.highlights.delete(name);
+  }
 }
 
 function lsCollectJournalWikiRanges(root) {
-  const ranges = [];
+  const ranges = { links: [], brackets: [], active: [] };
+  const selection = document.getSelection();
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       if (node.parentElement?.closest("script, style, textarea")) return NodeFilter.FILTER_REJECT;
@@ -1168,10 +1179,29 @@ function lsCollectJournalWikiRanges(root) {
   while (walker.nextNode()) {
     const textNode = walker.currentNode;
     for (const match of textNode.nodeValue.matchAll(LS_JOURNAL_WIKI_PATTERN)) {
-      const range = document.createRange();
-      range.setStart(textNode, match.index);
-      range.setEnd(textNode, match.index + match[0].length);
-      ranges.push(range);
+      const start = match.index;
+      const end = start + match[0].length;
+      const link = document.createRange();
+      link.setStart(textNode, start + 2);
+      link.setEnd(textNode, end - 2);
+      ranges.links.push(link);
+      const isActive = selection?.anchorNode === textNode
+        && selection.anchorOffset >= start
+        && selection.anchorOffset <= end;
+      if (isActive) {
+        const full = document.createRange();
+        full.setStart(textNode, start);
+        full.setEnd(textNode, end);
+        ranges.active.push(full);
+      } else {
+        const open = document.createRange();
+        open.setStart(textNode, start);
+        open.setEnd(textNode, start + 2);
+        const close = document.createRange();
+        close.setStart(textNode, end - 2);
+        close.setEnd(textNode, end);
+        ranges.brackets.push(open, close);
+      }
     }
   }
   return ranges;
@@ -1451,7 +1481,7 @@ function lsEnableJournalWikiLinksInEditor(journalSheet, page, proseMirror, host)
   const selectionListener = () => {
     if (!host.isConnected) return;
     const selection = document.getSelection();
-    if (selection?.anchorNode && proseMirror.contains(selection.anchorNode)) renderAutocomplete();
+    if (selection?.anchorNode && proseMirror.contains(selection.anchorNode)) refresh();
     else hideAutocomplete();
   };
   document.addEventListener("selectionchange", selectionListener);
@@ -1469,6 +1499,18 @@ function lsEnhanceNativeJournal(app, html) {
   const journal = app.document;
   const root = lsRoot(html);
   if (journal?.documentName !== "JournalEntry" || !root) return;
+  const singleMode = app.constructor?.VIEW_MODES?.SINGLE;
+  if (app.isMultiple && singleMode && !app._loreSmithForcingSingleMode) {
+    app._loreSmithForcingSingleMode = true;
+    queueMicrotask(async () => {
+      try {
+        await app.render({ force: true, mode: singleMode, pageId: app.pageId });
+      } finally {
+        delete app._loreSmithForcingSingleMode;
+      }
+    });
+    return;
+  }
   root.classList.add("ls-always-editable-journal");
   const windowShell = root.closest(".window-app, .application") ?? root.parentElement;
   windowShell?.classList.add("ls-lore-journal-window");
@@ -1481,7 +1523,9 @@ function lsEnhanceNativeJournal(app, html) {
       const search = sidebar.querySelector(":scope > search, :scope > .directory-header");
       sidebar.insertBefore(brand, search ?? sidebar.firstChild);
     }
-    brand.innerHTML = `<i class="fa-solid fa-book-open"></i><span><strong>Campaign Chronicle</strong><small>${journal.pages.size} ${journal.pages.size === 1 ? "page" : "pages"}</small></span>`;
+    brand.innerHTML = '<i class="fa-solid fa-book-open"></i><span><strong></strong><small></small></span>';
+    brand.querySelector("strong").textContent = journal.name;
+    brand.querySelector("small").textContent = `${journal.pages.size} ${journal.pages.size === 1 ? "note" : "notes"}`;
   }
   const containers = [
     ...root.querySelectorAll(".journal-page-content, article.journal-entry-page, .journal-entry-page .editor-content"),

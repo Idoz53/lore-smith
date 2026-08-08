@@ -5,7 +5,8 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- a responsive leather-and-parchment Journal notebook that retains Foundry's
+- a responsive, Obsidian-style single-note Journal vault with its page tree on
+  the left and one continuously editable note on the right, while retaining Foundry's
   native page sidebar, permissions, formatting toolbar, headings, lists, tables,
   images, and document links;
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
@@ -33,7 +34,8 @@ The module provides:
   `[[` supplies the closing brackets and opens searchable page autocomplete;
   use the mouse wheel, arrow keys, Enter, or Tab to choose a page, click a
   completed link to open it, or Ctrl/Cmd-click to edit its name. Missing pages
-  are created inside the same Journal;
+  are created inside the same Journal. Completed links display as clean blue
+  note names; their `[[brackets]]` are revealed only while the caret edits them;
 - side-by-side creature and item source previews before copying a compendium entry.
 - PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
   separately from the randomized character victory estimate.
