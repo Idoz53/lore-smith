@@ -27,6 +27,9 @@ The module provides:
   same Journal;
 - persistent inline Journal editing after autosaves and document re-renders,
   without reopening Foundry's separate page-editor window;
+- edit-mode wiki links are highlighted in blue and remain functional: press
+  Enter or click a completed `[[Page Name]]` to open or create that page inside
+  the same Journal; Ctrl/Cmd-click keeps the caret in the link for editing;
 - side-by-side creature and item source previews before copying a compendium entry.
 - PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
   separately from the randomized character victory estimate.

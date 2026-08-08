@@ -34,6 +34,11 @@ if (!nativeScript.includes("lsMountAlwaysEditableJournalPages")) {
 if (!nativeScript.includes('data-action="editPage"') || !nativeScript.includes("stopImmediatePropagation")) {
   throw new Error("The native Journal edit-popup interception is missing.");
 }
+if (!nativeScript.includes("lsEnableJournalWikiLinksInEditor")
+  || !nativeScript.includes("lsOpenOrCreateJournalPage")
+  || !nativeScript.includes("lore-smith-wiki-links")) {
+  throw new Error("Always-editable Journal wiki-link handling is missing.");
+}
 if (!script.includes("combatantInsideTemplate") || !script.includes("rollNativeDamage")) {
   throw new Error("Live area hit-testing or native PF2e damage controls are missing.");
 }

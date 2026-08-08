@@ -27,3 +27,5 @@
 @media(max-width:800px){.ls-step-track button{font-size:8px}.ls-live-combat>header,.ls-live-summary,.ls-combat-report>header{grid-template-columns:1fr}.ls-builder-filters.content{grid-template-columns:1fr}.ls-glossary-filter{white-space:normal}}
 
 .ls-inline-journal-page-sheet:is(form),.ls-inline-journal-page-sheet .standard-form{display:flex!important;box-sizing:border-box;width:100%!important;min-width:0!important;min-height:400px!important;flex:1;flex-direction:column}.ls-inline-journal-page-sheet prose-mirror{width:100%;min-width:0;min-height:400px!important;flex:1}
+
+::highlight(lore-smith-wiki-links){color:#2d6f9f;text-decoration:underline;text-decoration-color:#4593c8}.ls-inline-journal-page-sheet prose-mirror.ls-wiki-link-under-pointer{cursor:pointer}

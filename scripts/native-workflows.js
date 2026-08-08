@@ -1044,6 +1044,9 @@ async function lsMountAlwaysEditableJournalPage(journalSheet, page, pageNode) {
   const previous = journalSheet._loreSmithInlineEditors.get(page.id);
   if (previous && !previous.host?.isConnected) {
     journalSheet._loreSmithInlineEditors.delete(page.id);
+    previous.wikiObserver?.disconnect();
+    lsJournalWikiHighlightRanges.delete(previous.host);
+    lsRefreshJournalWikiHighlights();
     await previous.sheet.close({ animate: false }).catch(() => {});
   } else if (previous?.host?.isConnected) {
     pageNode.dataset.loreSmithEditor = "ready";
@@ -1099,7 +1102,8 @@ async function lsMountAlwaysEditableJournalPage(journalSheet, page, pageNode) {
   host.append(editor);
   pageNode.replaceChildren(host);
   pageNode.dataset.loreSmithEditor = "ready";
-  journalSheet._loreSmithInlineEditors.set(page.id, { sheet: pageSheet, host });
+  const wikiObserver = lsEnableJournalWikiLinksInEditor(journalSheet, page, proseMirror, host);
+  journalSheet._loreSmithInlineEditors.set(page.id, { sheet: pageSheet, host, wikiObserver });
 }
 
 function lsMountAlwaysEditableJournalPages(journalSheet, root) {
@@ -1108,6 +1112,144 @@ function lsMountAlwaysEditableJournalPages(journalSheet, root) {
     const page = journalSheet.document.pages.get(pageNode.dataset.pageId);
     if (page?.type === "text") void lsMountAlwaysEditableJournalPage(journalSheet, page, pageNode);
   }
+}
+
+const LS_JOURNAL_WIKI_PATTERN = /\[\[([^\]\n]{1,100})\]\]/g;
+const lsJournalWikiHighlightRanges = new Map();
+
+function lsRefreshJournalWikiHighlights() {
+  if (!globalThis.CSS?.highlights || typeof globalThis.Highlight !== "function") return;
+  const ranges = [];
+  for (const [host, hostRanges] of lsJournalWikiHighlightRanges) {
+    if (!host.isConnected) {
+      lsJournalWikiHighlightRanges.delete(host);
+      continue;
+    }
+    ranges.push(...hostRanges);
+  }
+  if (ranges.length) CSS.highlights.set("lore-smith-wiki-links", new Highlight(...ranges));
+  else CSS.highlights.delete("lore-smith-wiki-links");
+}
+
+function lsCollectJournalWikiRanges(root) {
+  const ranges = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (node.parentElement?.closest("script, style, textarea")) return NodeFilter.FILTER_REJECT;
+      return node.nodeValue?.includes("[[") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    },
+  });
+  while (walker.nextNode()) {
+    const textNode = walker.currentNode;
+    for (const match of textNode.nodeValue.matchAll(LS_JOURNAL_WIKI_PATTERN)) {
+      const range = document.createRange();
+      range.setStart(textNode, match.index);
+      range.setEnd(textNode, match.index + match[0].length);
+      ranges.push(range);
+    }
+  }
+  return ranges;
+}
+
+function lsJournalWikiMatchAt(root, node, offset) {
+  if (!node || !root.contains(node)) return null;
+  const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  const block = element?.closest("p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, td, th") ?? root;
+  if (block !== root && !root.contains(block)) return null;
+  const before = document.createRange();
+  before.selectNodeContents(block);
+  try {
+    before.setEnd(node, offset);
+  } catch (_error) {
+    return null;
+  }
+  const cursor = before.toString().length;
+  const text = block.textContent ?? "";
+  for (const match of text.matchAll(LS_JOURNAL_WIKI_PATTERN)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (cursor >= start && cursor <= end) return { name: match[1].trim(), start, end };
+  }
+  return null;
+}
+
+function lsJournalWikiMatchFromPointer(root, event) {
+  const position = document.caretPositionFromPoint?.(event.clientX, event.clientY);
+  if (position) return lsJournalWikiMatchAt(root, position.offsetNode, position.offset);
+  const range = document.caretRangeFromPoint?.(event.clientX, event.clientY);
+  return range ? lsJournalWikiMatchAt(root, range.startContainer, range.startOffset) : null;
+}
+
+function lsJournalWikiMatchFromSelection(root) {
+  const selection = document.getSelection();
+  if (!selection?.isCollapsed || !selection.anchorNode) return null;
+  return lsJournalWikiMatchAt(root, selection.anchorNode, selection.anchorOffset);
+}
+
+async function lsOpenOrCreateJournalPage(journalSheet, pageName, { currentPage = null, proseMirror = null } = {}) {
+  const journal = journalSheet?.document;
+  const name = pageName?.trim();
+  if (!journal || !name) return;
+
+  const currentContent = proseMirror?._getValue?.();
+  if (currentPage && typeof currentContent === "string" && currentContent !== currentPage.text?.content) {
+    await currentPage.update({ "text.content": currentContent });
+  }
+
+  let page = journal.pages.find((candidate) =>
+    candidate.name.localeCompare(name, undefined, { sensitivity: "accent" }) === 0);
+  if (!page) {
+    [page] = await journal.createEmbeddedDocuments("JournalEntryPage", [{
+      name,
+      type: "text",
+      text: { content: "" },
+      sort: Math.max(0, ...journal.pages.map((candidate) => candidate.sort ?? 0)) + 100000,
+    }]);
+    ui.notifications.info(`Created page "${name}" inside ${journal.name}.`);
+  }
+  await journalSheet.render(true);
+  if (typeof journalSheet.goToPage === "function") await journalSheet.goToPage(page.id);
+  else {
+    const pageControl = journalSheet.element?.querySelector(`[data-page-id="${page.id}"]`);
+    pageControl?.click();
+    pageControl?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
+function lsEnableJournalWikiLinksInEditor(journalSheet, page, proseMirror, host) {
+  const refresh = () => {
+    lsJournalWikiHighlightRanges.set(host, lsCollectJournalWikiRanges(proseMirror));
+    lsRefreshJournalWikiHighlights();
+  };
+  const scheduleRefresh = () => queueMicrotask(refresh);
+
+  proseMirror.addEventListener("input", scheduleRefresh);
+  proseMirror.addEventListener("mousemove", (event) => {
+    const match = lsJournalWikiMatchFromPointer(proseMirror, event);
+    proseMirror.classList.toggle("ls-wiki-link-under-pointer", Boolean(match) && !event.ctrlKey && !event.metaKey);
+  });
+  proseMirror.addEventListener("mouseleave", () => proseMirror.classList.remove("ls-wiki-link-under-pointer"));
+  proseMirror.addEventListener("click", (event) => {
+    if (event.ctrlKey || event.metaKey) return;
+    const match = lsJournalWikiMatchFromPointer(proseMirror, event);
+    if (!match?.name) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void lsOpenOrCreateJournalPage(journalSheet, match.name, { currentPage: page, proseMirror });
+  }, { capture: true });
+  proseMirror.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+    const match = lsJournalWikiMatchFromSelection(proseMirror);
+    if (!match?.name) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void lsOpenOrCreateJournalPage(journalSheet, match.name, { currentPage: page, proseMirror });
+  }, { capture: true });
+
+  const observer = new MutationObserver(scheduleRefresh);
+  observer.observe(proseMirror, { childList: true, subtree: true, characterData: true });
+  refresh();
+  return observer;
 }
 
 function lsEnhanceNativeJournal(app, html) {
@@ -1162,26 +1304,7 @@ function lsEnhanceNativeJournal(app, html) {
     if (!link) return;
     event.preventDefault();
     event.stopPropagation();
-    const pageName = link.dataset.pageName?.trim();
-    if (!pageName) return;
-    let page = journal.pages.find((candidate) =>
-      candidate.name.localeCompare(pageName, undefined, { sensitivity: "accent" }) === 0);
-    if (!page) {
-      [page] = await journal.createEmbeddedDocuments("JournalEntryPage", [{
-        name: pageName,
-        type: "text",
-        text: { content: "" },
-        sort: Math.max(0, ...journal.pages.map((candidate) => candidate.sort ?? 0)) + 100000,
-      }]);
-      ui.notifications.info(`Created page "${pageName}" inside ${journal.name}.`);
-    }
-    await app.render(true);
-    if (typeof app.goToPage === "function") await app.goToPage(page.id);
-    else {
-      const pageControl = app.element?.querySelector(`[data-page-id="${page.id}"]`);
-      pageControl?.click();
-      pageControl?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    await lsOpenOrCreateJournalPage(app, link.dataset.pageName);
   });
 }
 
@@ -1286,9 +1409,12 @@ Hooks.on("renderJournalSheet", (app, html) => {
 });
 
 Hooks.on("closeJournalSheet", (app) => {
-  for (const { sheet } of app._loreSmithInlineEditors?.values?.() ?? []) {
+  for (const { sheet, host, wikiObserver } of app._loreSmithInlineEditors?.values?.() ?? []) {
+    wikiObserver?.disconnect();
+    lsJournalWikiHighlightRanges.delete(host);
     void sheet.close({ animate: false }).catch(() => {});
   }
+  lsRefreshJournalWikiHighlights();
   app._loreSmithInlineEditors?.clear?.();
 });
 
