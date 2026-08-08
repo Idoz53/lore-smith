@@ -5,9 +5,9 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- a responsive, Obsidian-style Journal workspace with a compact native page tree,
-  clean rendered notes, and a self-contained Markdown editing window bundled
-  directly into the module;
+- a responsive, wiki-style Journal workspace with a compact native page tree,
+  clean rendered notes, and Foundry's visual rich-text editor integrated into
+  a focused writing window;
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
 - encounter setup using actors and tokens already in the Foundry world;
 - Combat Tracker buttons for randomized iteration logs and live Scene combat;
@@ -26,9 +26,9 @@ The module provides:
 - native Foundry Journal documents, page permissions, sharing, Show Players,
   images, tables, document links, and rendered read view; no Obsidian install,
   web service, browser extension, or other application is required;
-- the Journal edit button opens Lore Smith's bundled CodeMirror 6 editor. Existing
-  rich-text pages are safely converted to Markdown on first edit and are not
-  changed until Save is pressed;
+- the Journal edit button opens a normal visual editor built on Foundry's own
+  ProseMirror foundation. Formatting is displayed while writing; users never
+  have to edit Markdown or use an IDE-like interface;
 - editor wiki links are first-class: typing
   `[[` supplies the closing brackets and opens searchable page autocomplete;
   use the mouse wheel, arrow keys, Enter, or Tab to choose a page. After saving,

@@ -44,11 +44,12 @@ if (!nativeScript.includes("lsEnableJournalWikiLinksInEditor")
   || !nativeScript.includes("lore-smith-wiki-links")) {
   throw new Error("Journal page-editor wiki-link handling is missing.");
 }
-if (!journalScript.includes("LoreSmithJournalEditor")
+if (!journalScript.includes("LoreSmithRichJournalEditor")
+  || !journalScript.includes("HTMLProseMirrorElement")
   || !journalScript.includes("openJournalEditor")
-  || !journalScript.includes("markdownToHtml")
-  || !journalScript.includes("htmlToMarkdown")) {
-  throw new Error("The bundled Markdown Journal editor is incomplete.");
+  || !nativeScript.includes("LoreSmithJournalWikiBridge")
+  || !nativeScript.includes("enableNativeWikiLinks")) {
+  throw new Error("The bundled rich-text Journal editor is incomplete.");
 }
 if (!script.includes("combatantInsideTemplate") || !script.includes("rollNativeDamage")) {
   throw new Error("Live area hit-testing or native PF2e damage controls are missing.");

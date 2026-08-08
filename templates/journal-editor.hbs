@@ -1,33 +1,13 @@
-<section class="ls-markdown-editor-shell">
-  <header class="ls-markdown-editor-heading">
+<section class="ls-rich-journal-shell">
+  <header class="ls-rich-journal-heading">
     <div>
       <small>{{journalName}}</small>
       <input name="pageName" type="text" value="{{pageName}}" aria-label="Page title">
     </div>
-    <span><i class="fa-solid fa-wand-magic-sparkles"></i> Obsidian-style editing inside Foundry</span>
+    <span><i class="fa-solid fa-feather-pointed"></i> Rich Journal page</span>
   </header>
-  <nav class="ls-markdown-toolbar" aria-label="Formatting toolbar">
-    <button type="button" data-format="h1" data-tooltip="Heading 1">H1</button>
-    <button type="button" data-format="h2" data-tooltip="Heading 2">H2</button>
-    <button type="button" data-format="h3" data-tooltip="Heading 3">H3</button>
-    <i aria-hidden="true"></i>
-    <button type="button" data-format="bold" data-tooltip="Bold (Ctrl+B)"><i class="fa-solid fa-bold"></i></button>
-    <button type="button" data-format="italic" data-tooltip="Italic (Ctrl+I)"><i class="fa-solid fa-italic"></i></button>
-    <button type="button" data-format="underline" data-tooltip="Underline (Ctrl+U)"><i class="fa-solid fa-underline"></i></button>
-    <button type="button" data-format="strike" data-tooltip="Strikethrough"><i class="fa-solid fa-strikethrough"></i></button>
-    <i aria-hidden="true"></i>
-    <button type="button" data-format="bullet" data-tooltip="Bulleted list"><i class="fa-solid fa-list-ul"></i></button>
-    <button type="button" data-format="number" data-tooltip="Numbered list"><i class="fa-solid fa-list-ol"></i></button>
-    <button type="button" data-format="quote" data-tooltip="Quote"><i class="fa-solid fa-quote-left"></i></button>
-    <button type="button" data-format="code" data-tooltip="Inline code"><i class="fa-solid fa-code"></i></button>
-    <button type="button" data-format="divider" data-tooltip="Divider"><i class="fa-solid fa-minus"></i></button>
-    <i aria-hidden="true"></i>
-    <button type="button" data-format="wiki" data-tooltip="Link Journal page"><i class="fa-solid fa-link"></i><span> [[Link]]</span></button>
-    <button type="button" data-format="link" data-tooltip="Web link"><i class="fa-solid fa-globe"></i></button>
-    <button type="button" data-format="image" data-tooltip="Insert image"><i class="fa-solid fa-image"></i></button>
-    <button type="button" data-format="table" data-tooltip="Insert table"><i class="fa-solid fa-table"></i></button>
-  </nav>
-  <div class="ls-markdown-editor-surface" data-role="editor"></div>
+  <div class="ls-rich-journal-hint"><i class="fa-solid fa-link"></i> Type <kbd>[[</kbd> to link or create another page. Use Foundry's toolbar for headings, lists, tables, images, links, and formatting.</div>
+  <div class="ls-rich-journal-surface" data-role="editor"></div>
   <footer>
     <span data-role="status">Saved</span>
     <span data-role="word-count">0 words</span>

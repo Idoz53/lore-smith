@@ -1406,6 +1406,11 @@ function lsEnhanceJournalPageEditor(pageSheet, html) {
   });
 }
 
+globalThis.LoreSmithJournalWikiBridge = {
+  enableNativeWikiLinks: lsEnableJournalWikiLinksInEditor,
+  ensurePage: lsEnsureJournalPage,
+};
+
 function lsEnhanceNativeJournal(app, html) {
   const journal = app.document;
   const root = lsRoot(html);
