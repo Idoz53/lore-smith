@@ -1974,7 +1974,7 @@ Hooks.on("closeApplicationV2", (app) => {
   lsCloseJournalPageEditor(app);
 });
 
-Hooks.once("ready", () => {
+Hooks.once("ready", async () => {
   if (game.system.id !== "pf2e") return;
   Object.assign(game.loreSmith ??= {}, {
     openCreatureBuilder: (actor) => new LoreSmithCreatureBuilder(actor).render(true),
@@ -1982,4 +1982,9 @@ Hooks.once("ready", () => {
     runCombatLogs: lsRunIterations,
     runLiveCombat: lsRunLiveCombat,
   });
+  if (game.user.isGM) {
+    const existingBuilderItems = game.actors.contents.flatMap((actor) => actor.items.filter((item) => LS_PHYSICAL_ITEM_TYPES.has(item.type) && item.getFlag(LS_MODULE_ID, "itemBuilder")));
+    const results = await Promise.allSettled(existingBuilderItems.map((item) => lsSyncOwnedItemActivations(item)));
+    for (const failure of results.filter((result) => result.status === "rejected")) console.error("Lore Smith | Failed to migrate an existing item activation", failure.reason);
+  }
 });
