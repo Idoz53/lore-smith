@@ -5,6 +5,7 @@
       <div><strong>Lore Smith</strong><small>PF2e GM Workspace</small></div>
     </div>
     <nav>
+      <button data-action="tab" data-tab="session" class="{{#if tabs.session}}active{{/if}}"><i class="fa-solid fa-compass"></i> Session Prep</button>
       <button data-action="tab" data-tab="notes" class="{{#if tabs.notes}}active{{/if}}"><i class="fa-solid fa-book-open"></i> Notes</button>
       <button data-action="tab" data-tab="creatures" class="{{#if tabs.creatures}}active{{/if}}"><i class="fa-solid fa-dragon"></i> Creatures</button>
       <button data-action="tab" data-tab="items" class="{{#if tabs.items}}active{{/if}}"><i class="fa-solid fa-hammer"></i> Items</button>
@@ -14,6 +15,53 @@
   </aside>
 
   <main class="ls-main">
+    {{#if tabs.session}}
+      <section class="ls-panel ls-session-panel">
+        <header><div><span>Guided next-session preparation</span><h1>Session Prep</h1></div><div class="ls-header-actions"><button data-action="newSessionPrep"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openLastSessionJournal" {{#unless lastSessionJournalId}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open last session</button></div></header>
+        <p class="ls-lead">Answer a few focused questions. Lore Smith turns them into a ready-to-run Foundry Journal, with every important place, person, scene, and secret on its own page.</p>
+        <div class="ls-session-progress" aria-label="Session prep progress">
+          {{#each sessionSteps}}<button data-action="goToSessionStep" data-step="{{index}}" class="{{#if active}}active{{/if}}"><span>{{number}}</span>{{label}}</button>{{/each}}
+        </div>
+
+        {{#if sessionSteps.goal.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 1 of 5</div><h2>Choose the session's main goal</h2><p>Write the one thing the players should be able to pursue, discover, prevent, or decide tonight. It gives every later scene a purpose.</p>
+            <div class="ls-session-form"><label>Session title<input name="sessionTitle" value="{{sessionPrep.title}}" placeholder="Session 12 — Smoke over Otari"></label><label class="wide">Main goal<textarea name="sessionGoal" rows="4" placeholder="The heroes discover who is sabotaging the lighthouse before the harbour festival begins.">{{sessionPrep.goal}}</textarea></label><label>Opening situation<textarea name="sessionOpening" rows="3" placeholder="Where the session begins and what immediately demands attention.">{{sessionPrep.opening}}</textarea></label><label>Likely ending or cliffhanger<textarea name="sessionEnding" rows="3" placeholder="A reveal, choice, fight, or question to leave the table with.">{{sessionPrep.ending}}</textarea></label></div>
+          </section>
+        {{/if}}
+
+        {{#if sessionSteps.locations.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 2 of 5</div><h2>Prepare at least three important places</h2><p>Give each place a quick image and sensory cues. You can taste the air, feel the temperature, or notice the texture of a door—small details make a place easy to run.</p>
+            <div class="ls-location-stack">{{#each sessionPrep.locations}}<article class="ls-location-card" data-location-id="{{id}}"><header><div><span>Important place {{number}}</span><strong>{{#if name}}{{name}}{{else}}Unnamed place{{/if}}</strong></div>{{#if canRemove}}<button class="danger" data-action="removeLocation" data-id="{{id}}" data-tooltip="Remove location"><i class="fa-solid fa-trash"></i></button>{{/if}}</header><div class="ls-session-form">
+              <label>Place name<input name="locationName" value="{{name}}" placeholder="The flooded bell tower"></label><label>Image path or URL<span class="ls-inline-control"><input name="locationImage" value="{{image}}" placeholder="Choose an image"><button data-action="browseLocationImage" data-id="{{id}}" type="button">Browse</button></span></label>
+              <label class="wide">What makes this place matter?<textarea name="locationPurpose" rows="2" placeholder="A clue, confrontation, resource, refuge, or obstacle.">{{purpose}}</textarea></label>
+              <div class="ls-sense-grid wide"><label><i class="fa-solid fa-eye"></i> Sight<input name="locationSight" value="{{sight}}" placeholder="Light, colours, movement, landmarks"></label><label><i class="fa-solid fa-ear-listen"></i> Hearing<input name="locationHearing" value="{{hearing}}" placeholder="Voices, machinery, weather, silence"></label><label><i class="fa-solid fa-wind"></i> Smell<input name="locationSmell" value="{{smell}}" placeholder="Smoke, rain, salt, incense"></label><label><i class="fa-solid fa-hand"></i> Touch<input name="locationTouch" value="{{touch}}" placeholder="Heat, dampness, rough stone, wind"></label><label><i class="fa-solid fa-utensils"></i> Taste<input name="locationTaste" value="{{taste}}" placeholder="Ash in the air, brine, copper"></label></div>
+            </div></article>{{/each}}</div><button data-action="addLocation"><i class="fa-solid fa-plus"></i> Add another place</button>
+          </section>
+        {{/if}}
+
+        {{#if sessionSteps.people.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 3 of 5</div><h2>People, factions, and opposition</h2><p>Keep this short: who needs something, who stands in the way, and what secret can change the session?</p>
+            <div class="ls-session-form"><label>Important NPCs and factions<textarea name="sessionPeople" rows="8" placeholder="Captain Vell — wants the sabotage stopped quietly.\nThe Ash Knives — need the festival chaos as cover.\nMira the dockworker — witnessed the culprit but fears retaliation.">{{sessionPrep.people}}</textarea></label><label>Opposition, hazards, or encounters<textarea name="sessionOpposition" rows="8" placeholder="Dockside chase; trapped lighthouse stair; cultists at the signal fire. Add encounter links if you already have them.">{{sessionPrep.opposition}}</textarea></label></div>
+          </section>
+        {{/if}}
+
+        {{#if sessionSteps.scenes.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 4 of 5</div><h2>Scenes, clues, and rewards</h2><p>Prepare situations rather than a rigid script. Give the players several clues and something meaningful to gain or lose.</p>
+            <div class="ls-session-form"><label>Likely scenes and clues<textarea name="sessionScenes" rows="8" placeholder="1. Festival briefing — the captain gives a map.\n2. Investigate the warehouse — soot on the locks and a coded ledger.\n3. Bell tower confrontation — the saboteur chooses escape or fire.">{{sessionPrep.scenes}}</textarea></label><label>Rewards, consequences, and changes<textarea name="sessionRewards" rows="8" placeholder="Reward: harbourmaster's favour and a minor item.\nIf the villain escapes: the lighthouse burns and the Ash Knives gain influence.">{{sessionPrep.rewards}}</textarea></label></div>
+          </section>
+        {{/if}}
+
+        {{#if sessionSteps.review.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 5 of 5</div><h2>Final GM reminders</h2><p>Add anything you want visible only to you, then create the session journal. You can edit every generated page normally afterward.</p>
+            <div class="ls-session-form"><label class="wide">GM reminders and secrets<textarea name="sessionReminders" rows="8" placeholder="The saboteur is actually working for the mayor. Let the players learn this only if they decode the ledger or question Mira.">{{sessionPrep.reminders}}</textarea></label></div>
+            {{#if sessionValidation.length}}<div class="ls-warning"><strong>Before creating the journal:</strong>{{#each sessionValidation}}<div>{{this}}</div>{{/each}}</div>{{else}}<div class="ls-session-ready"><i class="fa-solid fa-circle-check"></i><span>Your session packet is ready to create.</span></div>{{/if}}
+          </section>
+        {{/if}}
+
+        <footer class="ls-session-navigation"><button data-action="previousSessionStep" {{#unless canSessionBack}}disabled{{/unless}}><i class="fa-solid fa-arrow-left"></i> Back</button><span>Everything is saved in this wizard until you create the Journal.</span>{{#if sessionSteps.review.active}}<button data-action="createSessionJournal" {{#if sessionValidation.length}}disabled{{/if}}>Create session Journal <i class="fa-solid fa-book-sparkles"></i></button>{{else}}<button data-action="nextSessionStep">Continue <i class="fa-solid fa-arrow-right"></i></button>{{/if}}</footer>
+      </section>
+    {{/if}}
+
     {{#if tabs.notes}}
       <section class="ls-panel">
         <header><div><span>Native Foundry Journal pages</span><h1>{{notebookName}}</h1></div><div class="ls-header-actions"><button data-action="openNotebook"><i class="fa-solid fa-book-open"></i> Open Foundry Journal</button><button data-action="createNote"><i class="fa-solid fa-plus"></i> New page</button></div></header>

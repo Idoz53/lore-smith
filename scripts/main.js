@@ -968,6 +968,53 @@ async function runLiveReplayLegacy(tokens, partyIds, enemyIds, { combat = game.c
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
+function newSessionLocation() {
+  return { id: foundry.utils.randomID(), name: "", image: "", purpose: "", sight: "", hearing: "", smell: "", touch: "", taste: "" };
+}
+
+function newSessionPrep() {
+  return {
+    title: "", goal: "", opening: "", ending: "",
+    locations: [newSessionLocation(), newSessionLocation(), newSessionLocation()],
+    people: "", opposition: "", scenes: "", rewards: "", reminders: "",
+  };
+}
+
+function sessionHtml(value) {
+  return escapeHtml(value).replace(/\r?\n/g, "<br>");
+}
+
+function sessionBlock(title, value) {
+  const content = String(value ?? "").trim();
+  return content ? `<h2>${escapeHtml(title)}</h2><p>${sessionHtml(content)}</p>` : "";
+}
+
+function sessionLocationPage(location) {
+  const senses = [["Sight", location.sight], ["Hearing", location.hearing], ["Smell", location.smell], ["Touch", location.touch], ["Taste", location.taste]]
+    .filter(([, value]) => String(value ?? "").trim())
+    .map(([sense, value]) => `<p><strong>${sense}</strong> ${sessionHtml(value)}</p>`).join("");
+  const image = String(location.image ?? "").trim()
+    ? `<figure><img src="${escapeHtml(location.image)}" alt="${escapeHtml(location.name)}"></figure>` : "";
+  return `${image}${sessionBlock("Why this place matters", location.purpose)}${senses ? `<hr><h2>Five senses</h2>${senses}` : ""}` || "<p>Describe this location before play.</p>";
+}
+
+function sessionJournalPages(prep) {
+  const placeNames = prep.locations.map((location, index) => location.name.trim() || `Important Place ${index + 1}`);
+  const overview = [
+    sessionBlock("Main goal", prep.goal), sessionBlock("Opening situation", prep.opening), sessionBlock("Likely ending or cliffhanger", prep.ending),
+    `<hr><h2>Important places</h2><ul>${placeNames.map((name) => `<li>[[Place — ${escapeHtml(name)}]]</li>`).join("")}</ul>`,
+    "<p><em>Use the linked pages for sensory descriptions and table-ready details.</em></p>",
+  ].filter(Boolean).join("");
+  const pages = [{ name: "Session Overview", content: overview }];
+  for (const [index, location] of prep.locations.entries()) pages.push({ name: `Place — ${placeNames[index]}`, content: sessionLocationPage({ ...location, name: placeNames[index] }) });
+  pages.push(
+    { name: "People & Opposition", content: `${sessionBlock("NPCs and factions", prep.people)}${sessionBlock("Opposition, hazards, and encounters", prep.opposition)}` || "<p>Who can help, hinder, or surprise the party?</p>" },
+    { name: "Scenes, Clues & Rewards", content: `${sessionBlock("Likely scenes and clues", prep.scenes)}${sessionBlock("Rewards, consequences, and changes", prep.rewards)}` || "<p>Prepare situations, clues, and consequences here.</p>" },
+    { name: "GM Reminders & Secrets", content: sessionBlock("GM-only notes", prep.reminders) || "<p>Private reminders, secrets, and contingencies.</p>" },
+  );
+  return pages;
+}
+
 class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: "lore-smith-dashboard",
@@ -977,6 +1024,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     window: { title: "Lore Smith", icon: "fa-solid fa-book-sparkles", resizable: true },
     actions: {
       tab: LoreSmithDashboard.changeTab,
+      newSessionPrep: LoreSmithDashboard.newSessionPrep,
+      previousSessionStep: LoreSmithDashboard.previousSessionStep,
+      nextSessionStep: LoreSmithDashboard.nextSessionStep,
+      goToSessionStep: LoreSmithDashboard.goToSessionStep,
+      addLocation: LoreSmithDashboard.addLocation,
+      removeLocation: LoreSmithDashboard.removeLocation,
+      browseLocationImage: LoreSmithDashboard.browseLocationImage,
+      createSessionJournal: LoreSmithDashboard.createSessionJournal,
+      openLastSessionJournal: LoreSmithDashboard.openLastSessionJournal,
       createNote: LoreSmithDashboard.createNote,
       openNote: LoreSmithDashboard.openNote,
       openNotebook: LoreSmithDashboard.openNotebook,
@@ -996,7 +1052,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     dashboard: { template: `modules/${MODULE_ID}/templates/dashboard.hbs` },
   };
 
-  activeTab = "notes";
+  activeTab = "session";
   activeNoteId = null;
   creatureSearch = "";
   itemSearch = "";
@@ -1007,6 +1063,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   enemyIds = new Set();
   iterations = 100;
   result = null;
+  sessionStep = 0;
+  sessionPrep = newSessionPrep();
+  lastSessionJournalId = null;
 
   async getNotebook(create = false) {
     let journal = game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "notebook"));
@@ -1056,6 +1115,23 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       name: activePage.name,
       content: activePage.text?.content ?? "",
     } : null;
+    if (!this.lastSessionJournalId) {
+      const latestSession = game.journal.contents
+        .filter((entry) => entry.getFlag(FLAG_SCOPE, "sessionPrep"))
+        .sort((left, right) => String(right.getFlag(FLAG_SCOPE, "createdAt") ?? "").localeCompare(String(left.getFlag(FLAG_SCOPE, "createdAt") ?? "")))[0];
+      this.lastSessionJournalId = latestSession?.id ?? null;
+    }
+    const locationViews = this.sessionPrep.locations.map((location, index) => ({ ...location, number: index + 1, canRemove: this.sessionPrep.locations.length > 3 }));
+    const sessionValidation = [];
+    if (!this.sessionPrep.title.trim()) sessionValidation.push("Add a session title.");
+    if (!this.sessionPrep.goal.trim()) sessionValidation.push("Add the session's main goal.");
+    if (this.sessionPrep.locations.length < 3) sessionValidation.push("Prepare at least three important places.");
+    for (const [index, location] of this.sessionPrep.locations.entries()) {
+      if (!location.name.trim()) sessionValidation.push(`Name important place ${index + 1}.`);
+      if (!location.image.trim()) sessionValidation.push(`Choose an image for important place ${index + 1}.`);
+    }
+    const sessionStepEntries = [["goal", "Goal"], ["locations", "Places"], ["people", "People"], ["scenes", "Scenes"], ["review", "Review"]];
+    const sessionSteps = Object.fromEntries(sessionStepEntries.map(([key, label], index) => [key, { index, number: index + 1, label, active: this.sessionStep === index }]));
     return {
       ...await super._prepareContext(options),
       tabs: { [this.activeTab]: true },
@@ -1073,6 +1149,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         ? game.settings.get(MODULE_ID, "combatIterations")
         : this.iterations,
       result: this.result,
+      sessionPrep: { ...this.sessionPrep, locations: locationViews },
+      sessionSteps,
+      sessionValidation,
+      canSessionBack: this.sessionStep > 0,
+      lastSessionJournalId: this.lastSessionJournalId,
     };
   }
 
@@ -1163,10 +1244,105 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       : 100;
   }
 
+  syncSessionPrepForm() {
+    const root = this.element;
+    if (!root || this.activeTab !== "session") return;
+    const value = (name) => root.querySelector(`[name="${name}"]`)?.value ?? "";
+    Object.assign(this.sessionPrep, {
+      title: value("sessionTitle").trim(), goal: value("sessionGoal").trim(), opening: value("sessionOpening").trim(), ending: value("sessionEnding").trim(),
+      people: value("sessionPeople").trim(), opposition: value("sessionOpposition").trim(), scenes: value("sessionScenes").trim(), rewards: value("sessionRewards").trim(), reminders: value("sessionReminders").trim(),
+    });
+    const previous = new Map(this.sessionPrep.locations.map((location) => [location.id, location]));
+    const cards = [...root.querySelectorAll("[data-location-id]")];
+    if (cards.length) this.sessionPrep.locations = cards.map((card) => {
+      const id = card.dataset.locationId;
+      const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
+      return { ...previous.get(id), id, name: field("locationName"), image: field("locationImage"), purpose: field("locationPurpose"), sight: field("locationSight"), hearing: field("locationHearing"), smell: field("locationSmell"), touch: field("locationTouch"), taste: field("locationTaste") };
+    });
+  }
+
   static async changeTab(event, target) {
     this.captureEncounterSelection();
+    this.syncSessionPrepForm();
     this.activeTab = target.dataset.tab;
     await this.render();
+  }
+
+  static async newSessionPrep() {
+    this.sessionStep = 0;
+    this.sessionPrep = newSessionPrep();
+    await this.render();
+  }
+
+  static async previousSessionStep() {
+    this.syncSessionPrepForm();
+    this.sessionStep = Math.max(0, this.sessionStep - 1);
+    await this.render();
+  }
+
+  static async nextSessionStep() {
+    this.syncSessionPrepForm();
+    this.sessionStep = Math.min(4, this.sessionStep + 1);
+    await this.render();
+  }
+
+  static async goToSessionStep(_event, target) {
+    this.syncSessionPrepForm();
+    this.sessionStep = Math.max(0, Math.min(4, Number(target.dataset.step) || 0));
+    await this.render();
+  }
+
+  static async addLocation() {
+    this.syncSessionPrepForm();
+    this.sessionPrep.locations.push(newSessionLocation());
+    await this.render();
+  }
+
+  static async removeLocation(_event, target) {
+    this.syncSessionPrepForm();
+    if (this.sessionPrep.locations.length <= 3) return;
+    this.sessionPrep.locations = this.sessionPrep.locations.filter((location) => location.id !== target.dataset.id);
+    await this.render();
+  }
+
+  static async browseLocationImage(_event, target) {
+    this.syncSessionPrepForm();
+    const location = this.sessionPrep.locations.find((entry) => entry.id === target.dataset.id);
+    if (!location) return;
+    new FilePicker({ type: "imagevideo", current: location.image, callback: async (path) => {
+      location.image = path;
+      await this.render();
+    } }).browse();
+  }
+
+  static async createSessionJournal() {
+    this.syncSessionPrepForm();
+    const invalid = !this.sessionPrep.title.trim() || !this.sessionPrep.goal.trim()
+      || this.sessionPrep.locations.length < 3 || this.sessionPrep.locations.some((location) => !location.name.trim() || !location.image.trim());
+    if (invalid) {
+      this.sessionStep = 4;
+      await this.render();
+      return ui.notifications.warn("Complete the title, goal, and all three important places before creating the Journal.");
+    }
+    const journal = await JournalEntry.create({
+      name: this.sessionPrep.title.trim(),
+      flags: { [FLAG_SCOPE]: { sessionPrep: true, createdAt: new Date().toISOString(), sessionGoal: this.sessionPrep.goal.trim() } },
+      pages: [],
+    });
+    const pages = sessionJournalPages(this.sessionPrep).map((page, index) => ({ name: page.name, type: "text", text: { content: page.content }, sort: (index + 1) * 100000 }));
+    await journal.createEmbeddedDocuments("JournalEntryPage", pages);
+    this.lastSessionJournalId = journal.id;
+    this.activeNoteId = null;
+    this.sessionPrep = newSessionPrep();
+    this.sessionStep = 0;
+    ui.notifications.info(`Created session Journal: ${journal.name}.`);
+    journal.sheet.render(true);
+    await this.render();
+  }
+
+  static async openLastSessionJournal() {
+    const journal = game.journal.get(this.lastSessionJournalId);
+    if (journal) journal.sheet.render(true);
   }
 
   static async createNote() {
