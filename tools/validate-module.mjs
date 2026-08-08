@@ -88,6 +88,10 @@ for (const [name, contents, className] of [
 
 for (const requiredItemBuilderFeature of [
   "lsCompileItemBuilderDescription",
+  "lsCompileActivationRows",
+  "lsSyncOwnedItemActivations",
+  'type: "action"',
+  'itemActivation: { sourceItemId: item.id, activationId: activation.id }',
   "lsGeneratedRule",
   'key: "FlatModifier"',
   'key: "DamageDice"',
@@ -100,7 +104,7 @@ for (const requiredItemBuilderFeature of [
 ]) {
   if (!nativeScript.includes(requiredItemBuilderFeature)) throw new Error(`Native item builder feature missing: ${requiredItemBuilderFeature}`);
 }
-for (const requiredStep of ["Starting point", "Identity", "Activation", "Effects", "Review"]) {
+for (const requiredStep of ["Starting point", "Identity", "Activations", "Effects", "Review"]) {
   if (!itemTemplate.includes(requiredStep)) throw new Error(`Item builder step missing: ${requiredStep}`);
 }
 

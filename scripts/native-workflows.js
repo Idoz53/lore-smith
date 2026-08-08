@@ -503,16 +503,31 @@ function lsCoinValue(price, denomination) {
   return Math.max(0, lsNumber(price?.[denomination], 0));
 }
 
+function lsNewItemActivation(overrides = {}) {
+  return {
+    id: foundry.utils.randomID(), name: "", type: "action", actions: "1", traits: [], frequencyMax: "", frequencyPer: "day",
+    trigger: "", requirements: "", range: "", target: "", areaType: "none", areaSize: "", duration: "", effectText: "", ...overrides,
+  };
+}
+
 function lsEmptyItemBuilderFlags() {
   return {
-    activation: { type: "none", actions: "1", traits: [], frequencyMax: "", frequencyPer: "day", trigger: "", requirements: "", range: "", target: "", areaType: "none", areaSize: "", duration: "" },
+    activations: [],
     effects: [],
     generatedRules: [],
   };
 }
 
 function lsItemBuilderFlags(item) {
-  return foundry.utils.mergeObject(lsEmptyItemBuilderFlags(), foundry.utils.deepClone(item.getFlag(LS_MODULE_ID, "itemBuilder") ?? {}), { inplace: false });
+  const stored = foundry.utils.deepClone(item.getFlag(LS_MODULE_ID, "itemBuilder") ?? {});
+  const flags = foundry.utils.mergeObject(lsEmptyItemBuilderFlags(), stored, { inplace: false });
+  if (!Array.isArray(stored.activations) && stored.activation?.type && stored.activation.type !== "none") {
+    flags.activations = [lsNewItemActivation(stored.activation)];
+  }
+  flags.activations = (flags.activations ?? []).map((activation) => lsNewItemActivation({ ...activation, id: activation.id || foundry.utils.randomID(), traits: Array.isArray(activation.traits) ? activation.traits : [] }));
+  flags.effects = (flags.effects ?? []).map((effect) => ({ ...effect, id: effect.id || foundry.utils.randomID(), activationId: effect.activationId ?? "" }));
+  delete flags.activation;
+  return flags;
 }
 
 function lsEffectView(effect) {
@@ -521,7 +536,7 @@ function lsEffectView(effect) {
     id: effect.id, kind, label: effect.label ?? "", formula: effect.formula ?? "", damageType: effect.damageType ?? "",
     save: effect.save ?? "reflex", dc: effect.dc ?? "", basic: effect.basic !== false, selector: effect.selector ?? "",
     value: effect.value ?? "", modifierType: effect.modifierType ?? "item", condition: effect.condition ?? "",
-    option: effect.option ?? "", note: effect.note ?? "",
+    option: effect.option ?? "", note: effect.note ?? "", activationId: effect.activationId ?? "",
     isDamage: kind === "damage", isHealing: kind === "healing", isCheck: kind === "check", isCondition: kind === "condition",
     isFlatModifier: kind === "flat-modifier", isDamageDice: kind === "damage-dice", isResistance: kind === "resistance",
     isWeakness: kind === "weakness", isImmunity: kind === "immunity", isFastHealing: kind === "fast-healing", isRollOption: kind === "roll-option",
@@ -553,29 +568,102 @@ function lsActionGlyph(activation) {
   return `<span class="action-glyph">${lsEscapeHtml(activation.actions || "1")}</span>`;
 }
 
-function lsCompileItemBuilderDescription(baseDescription, flags) {
-  const start = "<!-- lore-smith:item-builder:start -->", end = "<!-- lore-smith:item-builder:end -->";
-  const clean = String(baseDescription ?? "").replace(new RegExp(`${start}[\\s\\S]*?${end}`, "g"), "").trim();
-  const activation = flags.activation;
-  const rows = [];
-  if (activation.type !== "none") {
-    const traits = activation.traits.length ? ` (${activation.traits.map((trait) => lsEscapeHtml(game.i18n.localize(CONFIG.PF2E.actionTraits?.[trait] ?? trait))).join(", ")})` : "";
-    rows.push(`<p><strong>Activate</strong> ${lsActionGlyph(activation)}${traits}</p>`);
+function lsActivationFrequency(activation) {
+  const max = Math.max(0, Number(activation.frequencyMax) || 0);
+  if (!max) return "";
+  return max === 1 ? `once per ${activation.frequencyPer || "day"}` : `${max} times per ${activation.frequencyPer || "day"}`;
+}
+
+function lsInlineItemEffect(effect) {
+  const label = effect.label ? `<strong>${lsEscapeHtml(effect.label)}</strong> ` : "";
+  if (effect.kind === "damage" && effect.formula) return `${label}@Damage[${effect.formula}${effect.damageType ? `[${effect.damageType}]` : ""}]${effect.note ? ` ${lsEscapeHtml(effect.note)}` : ""}`;
+  if (effect.kind === "healing" && effect.formula) return `${label}@Damage[${effect.formula}[healing]]${effect.note ? ` ${lsEscapeHtml(effect.note)}` : ""}`;
+  if (effect.kind === "check") {
+    const parts = [effect.save || "reflex", effect.dc ? `dc:${effect.dc}` : null, effect.basic ? "basic:true" : null].filter(Boolean);
+    return `${label}@Check[${parts.join("|")}]${effect.note ? ` ${lsEscapeHtml(effect.note)}` : ""}`;
   }
-  for (const [label, value] of [["Frequency", activation.frequencyMax ? `${activation.frequencyMax} per ${activation.frequencyPer}` : ""], ["Trigger", activation.trigger], ["Requirements", activation.requirements], ["Range", activation.range], ["Targets", activation.target], ["Duration", activation.duration]]) {
+  if (effect.kind === "condition" && effect.condition) return `${label}<strong>${lsEscapeHtml(effect.condition)}</strong>${effect.note ? `: ${lsEscapeHtml(effect.note)}` : ""}`;
+  return "";
+}
+
+function lsCompileActivationRows(activation, effects, { includeHeading = true } = {}) {
+  const rows = [];
+  if (includeHeading) {
+    const title = activation.name ? `Activate&mdash;${lsEscapeHtml(activation.name)}` : "Activate";
+    const traits = activation.traits.length ? ` (${activation.traits.map((trait) => lsEscapeHtml(game.i18n.localize(CONFIG.PF2E.actionTraits?.[trait] ?? trait))).join(", ")})` : "";
+    rows.push(`<p><strong>${title}</strong> ${lsActionGlyph(activation)}${traits}</p>`);
+  }
+  for (const [label, value] of [["Frequency", lsActivationFrequency(activation)], ["Trigger", activation.trigger], ["Requirements", activation.requirements], ["Range", activation.range], ["Targets", activation.target], ["Duration", activation.duration]]) {
     if (value) rows.push(`<p><strong>${label}</strong> ${lsEscapeHtml(value)}</p>`);
   }
   if (activation.areaType !== "none" && activation.areaSize) rows.push(`<p>@Template[type:${activation.areaType}|distance:${Math.max(0, lsNumber(activation.areaSize, 0))}]</p>`);
-  for (const effect of flags.effects) {
-    const label = effect.label ? `<strong>${lsEscapeHtml(effect.label)}</strong> ` : "";
-    if (effect.kind === "damage" && effect.formula) rows.push(`<p>${label}@Damage[${effect.formula}${effect.damageType ? `[${effect.damageType}]` : ""}]${effect.note ? ` ${lsEscapeHtml(effect.note)}` : ""}</p>`);
-    else if (effect.kind === "healing" && effect.formula) rows.push(`<p>${label}@Damage[${effect.formula}[healing]]${effect.note ? ` ${lsEscapeHtml(effect.note)}` : ""}</p>`);
-    else if (effect.kind === "check") {
-      const parts = [effect.save || "reflex", effect.dc ? `dc:${effect.dc}` : null, effect.basic ? "basic:true" : null].filter(Boolean);
-      rows.push(`<p>${label}@Check[${parts.join("|")}]${effect.note ? ` ${lsEscapeHtml(effect.note)}` : ""}</p>`);
-    } else if (effect.kind === "condition" && effect.condition) rows.push(`<p>${label}<strong>${lsEscapeHtml(effect.condition)}</strong>${effect.note ? `: ${lsEscapeHtml(effect.note)}` : ""}</p>`);
+  const effectParts = [];
+  if (activation.effectText) effectParts.push(lsEscapeHtml(activation.effectText).replaceAll("\n", "<br>"));
+  effectParts.push(...effects.map(lsInlineItemEffect).filter(Boolean));
+  if (effectParts.length) rows.push(`<p><strong>Effect</strong> ${effectParts.join(" ")}</p>`);
+  return rows;
+}
+
+function lsCompileItemBuilderDescription(baseDescription, flags) {
+  const start = "<!-- lore-smith:item-builder:start -->", end = "<!-- lore-smith:item-builder:end -->";
+  const clean = String(baseDescription ?? "").replace(new RegExp(`${start}[\\s\\S]*?${end}`, "g"), "").trim();
+  const rows = [];
+  for (const [index, activation] of flags.activations.entries()) {
+    const effects = flags.effects.filter((effect) => effect.activationId === activation.id || (!effect.activationId && index === 0));
+    if (index > 0) rows.push("<hr>");
+    rows.push(...lsCompileActivationRows(activation, effects));
   }
-  return rows.length ? `${clean}${clean ? "\n" : ""}${start}<section class="lore-smith-item-activation">${rows.join("")}</section>${end}` : clean;
+  if (!flags.activations.length) {
+    const standalone = flags.effects.map(lsInlineItemEffect).filter(Boolean);
+    if (standalone.length) rows.push(`<p><strong>Effect</strong> ${standalone.join(" ")}</p>`);
+  }
+  return rows.length ? `${clean}${clean ? "\n" : ""}${start}${rows.join("")}${end}` : clean;
+}
+
+function lsActivationActionSource(item, activation, effects) {
+  const actionType = ["action", "reaction", "free"].includes(activation.type) ? activation.type : "action";
+  const actionCount = actionType === "action" ? Math.max(1, Math.min(3, Number(activation.actions) || 1)) : null;
+  const frequencyMax = Math.max(0, Number(activation.frequencyMax) || 0);
+  return {
+    name: activation.name || `Activate ${item.name}`,
+    type: "action",
+    img: item.img,
+    system: {
+      description: { value: lsCompileActivationRows(activation, effects, { includeHeading: false }).join("") },
+      actionType: { value: actionType }, actions: { value: actionCount },
+      traits: { value: foundry.utils.deepClone(activation.traits), otherTags: [] },
+      frequency: frequencyMax ? { max: frequencyMax, per: activation.frequencyPer || "day", value: frequencyMax } : null,
+      rules: [],
+    },
+    flags: { [LS_MODULE_ID]: { itemActivation: { sourceItemId: item.id, activationId: activation.id } } },
+  };
+}
+
+async function lsSyncOwnedItemActivations(item) {
+  const actor = item.actor;
+  if (!actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type)) return;
+  const flags = lsItemBuilderFlags(item);
+  const desired = flags.activations.filter((activation) => activation.type !== "none");
+  const linked = actor.items.filter((candidate) => candidate.type === "action" && candidate.getFlag(LS_MODULE_ID, "itemActivation")?.sourceItemId === item.id);
+  const linkedByActivation = new Map(linked.map((candidate) => [candidate.getFlag(LS_MODULE_ID, "itemActivation")?.activationId, candidate]));
+  const updates = [], creates = [];
+  for (const [index, activation] of desired.entries()) {
+    const source = lsActivationActionSource(item, activation, flags.effects.filter((effect) => effect.activationId === activation.id || (!effect.activationId && index === 0)));
+    const existing = linkedByActivation.get(activation.id);
+    if (existing) {
+      if (source.system.frequency) {
+        const remaining = Number(existing.system.frequency?.value);
+        source.system.frequency.value = Number.isFinite(remaining) ? Math.min(source.system.frequency.max, Math.max(0, remaining)) : source.system.frequency.max;
+      }
+      const { type: _type, ...changes } = source;
+      updates.push({ _id: existing.id, ...changes });
+      linkedByActivation.delete(activation.id);
+    } else creates.push(source);
+  }
+  if (updates.length) await actor.updateEmbeddedDocuments("Item", updates);
+  if (creates.length) await actor.createEmbeddedDocuments("Item", creates);
+  const staleIds = [...linkedByActivation.values()].map((candidate) => candidate.id);
+  if (staleIds.length) await actor.deleteEmbeddedDocuments("Item", staleIds);
 }
 
 function lsStripItemBuilderDescription(description) {
@@ -599,6 +687,8 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       useCurrent: LoreSmithItemBuilder.useCurrent,
       addTrait: LoreSmithItemBuilder.addTrait,
       removeTrait: LoreSmithItemBuilder.removeTrait,
+      addActivation: LoreSmithItemBuilder.addActivation,
+      removeActivation: LoreSmithItemBuilder.removeActivation,
       addActivationTrait: LoreSmithItemBuilder.addActivationTrait,
       removeActivationTrait: LoreSmithItemBuilder.removeActivationTrait,
       addEffect: LoreSmithItemBuilder.addEffect,
@@ -632,12 +722,13 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   async _prepareContext(options) {
     if (this.step === 0 && !this.sourcesLoaded) await this.loadSources();
     const item = this.item, system = item.system ?? {}, traitConfig = lsItemTraitConfig();
-    const activation = this.builderFlags.activation, price = system.price?.value ?? {};
+    const price = system.price?.value ?? {};
     const typeFlags = {
       weapon: item.type === "weapon", armor: item.type === "armor", shield: item.type === "shield",
       consumable: ["consumable", "ammo"].includes(item.type),
       equipment: ["equipment", "backpack", "kit"].includes(item.type), treasure: ["treasure", "book"].includes(item.type),
     };
+    const activationChoices = this.builderFlags.activations.map((activation, index) => ({ value: activation.id, label: activation.name || `Activation ${index + 1}` }));
     const effects = this.builderFlags.effects.map((effect) => ({
       ...lsEffectView(effect),
       damageTypes: lsSelectOptions(CONFIG.PF2E.damageTypes, effect.damageType),
@@ -647,6 +738,17 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       saves: lsSelectOptions(null, effect.save, [["fortitude", "Fortitude"], ["reflex", "Reflex"], ["will", "Will"]]),
       modifierTypes: lsSelectOptions(null, effect.modifierType, [["item", "Item"], ["status", "Status"], ["circumstance", "Circumstance"], ["untyped", "Untyped"]]),
       regeneration: effect.option === "regeneration",
+      activationOptions: [{ value: "", label: "Constant / unassigned", selected: !effect.activationId }, ...activationChoices.map((choice) => ({ ...choice, selected: choice.value === effect.activationId }))],
+    }));
+    const activations = this.builderFlags.activations.map((activation, index) => ({
+      ...activation,
+      number: index + 1,
+      traitChips: activation.traits.map((value) => ({ value, label: game.i18n.localize(CONFIG.PF2E.actionTraits?.[value] ?? value) })),
+      activationTraitOptions: lsSelectOptions(CONFIG.PF2E.actionTraits, ""),
+      activationTypeOptions: lsSelectOptions(null, activation.type, [["free", "Free action"], ["reaction", "Reaction"], ["action", "Action"]]),
+      activationActionOptions: lsSelectOptions(null, activation.actions, [["1", "One action"], ["2", "Two actions"], ["3", "Three actions"], ["varies", "One to three actions"]]),
+      frequencyOptions: lsSelectOptions(null, activation.frequencyPer, [["round", "round"], ["minute", "minute"], ["hour", "hour"], ["day", "day"], ["week", "week"]]),
+      areaOptions: lsSelectOptions(null, activation.areaType, [["none", "No area"], ["burst", "Burst"], ["cone", "Cone"], ["emanation", "Emanation"], ["line", "Line"]]),
     }));
     const generatedRules = this.builderFlags.generatedRules ?? [], rules = Array.isArray(system.rules) ? system.rules : [];
     const validation = [];
@@ -674,7 +776,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         acBonus: lsNumber(system.acBonus, item.type === "shield" ? 2 : 0), strength: lsNumber(system.strength, 0), dexCap: lsNumber(system.dexCap, 0),
         checkPenalty: lsNumber(system.checkPenalty, 0), speedPenalty: lsNumber(system.speedPenalty, 0), usesValue: lsNumber(system.uses?.value, 1), usesMax: lsNumber(system.uses?.max, 1), autoDestroy: system.uses?.autoDestroy !== false,
       },
-      activation: { ...activation, traitChips: activation.traits.map((value) => ({ value, label: game.i18n.localize(CONFIG.PF2E.actionTraits?.[value] ?? value) })) }, effects, query: this.query, results: this.results, sourcePreview: this.sourcePreview,
+      activations, effects, query: this.query, results: this.results, sourcePreview: this.sourcePreview,
       sourceLevel: this.sourceLevel, sourceTrait: this.sourceTrait, sourceCount: this.sourceAllResults.length,
       sourcePageLabel: `${this.sourcePage + 1} / ${Math.max(1, Math.ceil(this.sourceAllResults.length / this.sourcePageSize))}`,
       hasPreviousSources: this.sourcePage > 0, hasNextSources: (this.sourcePage + 1) * this.sourcePageSize < this.sourceAllResults.length,
@@ -682,11 +784,6 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       itemLevels: Array.from({ length: 31 }, (_value, level) => ({ value: level, label: level, selected: level === lsNumber(system.level, 0) })),
       rarityOptions: ["common", "uncommon", "rare", "unique"].map((value) => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1), selected: value === (system.traits?.rarity ?? "common") })),
       itemTraitOptions: Object.entries(traitConfig).map(([value, label]) => ({ value, label: game.i18n.localize(label), selected: value === this.sourceTrait })).sort((a, b) => a.label.localeCompare(b.label)),
-      activationTraitOptions: lsSelectOptions(CONFIG.PF2E.actionTraits, ""),
-      activationTypeOptions: lsSelectOptions(null, activation.type, [["none", "No activation"], ["free", "Free action"], ["reaction", "Reaction"], ["action", "Action"]]),
-      activationActionOptions: lsSelectOptions(null, activation.actions, [["1", "One action"], ["2", "Two actions"], ["3", "Three actions"], ["varies", "One to three actions"]]),
-      frequencyOptions: lsSelectOptions(null, activation.frequencyPer, [["round", "round"], ["minute", "minute"], ["hour", "hour"], ["day", "day"], ["week", "week"]]),
-      areaOptions: lsSelectOptions(null, activation.areaType, [["none", "No area"], ["burst", "Burst"], ["cone", "Cone"], ["emanation", "Emanation"], ["line", "Line"]]),
       effectKindOptions: [["damage", "Damage roll"], ["healing", "Healing roll"], ["check", "Save or check"], ["condition", "Condition or reminder"], ["flat-modifier", "Flat modifier"], ["damage-dice", "Extra damage dice"], ["resistance", "Resistance"], ["weakness", "Weakness"], ["immunity", "Immunity"], ["fast-healing", "Fast healing / regeneration"], ["roll-option", "Toggleable roll option"]].map(([value, label]) => ({ value, label })),
       damageTypes: lsSelectOptions(CONFIG.PF2E.damageTypes, system.damage?.damageType),
       usageOptions: lsSelectOptions(CONFIG.PF2E.usages, system.usage?.value, [["held-in-one-hand", "Held in 1 hand"], ["held-in-two-hands", "Held in 2 hands"], ["worn", "Worn"], ["wornarmor", "Worn armor"]]),
@@ -758,7 +855,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       await this.item.update(updates);
     }
     if (this.step === 3) {
-      this.syncActivationFromForm();
+      this.syncActivationsFromForm();
       await this.item.setFlag(LS_MODULE_ID, "itemBuilder", this.builderFlags);
     }
     if (this.step === 4) {
@@ -767,15 +864,22 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     }
   }
 
-  syncActivationFromForm() {
+  syncActivationsFromForm() {
     const root = this.element;
     if (!root) return;
-    Object.assign(this.builderFlags.activation, {
-      type: root.querySelector('[name="activationType"]')?.value || "none", actions: root.querySelector('[name="activationActions"]')?.value || "1",
-      frequencyMax: root.querySelector('[name="activationFrequencyMax"]')?.value ?? "", frequencyPer: root.querySelector('[name="activationFrequencyPer"]')?.value || "day",
-      trigger: root.querySelector('[name="activationTrigger"]')?.value.trim() || "", requirements: root.querySelector('[name="activationRequirements"]')?.value.trim() || "",
-      range: root.querySelector('[name="activationRange"]')?.value.trim() || "", target: root.querySelector('[name="activationTarget"]')?.value.trim() || "",
-      areaType: root.querySelector('[name="activationAreaType"]')?.value || "none", areaSize: root.querySelector('[name="activationAreaSize"]')?.value ?? "", duration: root.querySelector('[name="activationDuration"]')?.value.trim() || "",
+    const previous = new Map(this.builderFlags.activations.map((activation) => [activation.id, activation]));
+    this.builderFlags.activations = [...root.querySelectorAll("[data-activation-id]")].map((card) => {
+      const id = card.dataset.activationId;
+      return lsNewItemActivation({
+        id, traits: previous.get(id)?.traits ?? [],
+        name: card.querySelector('[name="activationName"]')?.value.trim() || "",
+        type: card.querySelector('[name="activationType"]')?.value || "action", actions: card.querySelector('[name="activationActions"]')?.value || "1",
+        frequencyMax: card.querySelector('[name="activationFrequencyMax"]')?.value ?? "", frequencyPer: card.querySelector('[name="activationFrequencyPer"]')?.value || "day",
+        trigger: card.querySelector('[name="activationTrigger"]')?.value.trim() || "", requirements: card.querySelector('[name="activationRequirements"]')?.value.trim() || "",
+        range: card.querySelector('[name="activationRange"]')?.value.trim() || "", target: card.querySelector('[name="activationTarget"]')?.value.trim() || "",
+        areaType: card.querySelector('[name="activationAreaType"]')?.value || "none", areaSize: card.querySelector('[name="activationAreaSize"]')?.value ?? "",
+        duration: card.querySelector('[name="activationDuration"]')?.value.trim() || "", effectText: card.querySelector('[name="activationEffectText"]')?.value.trim() || "",
+      });
     });
   }
 
@@ -786,6 +890,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       const optionControl = card.querySelector('[name="effectOption"]');
       return {
         id: card.dataset.effectId, kind: card.dataset.effectKind, label: card.querySelector('[name="effectLabel"]')?.value.trim() || "",
+        activationId: card.querySelector('[name="effectActivationId"]')?.value || "",
         formula: card.querySelector('[name="effectFormula"]')?.value.trim() || "", damageType: card.querySelector('[name="effectDamageType"]')?.value || "",
         save: card.querySelector('[name="effectSave"]')?.value || "reflex", dc: card.querySelector('[name="effectDc"]')?.value.trim() || "", basic: Boolean(card.querySelector('[name="effectBasic"]')?.checked),
         selector: card.querySelector('[name="effectSelector"]')?.value.trim() || "", value: card.querySelector('[name="effectValue"]')?.value.trim() || "",
@@ -895,16 +1000,32 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     await this.render();
   }
 
-  static async addActivationTrait() {
-    this.syncActivationFromForm();
-    const trait = this.element.querySelector('[name="activationTraitToAdd"]')?.value;
-    if (trait && !this.builderFlags.activation.traits.includes(trait)) this.builderFlags.activation.traits.push(trait);
+  static async addActivationTrait(_event, target) {
+    this.syncActivationsFromForm();
+    const card = this.element.querySelector(`[data-activation-id="${CSS.escape(target.dataset.id ?? "")}"]`);
+    const activation = this.builderFlags.activations.find((entry) => entry.id === target.dataset.id);
+    const trait = card?.querySelector('[name="activationTraitToAdd"]')?.value;
+    if (activation && trait && !activation.traits.includes(trait)) activation.traits.push(trait);
     await this.render();
   }
 
   static async removeActivationTrait(_event, target) {
-    this.syncActivationFromForm();
-    this.builderFlags.activation.traits = this.builderFlags.activation.traits.filter((trait) => trait !== target.dataset.trait);
+    this.syncActivationsFromForm();
+    const activation = this.builderFlags.activations.find((entry) => entry.id === target.dataset.id);
+    if (activation) activation.traits = activation.traits.filter((trait) => trait !== target.dataset.trait);
+    await this.render();
+  }
+
+  static async addActivation() {
+    this.syncActivationsFromForm();
+    this.builderFlags.activations.push(lsNewItemActivation());
+    await this.render();
+  }
+
+  static async removeActivation(_event, target) {
+    this.syncActivationsFromForm();
+    this.builderFlags.activations = this.builderFlags.activations.filter((activation) => activation.id !== target.dataset.id);
+    this.builderFlags.effects = this.builderFlags.effects.map((effect) => effect.activationId === target.dataset.id ? { ...effect, activationId: "" } : effect);
     await this.render();
   }
 
@@ -925,6 +1046,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     await this.saveStep();
     await this.persistBuilderAutomation();
     await this.item.setFlag(LS_MODULE_ID, "builderComplete", true);
+    await lsSyncOwnedItemActivations(this.item);
     await this.close();
     this.item.sheet.render(true);
   }
@@ -1787,6 +1909,23 @@ Hooks.on("renderItemSheet", (app, html) => {
     title: "Open Lore Smith Item Builder",
     onClick: () => new LoreSmithItemBuilder(item).render(true),
   });
+});
+
+Hooks.on("createItem", (item) => {
+  if (!game.user.isGM || !item.actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type) || !item.getFlag(LS_MODULE_ID, "itemBuilder")) return;
+  queueMicrotask(() => lsSyncOwnedItemActivations(item).catch((error) => console.error("Lore Smith | Failed to create linked item activations", error)));
+});
+
+Hooks.on("updateItem", (item) => {
+  if (!game.user.isGM || !item.actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type) || !item.getFlag(LS_MODULE_ID, "itemBuilder")) return;
+  queueMicrotask(() => lsSyncOwnedItemActivations(item).catch((error) => console.error("Lore Smith | Failed to update linked item activations", error)));
+});
+
+Hooks.on("deleteItem", (item) => {
+  const actor = item.actor;
+  if (!game.user.isGM || !actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type)) return;
+  const linkedIds = actor.items.filter((candidate) => candidate.type === "action" && candidate.getFlag(LS_MODULE_ID, "itemActivation")?.sourceItemId === item.id).map((candidate) => candidate.id);
+  if (linkedIds.length) queueMicrotask(() => actor.deleteEmbeddedDocuments("Item", linkedIds).catch((error) => console.error("Lore Smith | Failed to remove linked item activations", error)));
 });
 
 Hooks.on("renderJournalSheet", (app, html) => {

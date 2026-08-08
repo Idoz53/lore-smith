@@ -11,8 +11,11 @@ The module provides:
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
 - a six-step, type-aware item workshop for native weapons, armor, shields,
   consumables, ammunition, equipment, and other PF2e item documents;
-- structured item activation, frequency, requirements, targeting, range, area,
-  duration, inline damage/healing/check controls, and safe PF2e Rule Elements;
+- any number of named item activations rendered as native PF2e stat blocks with
+  exact action glyphs, traits, frequency, trigger, requirements, effect, targeting,
+  range, area, duration, inline damage/healing/check controls, and separators;
+- owned item activations are synchronized to native PF2e Action documents, so
+  they appear in the actor's Actions tab with their action cost and frequency;
 - existing compendium automation, runes, subitems, and native rules are preserved
   when an item is copied and customized;
 - encounter setup using actors and tokens already in the Foundry world;

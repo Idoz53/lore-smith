@@ -104,20 +104,31 @@
     {{/if}}
 
     {{#if steps.activation}}
-      <section class="ls-builder-step"><h2>Activation</h2><p>Build the PF2e Activate entry. Lore Smith will generate native action glyphs and an area-template button in the item description.</p>
-        <section class="ls-builder-card"><div class="ls-form-grid stats">
-          <label>Activation<select name="activationType">{{#each activationTypeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-          <label>Action cost<select name="activationActions">{{#each activationActionOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-          <label>Uses per period<input name="activationFrequencyMax" type="number" min="0" value="{{activation.frequencyMax}}" placeholder="Blank if unlimited"></label>
-          <label>Period<select name="activationFrequencyPer">{{#each frequencyOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-          <label class="wide">Activation traits<span class="ls-inline-control"><select name="activationTraitToAdd"><option value="">Choose an action trait</option>{{#each activationTraitOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button data-action="addActivationTrait">Add</button></span></label>
-          <div class="ls-trait-chips wide">{{#each activation.traitChips}}<button class="ls-trait-chip" data-action="removeActivationTrait" data-trait="{{value}}">{{label}} <i class="fa-solid fa-xmark"></i></button>{{else}}<span>No activation traits.</span>{{/each}}</div>
-          <label class="wide">Trigger<input name="activationTrigger" value="{{activation.trigger}}" placeholder="Only used for reactions or free actions with a trigger"></label>
-          <label class="wide">Requirements<input name="activationRequirements" value="{{activation.requirements}}" placeholder="What must be true before activation"></label>
-          <label>Range<input name="activationRange" value="{{activation.range}}" placeholder="touch, 30 feet..."></label><label>Targets<input name="activationTarget" value="{{activation.target}}" placeholder="1 creature, all allies..."></label>
-          <label>Area<select name="activationAreaType">{{#each areaOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>Area size (feet)<input name="activationAreaSize" type="number" min="0" value="{{activation.areaSize}}"></label>
-          <label class="wide">Duration<input name="activationDuration" value="{{activation.duration}}" placeholder="until the end of your next turn, 1 minute..."></label>
-        </div></section>
+      <section class="ls-builder-step"><div class="ls-section-heading"><div><h2>Activations</h2><p>Add every way this item can be activated. Each becomes a native-style PF2e stat-block entry and, when owned, an Action on the actor sheet.</p></div><button data-action="addActivation"><i class="fa-solid fa-plus"></i> Add activation</button></div>
+        <div class="ls-activation-stack">
+          {{#each activations}}
+            <section class="ls-builder-card ls-activation-card" data-activation-id="{{id}}">
+              <header><div><small>Activation {{number}}</small><strong>{{#if name}}{{name}}{{else}}Unnamed activation{{/if}}</strong></div><button class="danger" data-action="removeActivation" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></header>
+              <div class="ls-form-grid stats">
+                <label class="wide">Activation name<input name="activationName" value="{{name}}" placeholder="Courageous Anthem, Counter Performance..."></label>
+                <label>Action type<select name="activationType">{{#each activationTypeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label>Action cost<select name="activationActions">{{#each activationActionOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label>Uses per period<input name="activationFrequencyMax" type="number" min="0" value="{{frequencyMax}}" placeholder="Blank if unlimited"></label>
+                <label>Period<select name="activationFrequencyPer">{{#each frequencyOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label class="wide">Activation traits<span class="ls-inline-control"><select name="activationTraitToAdd"><option value="">Choose an action trait</option>{{#each activationTraitOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button data-action="addActivationTrait" data-id="{{id}}">Add</button></span></label>
+                <div class="ls-trait-chips wide">{{#each traitChips}}<button class="ls-trait-chip" data-action="removeActivationTrait" data-id="{{../id}}" data-trait="{{value}}">{{label}} <i class="fa-solid fa-xmark"></i></button>{{else}}<span>No activation traits.</span>{{/each}}</div>
+                <label class="wide">Trigger<input name="activationTrigger" value="{{trigger}}" placeholder="Only used when the activation has a trigger"></label>
+                <label class="wide">Requirements<input name="activationRequirements" value="{{requirements}}" placeholder="What must be true before activation"></label>
+                <label>Range<input name="activationRange" value="{{range}}" placeholder="touch, 30 feet..."></label><label>Targets<input name="activationTarget" value="{{target}}" placeholder="1 creature, all allies..."></label>
+                <label>Area<select name="activationAreaType">{{#each areaOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>Area size (feet)<input name="activationAreaSize" type="number" min="0" value="{{areaSize}}"></label>
+                <label class="wide">Duration<input name="activationDuration" value="{{duration}}" placeholder="until the end of your next turn, 1 minute..."></label>
+                <label class="wide">Effect<textarea name="activationEffectText" rows="4" placeholder="Describe what this activation does. Roll buttons are assigned in the next step.">{{effectText}}</textarea></label>
+              </div>
+            </section>
+          {{else}}
+            <div class="ls-builder-empty"><i class="fa-solid fa-hand-sparkles"></i><strong>This item has no activation.</strong><span>Add one only if the item has an Activate entry.</span></div>
+          {{/each}}
+        </div>
       </section>
     {{/if}}
 
@@ -126,7 +137,8 @@
         <div class="ls-effect-add"><select name="effectKindToAdd">{{#each effectKindOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button data-action="addEffect"><i class="fa-solid fa-plus"></i> Add effect</button></div>
         <div class="ls-effect-stack">
           {{#each effects}}<article class="ls-effect-card" data-effect-id="{{id}}" data-effect-kind="{{kind}}"><header><div><span>{{kind}}</span><strong>{{#if label}}{{label}}{{else}}New effect{{/if}}</strong></div><button class="danger" data-action="removeEffect" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></header><div class="ls-form-grid stats">
-            <label class="wide">Label<input name="effectLabel" value="{{label}}" placeholder="Shown beside the roll or modifier"></label>
+            <label>Activation<select name="effectActivationId">{{#each activationOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label>Label<input name="effectLabel" value="{{label}}" placeholder="Shown beside the roll or modifier"></label>
             {{#if isDamage}}<label>Damage formula<input name="effectFormula" value="{{formula}}" placeholder="2d6+4"></label><label>Damage type<select name="effectDamageType"><option value="">Untyped</option>{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
             {{#if isHealing}}<label>Healing formula<input name="effectFormula" value="{{formula}}" placeholder="2d8+8"></label>{{/if}}
             {{#if isCheck}}<label>Defense<select name="effectSave">{{#each saves}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>DC<input name="effectDc" type="number" value="{{dc}}" placeholder="Leave blank for a prompt"></label><label class="ls-check-label"><input name="effectBasic" type="checkbox" {{#if basic}}checked{{/if}}> Basic save</label>{{/if}}
