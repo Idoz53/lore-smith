@@ -195,6 +195,7 @@ export async function resolveNativeCheck({
   option,
   attacker,
   target,
+  nativeMessage = null,
   mapPenalty = 0,
   dc,
   checkDegree,
@@ -217,20 +218,37 @@ export async function resolveNativeCheck({
 
     if (option.kind === "spell" && option.attackTrait && option.item?.rollAttack) {
       const attackNumber = mapPenalty >= 10 ? 3 : mapPenalty >= 5 ? 2 : 1;
-      const result = await option.item.rollAttack(privateGmEvent(), attackNumber);
+      const action = attackNumber === 3 ? "spell-attack-3" : attackNumber === 2 ? "spell-attack-2" : "spell-attack";
+      const cardRoll = nativeMessage
+        ? await pressNativeCardRoll(nativeMessage, action, target, { rollerActorId: attacker.actor?.id })
+        : null;
+      const result = cardRoll
+        ? { roll: cardRoll.rolls?.[0], outcome: cardRoll.flags?.pf2e?.context?.outcome }
+        : await option.item.rollAttack(privateGmEvent(), attackNumber);
       const normalized = normalizeNativeResult(result, dc, checkDegree);
-      if (normalized.total !== null) return { ...normalized, dc, source: "PF2e spell attack button" };
+      if (normalized.total !== null) return { ...normalized, dc, source: cardRoll ? "PF2e spell attack card button" : "PF2e spell attack button" };
     }
 
     if (option.save) {
+      const cardRoll = nativeMessage
+        ? await pressNativeCardRoll(nativeMessage, "spell-save", target, {
+          rollerActorId: target.actor?.id,
+          controlTarget: true,
+        })
+        : null;
       const statistic = target.actor?.getStatistic?.(option.save);
-      const result = await rollNativeStatistic(statistic, {
-        dc: { value: Number(option.dc), slug: option.item?.slug ?? option.id },
-        target: attacker.token?.object ?? null,
-        options: ["lore-smith", "action:live-combat"],
-      });
+      const result = cardRoll
+        ? { roll: cardRoll.rolls?.[0], outcome: cardRoll.flags?.pf2e?.context?.outcome }
+        : await rollNativeStatistic(statistic, {
+          dc: { value: Number(option.dc), slug: option.item?.slug ?? option.id },
+          item: option.item ?? null,
+          origin: attacker.actor ?? null,
+          options: ["lore-smith", "action:live-combat"],
+        });
       const normalized = normalizeNativeResult(result, option.dc, checkDegree);
-      if (normalized.total !== null) return { ...normalized, dc: option.dc, source: `PF2e ${option.save} save` };
+      if (normalized.total !== null) {
+        return { ...normalized, dc: option.dc, source: cardRoll ? `PF2e spell-card ${option.save} save button` : `PF2e ${option.save} save` };
+      }
     }
 
 
@@ -277,7 +295,65 @@ function newestMessageAfter(beforeIds, item) {
     && (!item || message.item?.id === item.id || message.flags?.pf2e?.origin?.uuid === item.uuid)) ?? null;
 }
 
-export async function rollNativeDamage(option, attacker, target, degree, mapPenalty = 0) {
+async function waitForNewRollMessage(beforeIds, actorId, timeout = 3000) {
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    const message = [...(game.messages?.contents ?? [])].reverse().find((candidate) =>
+      !beforeIds.has(candidate.id)
+      && candidate.rolls?.length
+      && (!actorId || candidate.speaker?.actor === actorId || candidate.actor?.id === actorId));
+    if (message) return message;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return null;
+}
+
+function cardElement(message) {
+  if (!message?.id || typeof document === "undefined") return null;
+  return document.querySelector(`[data-message-id="${message.id}"]`);
+}
+
+async function waitForCardElement(message, timeout = 1200) {
+  const started = Date.now();
+  while (Date.now() - started < timeout) {
+    const element = cardElement(message);
+    if (element) return element;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return null;
+}
+
+async function pressNativeCardRoll(message, action, target, {
+  outcome = null,
+  rollerActorId = null,
+  controlTarget = false,
+} = {}) {
+  const root = await waitForCardElement(message);
+  const selector = outcome
+    ? `[data-action="${action}"][data-outcome="${outcome}"]`
+    : `[data-action="${action}"]`;
+  const control = root?.querySelector(selector);
+  if (!control) return null;
+  await setNativeTarget(target);
+  const targetToken = target?.token?.object ?? target?.object ?? target;
+  const previouslyControlled = [...(canvas.tokens?.controlled ?? [])];
+  if (controlTarget && targetToken?.control) targetToken.control({ releaseOthers: true });
+  const beforeIds = new Set(game.messages?.keys?.() ?? []);
+  // PF2e deliberately debounces chat-card controls for 500 ms. Waiting here
+  // makes sequential area saves behave like deliberate GM clicks rather than
+  // losing every roll after the first one.
+  await new Promise((resolve) => setTimeout(resolve, 525));
+  control.dispatchEvent(privateGmEvent());
+  const actorId = rollerActorId ?? target?.actor?.id ?? target?.document?.actor?.id ?? null;
+  const result = await waitForNewRollMessage(beforeIds, actorId);
+  if (controlTarget) {
+    targetToken?.release?.();
+    for (const token of previouslyControlled) token.control?.({ releaseOthers: false });
+  }
+  return result;
+}
+
+export async function rollNativeDamage(option, attacker, target, degree, mapPenalty = 0, nativeMessage = null) {
   await setNativeTarget(target);
   const event = privateGmEvent();
   try {
@@ -292,6 +368,10 @@ export async function rollNativeDamage(option, attacker, target, degree, mapPena
         : await option.nativeAction.damage?.(context);
     }
     if (option.kind === "spell" && option.item?.rollDamage) {
+      const cardRoll = nativeMessage
+        ? await pressNativeCardRoll(nativeMessage, "spell-damage", target, { rollerActorId: attacker.actor?.id })
+        : null;
+      if (cardRoll?.rolls?.[0]) return cardRoll.rolls[0];
       return option.item.rollDamage(event, option.attackTrait ? Math.round(mapPenalty / 5) : undefined);
     }
     if (option.item?.rollDamage) return option.item.rollDamage(event);

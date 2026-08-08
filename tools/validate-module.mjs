@@ -40,6 +40,10 @@ if (!script.includes("combatantInsideTemplate") || !script.includes("rollNativeD
 if (script.includes("nativeCheck ?? await resolveModeledCheckWithRoll")) {
   throw new Error("Live combat must not silently replace a failed PF2e control with a modeled roll.");
 }
+const adapterScript = await readFile(resolve(root, "scripts/simulation-adapters.js"), "utf8");
+if (!adapterScript.includes('"spell-save"') || !adapterScript.includes('"spell-damage"')) {
+  throw new Error("Native PF2e spell-card Save and Damage controls are not wired.");
+}
 const templateActions = [...template.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]);
 for (const action of new Set(templateActions)) {
   if (!new RegExp(`\\b${action}:\\s*LoreSmithDashboard\\.`).test(script)) {

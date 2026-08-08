@@ -771,7 +771,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         consumeUse(attacker, option, target);
         const nativeActionCard = nativeUse.message ?? await postNativeActionCard(option);
         if (option.healing) {
-          const healingRoll = await rollNativeDamage(option, attacker, target, 2, map);
+          const healingRoll = await rollNativeDamage(option, attacker, target, 2, map, nativeActionCard);
           const healing = await applyNativeDamageOrHealing(target, healingRoll, 2, option);
           if (!healing) {
             await emit(`${attacker.name} uses ${option.name}, but PF2e exposed no native healing button for this entry. Lore Smith did not invent a healing formula.`, "error");
@@ -808,12 +808,13 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             option,
             attacker,
             target: affected,
+            nativeMessage: nativeActionCard,
             mapPenalty: map,
             dc: option.save ? option.dc : actorAc(affected.actor),
             checkDegree,
           });
           if (!option.automatic && !nativeCheck) {
-            outcomes.push(`${affected.name}: PF2e exposed no executable native roll control; no modeled roll was substituted`);
+            outcomes.push(`${affected.name}: PF2e's native control did not return a readable roll; no modeled roll was substituted`);
             continue;
           }
           const check = nativeCheck ?? { degree: 2, total: null, dc: null, natural: null };
@@ -829,7 +830,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             const rollKey = option.save ? "save" : degree === 3 ? "critical" : "success";
             let damageRoll = nativeRolls.get(rollKey);
             if (!damageRoll) {
-              damageRoll = await rollNativeDamage(option, attacker, affected, degree, map);
+              damageRoll = await rollNativeDamage(option, attacker, affected, degree, map, nativeActionCard);
               if (damageRoll) nativeRolls.set(rollKey, damageRoll);
             }
             damage = await applyNativeDamageOrHealing(affected, damageRoll, degree, option);
@@ -842,7 +843,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             ? await applyNativeStructuredEffects(option, attacker, affected)
             : [];
           const missingDamage = option.damage && (option.save || degree >= 2) && !damage
-            ? "; PF2e exposed no native damage button, so no formula was invented"
+            ? "; PF2e's native damage control did not return a roll, so no formula was invented"
             : "";
           outcomes.push(`${outcome}${damage ? `; native damage roll ${damage.summary}; ${damage.amount} ${option.damageType || ""} damage applied, HP ${affected.hp}/${affected.maxHp}` : ""}${missingDamage}${conditions.length || structured.length || clickedCardEffect ? `; ${[...conditions, ...structured, ...(clickedCardEffect ? ["native card effect"] : [])].join(", ")}` : ""}`);
           if (affected.defeated) {
