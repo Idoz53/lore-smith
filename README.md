@@ -9,6 +9,12 @@ The module provides:
   clean rendered notes, and Foundry's visual rich-text editor integrated into
   a focused writing window;
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
+- a six-step, type-aware item workshop for native weapons, armor, shields,
+  consumables, ammunition, equipment, and other PF2e item documents;
+- structured item activation, frequency, requirements, targeting, range, area,
+  duration, inline damage/healing/check controls, and safe PF2e Rule Elements;
+- existing compendium automation, runes, subitems, and native rules are preserved
+  when an item is copied and customized;
 - encounter setup using actors and tokens already in the Foundry world;
 - Combat Tracker buttons for randomized iteration logs and live Scene combat;
 - spell-, ability-, item-, strike-, save-, condition-, and area-template-aware combat choices;

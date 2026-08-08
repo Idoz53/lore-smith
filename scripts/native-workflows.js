@@ -431,6 +431,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   }
 
   static async addTrait() {
+    await this.saveStep();
     const trait = this.element.querySelector('[name="traitToAdd"]')?.value;
     if (!trait) return;
     const traits = new Set(lsTraits(this.actor));
@@ -482,11 +483,110 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   }
 }
 
+const LS_PHYSICAL_ITEM_TYPES = new Set(["ammo", "armor", "backpack", "book", "consumable", "equipment", "kit", "shield", "treasure", "weapon"]);
+
+function lsEscapeHtml(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+}
+
+function lsSelectOptions(record, current, fallback = []) {
+  const entries = record && typeof record === "object" && !Array.isArray(record) ? Object.entries(record) : fallback;
+  return entries.map(([value, label]) => ({
+    value,
+    label: game.i18n.localize(label ?? value),
+    selected: String(value) === String(current ?? ""),
+  })).sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function lsCoinValue(price, denomination) {
+  return Math.max(0, lsNumber(price?.[denomination], 0));
+}
+
+function lsEmptyItemBuilderFlags() {
+  return {
+    activation: { type: "none", actions: "1", traits: [], frequencyMax: "", frequencyPer: "day", trigger: "", requirements: "", range: "", target: "", areaType: "none", areaSize: "", duration: "" },
+    effects: [],
+    generatedRules: [],
+  };
+}
+
+function lsItemBuilderFlags(item) {
+  return foundry.utils.mergeObject(lsEmptyItemBuilderFlags(), foundry.utils.deepClone(item.getFlag(LS_MODULE_ID, "itemBuilder") ?? {}), { inplace: false });
+}
+
+function lsEffectView(effect) {
+  const kind = effect.kind ?? "damage";
+  return {
+    id: effect.id, kind, label: effect.label ?? "", formula: effect.formula ?? "", damageType: effect.damageType ?? "",
+    save: effect.save ?? "reflex", dc: effect.dc ?? "", basic: effect.basic !== false, selector: effect.selector ?? "",
+    value: effect.value ?? "", modifierType: effect.modifierType ?? "item", condition: effect.condition ?? "",
+    option: effect.option ?? "", note: effect.note ?? "",
+    isDamage: kind === "damage", isHealing: kind === "healing", isCheck: kind === "check", isCondition: kind === "condition",
+    isFlatModifier: kind === "flat-modifier", isDamageDice: kind === "damage-dice", isResistance: kind === "resistance",
+    isWeakness: kind === "weakness", isImmunity: kind === "immunity", isFastHealing: kind === "fast-healing", isRollOption: kind === "roll-option",
+  };
+}
+
+function lsGeneratedRule(effect, itemName) {
+  const value = String(effect.value ?? "").trim() === "" ? Number.NaN : Number(effect.value);
+  switch (effect.kind) {
+    case "flat-modifier": return effect.selector && Number.isFinite(value) ? { key: "FlatModifier", selector: effect.selector, type: effect.modifierType || "item", value, label: effect.label || itemName } : null;
+    case "damage-dice": {
+      const match = String(effect.formula ?? "").trim().match(/^(\d+)d(4|6|8|10|12)$/i);
+      return effect.selector && match ? { key: "DamageDice", selector: effect.selector, diceNumber: Number(match[1]), dieSize: `d${match[2]}`, ...(effect.damageType ? { damageType: effect.damageType } : {}), label: effect.label || itemName } : null;
+    }
+    case "resistance": return effect.damageType && Number.isFinite(value) ? { key: "Resistance", type: effect.damageType, value } : null;
+    case "weakness": return effect.damageType && Number.isFinite(value) ? { key: "Weakness", type: effect.damageType, value } : null;
+    case "immunity": return effect.damageType ? { key: "Immunity", type: effect.damageType } : null;
+    case "fast-healing": return Number.isFinite(value) ? { key: "FastHealing", value, ...(effect.option === "regeneration" ? { type: "regeneration" } : {}) } : null;
+    case "roll-option": return effect.option ? { key: "RollOption", domain: effect.selector || "all", option: effect.option, label: effect.label || itemName, toggleable: true } : null;
+    default: return null;
+  }
+}
+
+function lsActionGlyph(activation) {
+  if (activation.type === "free") return '<span class="action-glyph">F</span>';
+  if (activation.type === "reaction") return '<span class="action-glyph">R</span>';
+  if (activation.type !== "action") return "";
+  if (activation.actions === "varies") return '<span class="action-glyph">1</span>&ndash;<span class="action-glyph">3</span>';
+  return `<span class="action-glyph">${lsEscapeHtml(activation.actions || "1")}</span>`;
+}
+
+function lsCompileItemBuilderDescription(baseDescription, flags) {
+  const start = "<!-- lore-smith:item-builder:start -->", end = "<!-- lore-smith:item-builder:end -->";
+  const clean = String(baseDescription ?? "").replace(new RegExp(`${start}[\\s\\S]*?${end}`, "g"), "").trim();
+  const activation = flags.activation;
+  const rows = [];
+  if (activation.type !== "none") {
+    const traits = activation.traits.length ? ` (${activation.traits.map((trait) => lsEscapeHtml(game.i18n.localize(CONFIG.PF2E.actionTraits?.[trait] ?? trait))).join(", ")})` : "";
+    rows.push(`<p><strong>Activate</strong> ${lsActionGlyph(activation)}${traits}</p>`);
+  }
+  for (const [label, value] of [["Frequency", activation.frequencyMax ? `${activation.frequencyMax} per ${activation.frequencyPer}` : ""], ["Trigger", activation.trigger], ["Requirements", activation.requirements], ["Range", activation.range], ["Targets", activation.target], ["Duration", activation.duration]]) {
+    if (value) rows.push(`<p><strong>${label}</strong> ${lsEscapeHtml(value)}</p>`);
+  }
+  if (activation.areaType !== "none" && activation.areaSize) rows.push(`<p>@Template[type:${activation.areaType}|distance:${Math.max(0, lsNumber(activation.areaSize, 0))}]</p>`);
+  for (const effect of flags.effects) {
+    const label = effect.label ? `<strong>${lsEscapeHtml(effect.label)}</strong> ` : "";
+    if (effect.kind === "damage" && effect.formula) rows.push(`<p>${label}@Damage[${effect.formula}${effect.damageType ? `[${effect.damageType}]` : ""}]${effect.note ? ` ${lsEscapeHtml(effect.note)}` : ""}</p>`);
+    else if (effect.kind === "healing" && effect.formula) rows.push(`<p>${label}@Damage[${effect.formula}[healing]]${effect.note ? ` ${lsEscapeHtml(effect.note)}` : ""}</p>`);
+    else if (effect.kind === "check") {
+      const parts = [effect.save || "reflex", effect.dc ? `dc:${effect.dc}` : null, effect.basic ? "basic:true" : null].filter(Boolean);
+      rows.push(`<p>${label}@Check[${parts.join("|")}]${effect.note ? ` ${lsEscapeHtml(effect.note)}` : ""}</p>`);
+    } else if (effect.kind === "condition" && effect.condition) rows.push(`<p>${label}<strong>${lsEscapeHtml(effect.condition)}</strong>${effect.note ? `: ${lsEscapeHtml(effect.note)}` : ""}</p>`);
+  }
+  return rows.length ? `${clean}${clean ? "\n" : ""}${start}<section class="lore-smith-item-activation">${rows.join("")}</section>${end}` : clean;
+}
+
+function lsStripItemBuilderDescription(description) {
+  return String(description ?? "").replace(/<!-- lore-smith:item-builder:start -->[\s\S]*?<!-- lore-smith:item-builder:end -->/g, "").trim();
+}
+
 class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: "lore-smith-item-builder-{id}",
     classes: ["lore-smith-builder"],
-    position: { width: 880, height: 720 },
+    position: { width: 980, height: 780 },
     window: { title: "Lore Smith Item Builder", icon: "fa-solid fa-hammer", resizable: true },
     actions: {
       previous: LoreSmithItemBuilder.previous,
@@ -499,6 +599,10 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       useCurrent: LoreSmithItemBuilder.useCurrent,
       addTrait: LoreSmithItemBuilder.addTrait,
       removeTrait: LoreSmithItemBuilder.removeTrait,
+      addActivationTrait: LoreSmithItemBuilder.addActivationTrait,
+      removeActivationTrait: LoreSmithItemBuilder.removeActivationTrait,
+      addEffect: LoreSmithItemBuilder.addEffect,
+      removeEffect: LoreSmithItemBuilder.removeEffect,
       goToStep: LoreSmithItemBuilder.goToStep,
       finish: LoreSmithItemBuilder.finish,
     },
@@ -511,6 +615,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   constructor(item, options = {}) {
     super({ ...options, id: `lore-smith-item-builder-${item.id}` });
     this.item = item;
+    this.builderFlags = lsItemBuilderFlags(item);
   }
 
   step = 0;
@@ -526,71 +631,76 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   async _prepareContext(options) {
     if (this.step === 0 && !this.sourcesLoaded) await this.loadSources();
-    const item = this.item;
-    const traitConfig = lsItemTraitConfig();
+    const item = this.item, system = item.system ?? {}, traitConfig = lsItemTraitConfig();
+    const activation = this.builderFlags.activation, price = system.price?.value ?? {};
+    const typeFlags = {
+      weapon: item.type === "weapon", armor: item.type === "armor", shield: item.type === "shield",
+      consumable: ["consumable", "ammo"].includes(item.type),
+      equipment: ["equipment", "backpack", "kit"].includes(item.type), treasure: ["treasure", "book"].includes(item.type),
+    };
+    const effects = this.builderFlags.effects.map((effect) => ({
+      ...lsEffectView(effect),
+      damageTypes: lsSelectOptions(CONFIG.PF2E.damageTypes, effect.damageType),
+      effectTypes: lsSelectOptions(effect.kind === "resistance" ? (CONFIG.PF2E.resistanceTypes ?? CONFIG.PF2E.damageTypes)
+        : effect.kind === "weakness" ? (CONFIG.PF2E.weaknessTypes ?? CONFIG.PF2E.damageTypes)
+          : { ...(CONFIG.PF2E.damageTypes ?? {}), ...(CONFIG.PF2E.conditionTypes ?? {}) }, effect.damageType),
+      saves: lsSelectOptions(null, effect.save, [["fortitude", "Fortitude"], ["reflex", "Reflex"], ["will", "Will"]]),
+      modifierTypes: lsSelectOptions(null, effect.modifierType, [["item", "Item"], ["status", "Status"], ["circumstance", "Circumstance"], ["untyped", "Untyped"]]),
+      regeneration: effect.option === "regeneration",
+    }));
+    const generatedRules = this.builderFlags.generatedRules ?? [], rules = Array.isArray(system.rules) ? system.rules : [];
+    const validation = [];
+    if (!item.name?.trim()) validation.push("Add an item name.");
+    if (typeFlags.weapon && !system.damage?.die) validation.push("Choose a weapon damage die.");
+    if (typeFlags.armor && !system.category) validation.push("Choose an armor category.");
+    if (typeFlags.consumable && lsNumber(system.uses?.max, 0) < 1) validation.push("Consumables need at least one use.");
+    for (const effect of this.builderFlags.effects) {
+      if (["flat-modifier", "damage-dice"].includes(effect.kind) && !effect.selector) validation.push(`${effect.label || "An automation effect"} needs a PF2e selector.`);
+      if (["damage", "healing", "damage-dice"].includes(effect.kind) && !effect.formula) validation.push(`${effect.label || "An effect"} needs a dice formula.`);
+      if (["resistance", "weakness", "immunity"].includes(effect.kind) && !effect.damageType) validation.push(`${effect.label || "An IWR effect"} needs a damage or condition type.`);
+      if (["flat-modifier", "resistance", "weakness", "fast-healing"].includes(effect.kind) && String(effect.value ?? "").trim() === "") validation.push(`${effect.label || "An automation effect"} needs a numeric value.`);
+    }
     return {
       ...await super._prepareContext(options),
       item: {
-        name: item.name,
-        img: item.img,
-        type: item.type,
-        typeLabel: item.type.replace(/([A-Z])/g, " $1"),
-        level: lsNumber(item.system?.level, 0),
-        rarity: item.system?.traits?.rarity ?? "common",
-        traits: lsTraits(item).map((value) => ({
-          value,
-          label: game.i18n.localize(traitConfig[value] ?? value),
-        })),
-        description: item.system?.description?.value ?? "",
-        actionType: item.system?.actionType?.value ?? "",
-        actions: item.system?.actions?.value ?? "",
-        frequencyMax: item.system?.frequency?.max ?? "",
-        frequencyPer: item.system?.frequency?.per ?? "",
-        hasActionType: "actionType" in (item.system ?? {}),
-        hasActions: "actions" in (item.system ?? {}),
-        hasFrequency: "frequency" in (item.system ?? {}),
+        name: item.name, img: item.img, type: item.type, typeLabel: game.i18n.localize(`TYPES.Item.${item.type}`),
+        level: lsNumber(system.level, 0), rarity: system.traits?.rarity ?? "common",
+        traits: lsTraits(item).map((value) => ({ value, label: game.i18n.localize(traitConfig[value] ?? value) })),
+        description: lsStripItemBuilderDescription(system.description?.value), isPhysical: LS_PHYSICAL_ITEM_TYPES.has(item.type), hasUsage: "usage" in system, hasCategory: "category" in system, ...typeFlags,
+        quantity: lsNumber(system.quantity, 1), bulk: lsNumber(system.bulk, 0), hardness: lsNumber(system.hardness, 0), hpMax: lsNumber(system.hp?.max, 0), usage: system.usage?.value ?? "",
+        price: { pp: lsCoinValue(price, "pp"), gp: lsCoinValue(price, "gp"), sp: lsCoinValue(price, "sp"), cp: lsCoinValue(price, "cp") },
+        category: system.category ?? "", group: system.group ?? "", damageDice: lsNumber(system.damage?.dice, 1), damageDie: system.damage?.die ?? "d6",
+        damageType: system.damage?.damageType ?? "", range: system.range ?? "", reload: system.reload?.value ?? "", splashDamage: lsNumber(system.splashDamage, 0),
+        acBonus: lsNumber(system.acBonus, item.type === "shield" ? 2 : 0), strength: lsNumber(system.strength, 0), dexCap: lsNumber(system.dexCap, 0),
+        checkPenalty: lsNumber(system.checkPenalty, 0), speedPenalty: lsNumber(system.speedPenalty, 0), usesValue: lsNumber(system.uses?.value, 1), usesMax: lsNumber(system.uses?.max, 1), autoDestroy: system.uses?.autoDestroy !== false,
       },
-      query: this.query,
-      results: this.results,
-      sourcePreview: this.sourcePreview,
-      sourceLevel: this.sourceLevel,
-      sourceTrait: this.sourceTrait,
-      sourceCount: this.sourceAllResults.length,
+      activation: { ...activation, traitChips: activation.traits.map((value) => ({ value, label: game.i18n.localize(CONFIG.PF2E.actionTraits?.[value] ?? value) })) }, effects, query: this.query, results: this.results, sourcePreview: this.sourcePreview,
+      sourceLevel: this.sourceLevel, sourceTrait: this.sourceTrait, sourceCount: this.sourceAllResults.length,
       sourcePageLabel: `${this.sourcePage + 1} / ${Math.max(1, Math.ceil(this.sourceAllResults.length / this.sourcePageSize))}`,
-      hasPreviousSources: this.sourcePage > 0,
-      hasNextSources: (this.sourcePage + 1) * this.sourcePageSize < this.sourceAllResults.length,
-      levelFilters: Array.from({ length: 31 }, (_value, level) => ({
-        value: level,
-        label: level,
-        selected: String(level) === String(this.sourceLevel),
-      })),
-      itemLevels: Array.from({ length: 31 }, (_value, level) => ({
-        value: level,
-        label: level,
-        selected: level === lsNumber(item.system?.level, 0),
-      })),
-      rarityOptions: ["common", "uncommon", "rare", "unique"].map((value) => ({
-        value,
-        label: value.charAt(0).toUpperCase() + value.slice(1),
-        selected: value === (item.system?.traits?.rarity ?? "common"),
-      })),
-      actionTypeOptions: [
-        ["passive", "Passive"], ["free", "Free action"], ["reaction", "Reaction"], ["action", "Action"],
-      ].map(([value, label]) => ({
-        value,
-        label,
-        selected: value === (item.system?.actionType?.value ?? "passive"),
-      })),
-      itemTraitOptions: Object.entries(traitConfig).map(([value, label]) => ({
-        value,
-        label: game.i18n.localize(label),
-        selected: value === this.sourceTrait,
-      })).sort((left, right) => left.label.localeCompare(right.label)),
-      step: this.step,
-      stepNumber: this.step + 1,
-      steps: { source: this.step === 0, basics: this.step === 1, mechanics: this.step === 2, review: this.step === 3 },
-      canBack: this.step > 0,
-      canNext: this.step > 0 && this.step < 3,
+      hasPreviousSources: this.sourcePage > 0, hasNextSources: (this.sourcePage + 1) * this.sourcePageSize < this.sourceAllResults.length,
+      levelFilters: Array.from({ length: 31 }, (_value, level) => ({ value: level, label: level, selected: String(level) === String(this.sourceLevel) })),
+      itemLevels: Array.from({ length: 31 }, (_value, level) => ({ value: level, label: level, selected: level === lsNumber(system.level, 0) })),
+      rarityOptions: ["common", "uncommon", "rare", "unique"].map((value) => ({ value, label: value.charAt(0).toUpperCase() + value.slice(1), selected: value === (system.traits?.rarity ?? "common") })),
+      itemTraitOptions: Object.entries(traitConfig).map(([value, label]) => ({ value, label: game.i18n.localize(label), selected: value === this.sourceTrait })).sort((a, b) => a.label.localeCompare(b.label)),
+      activationTraitOptions: lsSelectOptions(CONFIG.PF2E.actionTraits, ""),
+      activationTypeOptions: lsSelectOptions(null, activation.type, [["none", "No activation"], ["free", "Free action"], ["reaction", "Reaction"], ["action", "Action"]]),
+      activationActionOptions: lsSelectOptions(null, activation.actions, [["1", "One action"], ["2", "Two actions"], ["3", "Three actions"], ["varies", "One to three actions"]]),
+      frequencyOptions: lsSelectOptions(null, activation.frequencyPer, [["round", "round"], ["minute", "minute"], ["hour", "hour"], ["day", "day"], ["week", "week"]]),
+      areaOptions: lsSelectOptions(null, activation.areaType, [["none", "No area"], ["burst", "Burst"], ["cone", "Cone"], ["emanation", "Emanation"], ["line", "Line"]]),
+      effectKindOptions: [["damage", "Damage roll"], ["healing", "Healing roll"], ["check", "Save or check"], ["condition", "Condition or reminder"], ["flat-modifier", "Flat modifier"], ["damage-dice", "Extra damage dice"], ["resistance", "Resistance"], ["weakness", "Weakness"], ["immunity", "Immunity"], ["fast-healing", "Fast healing / regeneration"], ["roll-option", "Toggleable roll option"]].map(([value, label]) => ({ value, label })),
+      damageTypes: lsSelectOptions(CONFIG.PF2E.damageTypes, system.damage?.damageType),
+      usageOptions: lsSelectOptions(CONFIG.PF2E.usages, system.usage?.value, [["held-in-one-hand", "Held in 1 hand"], ["held-in-two-hands", "Held in 2 hands"], ["worn", "Worn"], ["wornarmor", "Worn armor"]]),
+      weaponCategories: lsSelectOptions(CONFIG.PF2E.weaponCategories, system.category, [["unarmed", "Unarmed"], ["simple", "Simple"], ["martial", "Martial"], ["advanced", "Advanced"]]),
+      weaponGroups: lsSelectOptions(CONFIG.PF2E.weaponGroups, system.group),
+      armorCategories: lsSelectOptions(CONFIG.PF2E.armorCategories, system.category, [["unarmored", "Unarmored"], ["light", "Light"], ["medium", "Medium"], ["heavy", "Heavy"]]),
+      armorGroups: lsSelectOptions(CONFIG.PF2E.armorGroups, system.group),
+      consumableCategories: lsSelectOptions(CONFIG.PF2E.consumableCategories, system.category, [["ammunition", "Ammunition"], ["elixir", "Elixir"], ["oil", "Oil"], ["other", "Other"], ["poison", "Poison"], ["potion", "Potion"], ["scroll", "Scroll"], ["snare", "Snare"], ["talisman", "Talisman"], ["tool", "Tool"]]),
+      bulkOptions: [["0", "Negligible"], ["0.1", "Light"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"], ["10", "10"]].map(([value, label]) => ({ value, label, selected: Number(value) === lsNumber(system.bulk, 0) })),
+      dieOptions: ["d4", "d6", "d8", "d10", "d12"].map((value) => ({ value, selected: value === system.damage?.die })),
+      nativeRuleCount: Math.max(0, rules.length - generatedRules.length), generatedRuleCount: this.builderFlags.effects.map((effect) => lsGeneratedRule(effect, item.name)).filter(Boolean).length, validation, valid: validation.length === 0,
+      step: this.step, stepNumber: this.step + 1,
+      steps: { source: this.step === 0, basics: this.step === 1, mechanics: this.step === 2, activation: this.step === 3, automation: this.step === 4, review: this.step === 5 },
+      canBack: this.step > 0, canNext: this.step > 0 && this.step < 5,
     };
   }
 
@@ -618,17 +728,84 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       });
     }
     if (this.step === 2) {
-      const updates = {
-        "system.description.value": root.querySelector('[name="description"]')?.value ?? "",
-      };
-      if (this.item.system?.actionType) updates["system.actionType.value"] = root.querySelector('[name="actionType"]')?.value || null;
-      if (this.item.system?.actions) updates["system.actions.value"] = lsNumber(root.querySelector('[name="actions"]')?.value, null);
-      if (this.item.system?.frequency) {
-        updates["system.frequency.max"] = lsNumber(root.querySelector('[name="frequencyMax"]')?.value, null);
-        updates["system.frequency.per"] = root.querySelector('[name="frequencyPer"]')?.value || null;
-      }
+      const updates = { "system.description.value": root.querySelector('[name="description"]')?.value ?? "" };
+      if (LS_PHYSICAL_ITEM_TYPES.has(this.item.type)) Object.assign(updates, {
+        "system.quantity": Math.max(1, lsNumber(root.querySelector('[name="quantity"]')?.value, 1)),
+        "system.bulk.value": lsNumber(root.querySelector('[name="bulk"]')?.value, 0),
+        "system.hardness": Math.max(0, lsNumber(root.querySelector('[name="hardness"]')?.value, 0)),
+        "system.hp.max": Math.max(0, lsNumber(root.querySelector('[name="hpMax"]')?.value, 0)),
+        "system.hp.value": Math.max(0, lsNumber(root.querySelector('[name="hpMax"]')?.value, 0)),
+        "system.price.value": Object.fromEntries(["pp", "gp", "sp", "cp"].map((coin) => [coin, Math.max(0, lsNumber(root.querySelector(`[name="price${coin.toUpperCase()}"]`)?.value, 0))])),
+      });
+      if (this.item.system?.usage) updates["system.usage.value"] = root.querySelector('[name="usage"]')?.value || this.item.system.usage.value;
+      if (this.item.type === "weapon") Object.assign(updates, {
+        "system.category": root.querySelector('[name="category"]')?.value || "simple", "system.group": root.querySelector('[name="group"]')?.value || null,
+        "system.damage.dice": Math.max(1, lsNumber(root.querySelector('[name="damageDice"]')?.value, 1)), "system.damage.die": root.querySelector('[name="damageDie"]')?.value || "d6",
+        "system.damage.damageType": root.querySelector('[name="damageType"]')?.value || "bludgeoning", "system.range": root.querySelector('[name="range"]')?.value === "" ? null : lsNumber(root.querySelector('[name="range"]')?.value, null),
+        "system.reload.value": root.querySelector('[name="reload"]')?.value || null, "system.splashDamage.value": Math.max(0, lsNumber(root.querySelector('[name="splashDamage"]')?.value, 0)),
+      });
+      if (this.item.type === "armor") Object.assign(updates, {
+        "system.category": root.querySelector('[name="category"]')?.value || "light", "system.group": root.querySelector('[name="group"]')?.value || null,
+        "system.acBonus": lsNumber(root.querySelector('[name="acBonus"]')?.value, 0), "system.strength": Math.max(0, lsNumber(root.querySelector('[name="strength"]')?.value, 0)),
+        "system.dexCap": lsNumber(root.querySelector('[name="dexCap"]')?.value, 0), "system.checkPenalty": lsNumber(root.querySelector('[name="checkPenalty"]')?.value, 0), "system.speedPenalty": lsNumber(root.querySelector('[name="speedPenalty"]')?.value, 0),
+      });
+      if (this.item.type === "shield") Object.assign(updates, { "system.acBonus": lsNumber(root.querySelector('[name="acBonus"]')?.value, 2), "system.speedPenalty": lsNumber(root.querySelector('[name="speedPenalty"]')?.value, 0) });
+      if (["consumable", "ammo"].includes(this.item.type)) Object.assign(updates, {
+        ...(this.item.type === "consumable" ? { "system.category": root.querySelector('[name="category"]')?.value || "other" } : {}),
+        "system.uses.value": Math.max(0, lsNumber(root.querySelector('[name="usesValue"]')?.value, 1)), "system.uses.max": Math.max(1, lsNumber(root.querySelector('[name="usesMax"]')?.value, 1)),
+        "system.uses.autoDestroy": Boolean(root.querySelector('[name="autoDestroy"]')?.checked),
+      });
       await this.item.update(updates);
     }
+    if (this.step === 3) {
+      this.syncActivationFromForm();
+      await this.item.setFlag(LS_MODULE_ID, "itemBuilder", this.builderFlags);
+    }
+    if (this.step === 4) {
+      this.syncEffectsFromForm();
+      await this.item.setFlag(LS_MODULE_ID, "itemBuilder", this.builderFlags);
+    }
+  }
+
+  syncActivationFromForm() {
+    const root = this.element;
+    if (!root) return;
+    Object.assign(this.builderFlags.activation, {
+      type: root.querySelector('[name="activationType"]')?.value || "none", actions: root.querySelector('[name="activationActions"]')?.value || "1",
+      frequencyMax: root.querySelector('[name="activationFrequencyMax"]')?.value ?? "", frequencyPer: root.querySelector('[name="activationFrequencyPer"]')?.value || "day",
+      trigger: root.querySelector('[name="activationTrigger"]')?.value.trim() || "", requirements: root.querySelector('[name="activationRequirements"]')?.value.trim() || "",
+      range: root.querySelector('[name="activationRange"]')?.value.trim() || "", target: root.querySelector('[name="activationTarget"]')?.value.trim() || "",
+      areaType: root.querySelector('[name="activationAreaType"]')?.value || "none", areaSize: root.querySelector('[name="activationAreaSize"]')?.value ?? "", duration: root.querySelector('[name="activationDuration"]')?.value.trim() || "",
+    });
+  }
+
+  syncEffectsFromForm() {
+    const root = this.element;
+    if (!root) return;
+    this.builderFlags.effects = [...root.querySelectorAll("[data-effect-id]")].map((card) => {
+      const optionControl = card.querySelector('[name="effectOption"]');
+      return {
+        id: card.dataset.effectId, kind: card.dataset.effectKind, label: card.querySelector('[name="effectLabel"]')?.value.trim() || "",
+        formula: card.querySelector('[name="effectFormula"]')?.value.trim() || "", damageType: card.querySelector('[name="effectDamageType"]')?.value || "",
+        save: card.querySelector('[name="effectSave"]')?.value || "reflex", dc: card.querySelector('[name="effectDc"]')?.value.trim() || "", basic: Boolean(card.querySelector('[name="effectBasic"]')?.checked),
+        selector: card.querySelector('[name="effectSelector"]')?.value.trim() || "", value: card.querySelector('[name="effectValue"]')?.value.trim() || "",
+        modifierType: card.querySelector('[name="effectModifierType"]')?.value || "item", condition: card.querySelector('[name="effectCondition"]')?.value.trim() || "",
+        option: optionControl?.type === "checkbox" ? (optionControl.checked ? optionControl.value : "") : optionControl?.value.trim() || "",
+        note: card.querySelector('[name="effectNote"]')?.value.trim() || "",
+      };
+    });
+  }
+
+  async persistBuilderAutomation() {
+    const previous = this.builderFlags.generatedRules ?? [];
+    const existing = (this.item.system.rules ?? []).filter((rule) => !previous.some((generated) => JSON.stringify(generated) === JSON.stringify(rule)));
+    const generated = this.builderFlags.effects.map((effect) => lsGeneratedRule(effect, this.item.name)).filter(Boolean);
+    this.builderFlags.generatedRules = generated;
+    await this.item.update({
+      "system.rules": [...existing, ...generated],
+      "system.description.value": lsCompileItemBuilderDescription(this.item.system.description?.value, this.builderFlags),
+      [`flags.${LS_MODULE_ID}.itemBuilder`]: this.builderFlags,
+    });
   }
 
   static async previous() {
@@ -639,13 +816,13 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   static async next() {
     await this.saveStep();
-    this.step = Math.min(3, this.step + 1);
+    this.step = Math.min(5, this.step + 1);
     await this.render();
   }
 
   static async goToStep(_event, target) {
     await this.saveStep();
-    this.step = Math.max(0, Math.min(3, Number(target.dataset.step) || 0));
+    this.step = Math.max(0, Math.min(5, Number(target.dataset.step) || 0));
     await this.render();
   }
 
@@ -691,6 +868,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       system: source.toObject().system,
       [`flags.${LS_MODULE_ID}.sourceUuid`]: source.uuid,
     });
+    this.builderFlags = lsEmptyItemBuilderFlags();
     this.step = 1;
     await this.render();
   }
@@ -704,19 +882,48 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     const trait = this.element.querySelector('[name="traitToAdd"]')?.value;
     if (!trait) return;
     const traits = new Set(lsTraits(this.item));
+    await this.saveStep();
     traits.add(trait);
     await this.item.update({ "system.traits.value": [...traits] });
     await this.render();
   }
 
   static async removeTrait(_event, target) {
+    await this.saveStep();
     const traits = lsTraits(this.item).filter((trait) => trait !== target.dataset.trait);
     await this.item.update({ "system.traits.value": traits });
     await this.render();
   }
 
+  static async addActivationTrait() {
+    this.syncActivationFromForm();
+    const trait = this.element.querySelector('[name="activationTraitToAdd"]')?.value;
+    if (trait && !this.builderFlags.activation.traits.includes(trait)) this.builderFlags.activation.traits.push(trait);
+    await this.render();
+  }
+
+  static async removeActivationTrait(_event, target) {
+    this.syncActivationFromForm();
+    this.builderFlags.activation.traits = this.builderFlags.activation.traits.filter((trait) => trait !== target.dataset.trait);
+    await this.render();
+  }
+
+  static async addEffect() {
+    this.syncEffectsFromForm();
+    const kind = this.element.querySelector('[name="effectKindToAdd"]')?.value || "damage";
+    this.builderFlags.effects.push({ id: foundry.utils.randomID(), kind, basic: true });
+    await this.render();
+  }
+
+  static async removeEffect(_event, target) {
+    this.syncEffectsFromForm();
+    this.builderFlags.effects = this.builderFlags.effects.filter((effect) => effect.id !== target.dataset.id);
+    await this.render();
+  }
+
   static async finish() {
     await this.saveStep();
+    await this.persistBuilderAutomation();
     await this.item.setFlag(LS_MODULE_ID, "builderComplete", true);
     await this.close();
     this.item.sheet.render(true);
@@ -1573,7 +1780,7 @@ Hooks.on("renderActorSheet", (app, html) => {
 
 Hooks.on("renderItemSheet", (app, html) => {
   const item = app.item ?? app.document;
-  if (!item || item.documentName !== "Item") return;
+  if (!item || item.documentName !== "Item" || !LS_PHYSICAL_ITEM_TYPES.has(item.type)) return;
   lsAddSheetButton(app, html, {
     kind: "item",
     icon: "fa-solid fa-hammer",
@@ -1609,7 +1816,7 @@ Hooks.on("renderApplicationV2", (app, html) => {
       title: "Open Lore Smith Creature Builder",
       onClick: () => new LoreSmithCreatureBuilder(document).render(true),
     });
-  } else if (document?.documentName === "Item") {
+  } else if (document?.documentName === "Item" && LS_PHYSICAL_ITEM_TYPES.has(document.type)) {
     lsAddSheetButton(app, html, {
       kind: "item",
       icon: "fa-solid fa-hammer",

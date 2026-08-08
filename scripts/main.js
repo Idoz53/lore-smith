@@ -29,11 +29,13 @@ const FLAG_SCOPE = MODULE_ID;
 
 const ITEM_TYPE_LABELS = {
   action: "Action",
+  ammo: "Ammunition",
   affliction: "Affliction",
   ancestry: "Ancestry",
   armor: "Armor",
   background: "Background",
   backpack: "Container",
+  book: "Book",
   class: "Class",
   condition: "Condition",
   consumable: "Consumable",
@@ -1287,14 +1289,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     data.folder = null;
     data.flags = foundry.utils.mergeObject(data.flags ?? {}, { [FLAG_SCOPE]: { created: true, sourceUuid: source.uuid } });
     const item = await Item.create(data);
-    item.sheet.render(true);
+    if (game.loreSmith?.openItemBuilder && ["ammo", "armor", "backpack", "book", "consumable", "equipment", "kit", "shield", "treasure", "weapon"].includes(item.type)) game.loreSmith.openItemBuilder(item);
+    else item.sheet.render(true);
     ui.notifications.info(`Created editable PF2e item: ${item.name}.`);
   }
 
   static async blankItem() {
     const response = await foundry.applications.api.DialogV2.input({
       window: { title: "Create Blank PF2e Item" },
-      content: `<label>Item type <select name="type">${["equipment", "consumable", "weapon", "armor", "shield", "action", "effect"].map((type) => `<option value="${type}">${ITEM_TYPE_LABELS[type]}</option>`).join("")}</select></label>`,
+      content: `<label>Item type <select name="type">${["equipment", "consumable", "ammo", "weapon", "armor", "shield", "backpack", "kit", "book", "treasure"].map((type) => `<option value="${type}">${ITEM_TYPE_LABELS[type] ?? game.i18n.localize(`TYPES.Item.${type}`)}</option>`).join("")}</select></label>`,
       ok: { label: "Create item" },
       rejectClose: false,
     });
@@ -1309,7 +1312,8 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         traits: { rarity: "common", value: [] },
       },
     });
-    item.sheet.render(true);
+    if (game.loreSmith?.openItemBuilder) game.loreSmith.openItemBuilder(item);
+    else item.sheet.render(true);
   }
 
   static async refreshEncounter() {

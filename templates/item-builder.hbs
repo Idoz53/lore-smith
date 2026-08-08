@@ -1,29 +1,31 @@
-<section class="ls-builder">
+<section class="ls-builder ls-item-workshop">
   <header class="ls-builder-heading">
-    <div><span>PF2e native item</span><h1>Item Builder</h1><p>Step {{stepNumber}} of 4</p></div>
+    <div><span>PF2e native item</span><h1>Item Builder</h1><p>Step {{stepNumber}} of 6</p></div>
     <div class="ls-builder-actor"><img src="{{item.img}}"><strong>{{item.name}}</strong><small>{{item.typeLabel}}</small></div>
   </header>
 
-  <div class="ls-step-track four">
+  <div class="ls-step-track six">
     <button type="button" data-action="goToStep" data-step="0" class="{{#if steps.source}}active{{/if}}">1. Starting point</button>
     <button type="button" data-action="goToStep" data-step="1" class="{{#if steps.basics}}active{{/if}}">2. Identity</button>
-    <button type="button" data-action="goToStep" data-step="2" class="{{#if steps.mechanics}}active{{/if}}">3. Mechanics</button>
-    <button type="button" data-action="goToStep" data-step="3" class="{{#if steps.review}}active{{/if}}">4. Finish</button>
+    <button type="button" data-action="goToStep" data-step="2" class="{{#if steps.mechanics}}active{{/if}}">3. {{item.typeLabel}}</button>
+    <button type="button" data-action="goToStep" data-step="3" class="{{#if steps.activation}}active{{/if}}">4. Activation</button>
+    <button type="button" data-action="goToStep" data-step="4" class="{{#if steps.automation}}active{{/if}}">5. Effects</button>
+    <button type="button" data-action="goToStep" data-step="5" class="{{#if steps.review}}active{{/if}}">6. Review</button>
   </div>
 
   <main class="ls-builder-body">
     {{#if steps.source}}
       <section class="ls-builder-step">
         <h2>Choose a starting point</h2>
-        <p>Browse every installed PF2e {{item.typeLabel}} by default, or narrow the list by name, keyword, level, and trait.</p>
+        <p>Copy an installed PF2e {{item.typeLabel}} or keep this native item blank. Copied rules, runes, subitems, and automation are preserved.</p>
         <div class="ls-builder-filters">
-          <input name="sourceQuery" value="{{query}}" placeholder="Name or keyword">
+          <input name="sourceQuery" value="{{query}}" placeholder="Search name, trait, or rules text">
           <select name="sourceLevel"><option value="">All levels</option>{{#each levelFilters}}<option value="{{value}}" {{#if selected}}selected{{/if}}>Level {{label}}</option>{{/each}}</select>
           <select name="sourceTrait"><option value="">All traits</option>{{#each itemTraitOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
-          <button data-action="searchSource"><i class="fa-solid fa-filter"></i> Apply filters</button>
+          <button data-action="searchSource"><i class="fa-solid fa-filter"></i> Filter</button>
           <button class="secondary" data-action="useCurrent"><i class="fa-regular fa-file"></i> Start blank</button>
         </div>
-        <div class="ls-browser-summary"><span>{{sourceCount}} matching items</span><span>Page {{sourcePageLabel}}</span></div>
+        <div class="ls-browser-summary"><span>{{sourceCount}} matching native items</span><span>Page {{sourcePageLabel}}</span></div>
         <div class="ls-source-browser">
           <div class="ls-builder-results compact tall">
             {{#each results}}
@@ -37,29 +39,22 @@
               <dl><div><dt>Usage</dt><dd>{{sourcePreview.usage}}</dd></div><div><dt>Bulk</dt><dd>{{sourcePreview.bulk}}</dd></div><div><dt>Price</dt><dd>{{sourcePreview.price}}</dd></div></dl>
               <div class="ls-preview-description">{{{sourcePreview.description}}}</div>
               <button data-action="useSource" data-uuid="{{sourcePreview.uuid}}">Use {{sourcePreview.name}} as base</button>
-            {{else}}
-              <div class="ls-preview-empty"><i class="fa-solid fa-eye"></i><strong>Select an item</strong><span>Its traits, usage, price, bulk, and rules text will appear here before you use it.</span></div>
-            {{/if}}
+            {{else}}<div class="ls-preview-empty"><i class="fa-solid fa-eye"></i><strong>Select an item</strong><span>Preview it here before copying it.</span></div>{{/if}}
           </aside>
         </div>
-        <div class="ls-browser-pages">
-          <button data-action="previousSources" {{#unless hasPreviousSources}}disabled{{/unless}}><i class="fa-solid fa-arrow-left"></i> Previous</button>
-          <span>Page {{sourcePageLabel}}</span>
-          <button data-action="nextSources" {{#unless hasNextSources}}disabled{{/unless}}>Next <i class="fa-solid fa-arrow-right"></i></button>
-        </div>
+        <div class="ls-browser-pages"><button data-action="previousSources" {{#unless hasPreviousSources}}disabled{{/unless}}><i class="fa-solid fa-arrow-left"></i> Previous</button><span>Page {{sourcePageLabel}}</span><button data-action="nextSources" {{#unless hasNextSources}}disabled{{/unless}}>Next <i class="fa-solid fa-arrow-right"></i></button></div>
       </section>
     {{/if}}
 
     {{#if steps.basics}}
       <section class="ls-builder-step">
-        <h2>Item identity</h2>
+        <h2>Identity</h2>
+        <p>The document remains a native PF2e <strong>{{item.typeLabel}}</strong>. Type changes are handled by Foundry when the item is created.</p>
         <div class="ls-form-grid">
           <label class="wide">Item name<input name="name" value="{{item.name}}"></label>
           <label>Level<select name="level">{{#each itemLevels}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
           <label>Rarity<select name="rarity">{{#each rarityOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-          <label class="wide">Add an item trait
-            <span class="ls-inline-control"><select name="traitToAdd"><option value="">Choose a trait</option>{{#each itemTraitOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button type="button" data-action="addTrait">Add</button></span>
-          </label>
+          <label class="wide">Add a native PF2e trait<span class="ls-inline-control"><select name="traitToAdd"><option value="">Choose a trait</option>{{#each itemTraitOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button type="button" data-action="addTrait">Add</button></span></label>
           <div class="ls-trait-chips wide">{{#each item.traits}}<button type="button" class="ls-trait-chip" data-action="removeTrait" data-trait="{{value}}">{{label}} <i class="fa-solid fa-xmark"></i></button>{{else}}<span>No traits selected.</span>{{/each}}</div>
         </div>
       </section>
@@ -67,31 +62,97 @@
 
     {{#if steps.mechanics}}
       <section class="ls-builder-step">
-        <h2>Rules and activation</h2>
-        <p>Only entries supported by this PF2e item type are shown. The native sheet remains available for every type-specific field and rule element.</p>
-        <div class="ls-form-grid">
-          {{#if item.hasActionType}}<label>Activation<select name="actionType">{{#each actionTypeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
-          {{#if item.hasActions}}<label>Actions<input name="actions" type="number" min="0" max="3" value="{{item.actions}}"></label>{{/if}}
-          {{#if item.hasFrequency}}<label>Uses<input name="frequencyMax" type="number" min="0" value="{{item.frequencyMax}}"></label><label>Frequency period<input name="frequencyPer" value="{{item.frequencyPer}}" placeholder="day, hour, round"></label>{{/if}}
-          <label class="wide">Description and rules<textarea name="description" rows="14">{{item.description}}</textarea></label>
+        <h2>{{item.typeLabel}} mechanics</h2>
+        <p>Only fields supported by this PF2e item type are shown. These values write directly to the system item document.</p>
+        {{#if item.isPhysical}}
+          <section class="ls-builder-card"><h3>Physical item</h3><div class="ls-form-grid stats">
+            <label>Quantity<input name="quantity" type="number" min="1" value="{{item.quantity}}"></label>
+            <label>Bulk<select name="bulk">{{#each bulkOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            {{#if item.hasUsage}}<label>Usage<select name="usage">{{#each usageOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
+            <label>Hardness<input name="hardness" type="number" min="0" value="{{item.hardness}}"></label>
+            <label>Hit Points<input name="hpMax" type="number" min="0" value="{{item.hpMax}}"></label>
+          </div><h4>Price</h4><div class="ls-coin-grid"><label>PP<input name="pricePP" type="number" min="0" value="{{item.price.pp}}"></label><label>GP<input name="priceGP" type="number" min="0" value="{{item.price.gp}}"></label><label>SP<input name="priceSP" type="number" min="0" value="{{item.price.sp}}"></label><label>CP<input name="priceCP" type="number" min="0" value="{{item.price.cp}}"></label></div></section>
+        {{/if}}
+
+        {{#if item.weapon}}<section class="ls-builder-card"><h3>Weapon statistics</h3><div class="ls-form-grid stats">
+          <label>Category<select name="category">{{#each weaponCategories}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <label>Group<select name="group"><option value="">None</option>{{#each weaponGroups}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <label>Damage dice<input name="damageDice" type="number" min="1" max="8" value="{{item.damageDice}}"></label>
+          <label>Damage die<select name="damageDie">{{#each dieOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{value}}</option>{{/each}}</select></label>
+          <label>Damage type<select name="damageType">{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <label>Range increment<input name="range" type="number" min="0" value="{{item.range}}" placeholder="Blank for melee"></label>
+          <label>Reload<input name="reload" value="{{item.reload}}" placeholder="Blank, 0, 1..."></label><label>Splash damage<input name="splashDamage" type="number" min="0" value="{{item.splashDamage}}"></label>
+        </div></section>{{/if}}
+
+        {{#if item.armor}}<section class="ls-builder-card"><h3>Armor statistics</h3><div class="ls-form-grid stats">
+          <label>Category<select name="category">{{#each armorCategories}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <label>Group<select name="group"><option value="">None</option>{{#each armorGroups}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <label>AC bonus<input name="acBonus" type="number" value="{{item.acBonus}}"></label><label>Dexterity cap<input name="dexCap" type="number" value="{{item.dexCap}}"></label>
+          <label>Strength requirement<input name="strength" type="number" min="0" value="{{item.strength}}"></label><label>Check penalty<input name="checkPenalty" type="number" value="{{item.checkPenalty}}"></label>
+          <label>Speed penalty<input name="speedPenalty" type="number" value="{{item.speedPenalty}}"></label>
+        </div></section>{{/if}}
+
+        {{#if item.shield}}<section class="ls-builder-card"><h3>Shield statistics</h3><div class="ls-form-grid"><label>AC bonus<input name="acBonus" type="number" value="{{item.acBonus}}"></label><label>Speed penalty<input name="speedPenalty" type="number" value="{{item.speedPenalty}}"></label></div></section>{{/if}}
+
+        {{#if item.consumable}}<section class="ls-builder-card"><h3>Consumable statistics</h3><div class="ls-form-grid stats">
+          {{#if item.hasCategory}}<label>Category<select name="category">{{#each consumableCategories}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
+          <label>Current uses<input name="usesValue" type="number" min="0" value="{{item.usesValue}}"></label><label>Maximum uses<input name="usesMax" type="number" min="1" value="{{item.usesMax}}"></label>
+          <label class="ls-check-label"><input name="autoDestroy" type="checkbox" {{#if item.autoDestroy}}checked{{/if}}> Destroy when empty</label>
+        </div></section>{{/if}}
+        <section class="ls-builder-card"><h3>Rules text</h3><textarea name="description" rows="10" placeholder="Describe the item and its constant effects. Structured activation and roll buttons are added in the next steps.">{{item.description}}</textarea></section>
+      </section>
+    {{/if}}
+
+    {{#if steps.activation}}
+      <section class="ls-builder-step"><h2>Activation</h2><p>Build the PF2e Activate entry. Lore Smith will generate native action glyphs and an area-template button in the item description.</p>
+        <section class="ls-builder-card"><div class="ls-form-grid stats">
+          <label>Activation<select name="activationType">{{#each activationTypeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <label>Action cost<select name="activationActions">{{#each activationActionOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <label>Uses per period<input name="activationFrequencyMax" type="number" min="0" value="{{activation.frequencyMax}}" placeholder="Blank if unlimited"></label>
+          <label>Period<select name="activationFrequencyPer">{{#each frequencyOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <label class="wide">Activation traits<span class="ls-inline-control"><select name="activationTraitToAdd"><option value="">Choose an action trait</option>{{#each activationTraitOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button data-action="addActivationTrait">Add</button></span></label>
+          <div class="ls-trait-chips wide">{{#each activation.traitChips}}<button class="ls-trait-chip" data-action="removeActivationTrait" data-trait="{{value}}">{{label}} <i class="fa-solid fa-xmark"></i></button>{{else}}<span>No activation traits.</span>{{/each}}</div>
+          <label class="wide">Trigger<input name="activationTrigger" value="{{activation.trigger}}" placeholder="Only used for reactions or free actions with a trigger"></label>
+          <label class="wide">Requirements<input name="activationRequirements" value="{{activation.requirements}}" placeholder="What must be true before activation"></label>
+          <label>Range<input name="activationRange" value="{{activation.range}}" placeholder="touch, 30 feet..."></label><label>Targets<input name="activationTarget" value="{{activation.target}}" placeholder="1 creature, all allies..."></label>
+          <label>Area<select name="activationAreaType">{{#each areaOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>Area size (feet)<input name="activationAreaSize" type="number" min="0" value="{{activation.areaSize}}"></label>
+          <label class="wide">Duration<input name="activationDuration" value="{{activation.duration}}" placeholder="until the end of your next turn, 1 minute..."></label>
+        </div></section>
+      </section>
+    {{/if}}
+
+    {{#if steps.automation}}
+      <section class="ls-builder-step"><h2>Effects and automation</h2><p>Add roll buttons and safe PF2e Rule Elements. Native rules copied from a compendium item stay intact.</p>
+        <div class="ls-effect-add"><select name="effectKindToAdd">{{#each effectKindOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button data-action="addEffect"><i class="fa-solid fa-plus"></i> Add effect</button></div>
+        <div class="ls-effect-stack">
+          {{#each effects}}<article class="ls-effect-card" data-effect-id="{{id}}" data-effect-kind="{{kind}}"><header><div><span>{{kind}}</span><strong>{{#if label}}{{label}}{{else}}New effect{{/if}}</strong></div><button class="danger" data-action="removeEffect" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></header><div class="ls-form-grid stats">
+            <label class="wide">Label<input name="effectLabel" value="{{label}}" placeholder="Shown beside the roll or modifier"></label>
+            {{#if isDamage}}<label>Damage formula<input name="effectFormula" value="{{formula}}" placeholder="2d6+4"></label><label>Damage type<select name="effectDamageType"><option value="">Untyped</option>{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
+            {{#if isHealing}}<label>Healing formula<input name="effectFormula" value="{{formula}}" placeholder="2d8+8"></label>{{/if}}
+            {{#if isCheck}}<label>Defense<select name="effectSave">{{#each saves}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>DC<input name="effectDc" type="number" value="{{dc}}" placeholder="Leave blank for a prompt"></label><label class="ls-check-label"><input name="effectBasic" type="checkbox" {{#if basic}}checked{{/if}}> Basic save</label>{{/if}}
+            {{#if isCondition}}<label>Condition or effect<input name="effectCondition" value="{{condition}}" placeholder="frightened 1, off-guard..."></label>{{/if}}
+            {{#if isFlatModifier}}<label>PF2e selector<input name="effectSelector" value="{{selector}}" placeholder="athletics, ac, saving-throw..."></label><label>Value<input name="effectValue" type="number" value="{{value}}"></label><label>Modifier type<select name="effectModifierType">{{#each modifierTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
+            {{#if isDamageDice}}<label>PF2e selector<input name="effectSelector" value="{{selector}}" placeholder="strike-damage"></label><label>Extra dice<input name="effectFormula" value="{{formula}}" placeholder="1d6"></label><label>Damage type<select name="effectDamageType"><option value="">Use base damage</option>{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
+            {{#if isResistance}}<label>Resistance type<select name="effectDamageType">{{#each effectTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>Value<input name="effectValue" type="number" value="{{value}}"></label>{{/if}}
+            {{#if isWeakness}}<label>Weakness type<select name="effectDamageType">{{#each effectTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>Value<input name="effectValue" type="number" value="{{value}}"></label>{{/if}}
+            {{#if isImmunity}}<label>Immunity type<select name="effectDamageType">{{#each effectTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
+            {{#if isFastHealing}}<label>Value<input name="effectValue" type="number" min="0" value="{{value}}"></label><label class="ls-check-label"><input name="effectOption" type="checkbox" value="regeneration" {{#if regeneration}}checked{{/if}}> Regeneration</label>{{/if}}
+            {{#if isRollOption}}<label>Domain<input name="effectSelector" value="{{selector}}" placeholder="all"></label><label>Roll option<input name="effectOption" value="{{option}}" placeholder="my-item-active"></label>{{/if}}
+            {{#if isDamage}}<label class="wide">Rules note<input name="effectNote" value="{{note}}" placeholder="Critical failure doubles damage..."></label>{{/if}}{{#if isHealing}}<label class="wide">Rules note<input name="effectNote" value="{{note}}"></label>{{/if}}{{#if isCheck}}<label class="wide">Rules note<input name="effectNote" value="{{note}}"></label>{{/if}}{{#if isCondition}}<label class="wide">Rules note<input name="effectNote" value="{{note}}"></label>{{/if}}
+          </div></article>{{else}}<div class="ls-builder-empty">No modular effects yet. Constant descriptive effects can remain in the rules text.</div>{{/each}}
         </div>
-        <div class="ls-builder-tip"><i class="fa-solid fa-wand-magic-sparkles"></i><span>PF2e inline checks, damage, prices, bulk, usage, subitems, and detailed automation can be finalized on the native item sheet.</span></div>
+        <div class="ls-builder-tip"><i class="fa-solid fa-gears"></i><span>{{nativeRuleCount}} existing native PF2e rules will be preserved. {{generatedRuleCount}} Lore Smith rules are currently generated.</span></div>
       </section>
     {{/if}}
 
     {{#if steps.review}}
-      <section class="ls-builder-step ls-builder-review">
-        <i class="fa-solid fa-hammer"></i><h2>{{item.name}} is ready</h2>
-        <p>Level {{item.level}} &middot; {{item.rarity}} {{item.typeLabel}}</p>
-        <p>Finish to return to the native PF2e item sheet and use every system-specific field.</p>
+      <section class="ls-builder-step ls-builder-review"><i class="fa-solid fa-hammer"></i><h2>{{item.name}}</h2><p>Level {{item.level}} &middot; {{item.rarity}} {{item.typeLabel}}</p>
+        <div class="ls-validation {{#if valid}}valid{{else}}warning{{/if}}"><h3>{{#if valid}}Ready for the native sheet{{else}}Check these fields{{/if}}</h3>{{#each validation}}<p><i class="fa-solid fa-triangle-exclamation"></i> {{this}}</p>{{else}}<p><i class="fa-solid fa-check"></i> The required fields and modular effects are valid.</p>{{/each}}</div>
+        <p>Lore Smith will save the activation block, Foundry inline rolls and templates, and valid Rule Elements, then reopen the normal PF2e item sheet.</p>
         <button data-action="finish"><i class="fa-solid fa-check"></i> Finish item</button>
       </section>
     {{/if}}
   </main>
 
-  <footer class="ls-builder-navigation">
-    <div>{{#if canBack}}<button class="round" data-action="previous"><i class="fa-solid fa-arrow-left"></i></button>{{/if}}</div>
-    <span>Changes are saved to {{item.name}}</span>
-    <div>{{#if canNext}}<button class="round" data-action="next"><i class="fa-solid fa-arrow-right"></i></button>{{/if}}</div>
-  </footer>
+  <footer class="ls-builder-navigation"><div>{{#if canBack}}<button class="round" data-action="previous"><i class="fa-solid fa-arrow-left"></i></button>{{/if}}</div><span>Changes are saved to {{item.name}}</span><div>{{#if canNext}}<button class="round" data-action="next"><i class="fa-solid fa-arrow-right"></i></button>{{/if}}</div></footer>
 </section>

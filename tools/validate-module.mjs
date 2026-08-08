@@ -86,6 +86,24 @@ for (const [name, contents, className] of [
   }
 }
 
+for (const requiredItemBuilderFeature of [
+  "lsCompileItemBuilderDescription",
+  "lsGeneratedRule",
+  'key: "FlatModifier"',
+  'key: "DamageDice"',
+  'key: "Resistance"',
+  'key: "Weakness"',
+  'key: "Immunity"',
+  'key: "FastHealing"',
+  'key: "RollOption"',
+  "persistBuilderAutomation",
+]) {
+  if (!nativeScript.includes(requiredItemBuilderFeature)) throw new Error(`Native item builder feature missing: ${requiredItemBuilderFeature}`);
+}
+for (const requiredStep of ["Starting point", "Identity", "Activation", "Effects", "Review"]) {
+  if (!itemTemplate.includes(requiredStep)) throw new Error(`Item builder step missing: ${requiredStep}`);
+}
+
 console.log(JSON.stringify({
   module: manifest.id,
   version: manifest.version,
