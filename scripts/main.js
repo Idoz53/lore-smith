@@ -991,7 +991,7 @@ function sessionHtml(value) {
 
 function sessionBlock(title, value) {
   const content = String(value ?? "").trim();
-  return content ? `<h2>${escapeHtml(title)}</h2><p>${sessionHtml(content)}</p>` : "";
+  return content ? `<p><strong>${escapeHtml(title)}</strong></p><p>${sessionHtml(content)}</p>` : "";
 }
 
 function sessionLocationPage(location) {
@@ -1000,7 +1000,7 @@ function sessionLocationPage(location) {
     .map(([sense, value]) => `<p><strong>${sense}</strong> ${sessionHtml(value)}</p>`).join("");
   const image = String(location.image ?? "").trim()
     ? `<figure><img src="${escapeHtml(location.image)}" alt="${escapeHtml(location.name)}"></figure>` : "";
-  return `${image}${sessionBlock("Why this place matters", location.purpose)}${senses ? `<hr><h2>Five senses</h2>${senses}` : ""}` || "<p>Describe this location before play.</p>";
+  return `${image}${sessionBlock("Why this place matters", location.purpose)}${senses ? `<hr><p><strong>Description</strong></p>${senses}` : ""}` || "<p>Describe this location before play.</p>";
 }
 
 function sessionNpcPage(npc) {
@@ -1016,13 +1016,13 @@ function sessionJournalPages(prep) {
   const npcNames = npcs.map((npc, index) => npc.name.trim() || `Important NPC ${index + 1}`);
   const overview = [
     sessionBlock("Main goal", prep.goal), sessionBlock("Opening situation", prep.opening), sessionBlock("Likely ending or cliffhanger", prep.ending),
-    `<hr><h2>Important places</h2><ul>${placeNames.map((name) => `<li>[[Place — ${escapeHtml(name)}]]</li>`).join("")}</ul>`,
+    `<hr><p><strong>Important places</strong></p><ul>${placeNames.map((name) => `<li>[[Place — ${escapeHtml(name)}]]</li>`).join("")}</ul>`,
     "<p><em>Use the linked pages for sensory descriptions and table-ready details.</em></p>",
   ].filter(Boolean).join("");
   const pages = [{ name: "Session Overview", content: overview }];
   for (const [index, location] of prep.locations.entries()) pages.push({ name: `Place — ${placeNames[index]}`, content: sessionLocationPage({ ...location, name: placeNames[index] }) });
   const peopleOverview = [
-    npcNames.length ? `<h2>Important NPCs</h2><ul>${npcNames.map((name) => `<li>[[NPC - ${escapeHtml(name)}]]</li>`).join("")}</ul>` : "",
+    npcNames.length ? `<p><strong>Important NPCs</strong></p><ul>${npcNames.map((name) => `<li>[[NPC - ${escapeHtml(name)}]]</li>`).join("")}</ul>` : "",
     sessionBlock("Other people and factions", prep.people),
     sessionBlock("Opposition, hazards, and encounters", prep.opposition),
   ].filter(Boolean).join("") || "<p>Who can help, hinder, or surprise the party?</p>";
@@ -1033,6 +1033,37 @@ function sessionJournalPages(prep) {
     { name: "GM Reminders & Secrets", content: sessionBlock("GM-only notes", prep.reminders) || "<p>Private reminders, secrets, and contingencies.</p>" },
   );
   return pages;
+}
+
+const SESSION_PREP_SECTION_LABELS = new Set([
+  "Main goal", "Opening situation", "Likely ending or cliffhanger", "Important places",
+  "Why this place matters", "Five senses", "Important NPCs", "NPCs and factions",
+  "Other people and factions", "Opposition, hazards, and encounters", "Role in the session",
+  "Motivation", "Secret or complication", "Likely scenes and clues",
+  "Rewards, consequences, and changes", "GM-only notes",
+]);
+
+function cleanSessionPrepHeadings(content) {
+  return String(content ?? "").replace(/<h2>([^<]+)<\/h2>/gi, (match, rawLabel) => {
+    const label = String(rawLabel).trim();
+    if (!SESSION_PREP_SECTION_LABELS.has(label)) return match;
+    const cleanLabel = label === "Five senses" ? "Description" : label;
+    return `<p><strong>${cleanLabel}</strong></p>`;
+  });
+}
+
+async function migrateSessionPrepJournals() {
+  if (!game.user.isGM) return;
+  for (const journal of game.journal.contents.filter((entry) => entry.getFlag(FLAG_SCOPE, "sessionPrep"))) {
+    if (Number(journal.getFlag(FLAG_SCOPE, "sessionPrepVersion") ?? 0) >= 2) continue;
+    const updates = [];
+    for (const page of journal.pages.contents.filter((entry) => entry.type === "text")) {
+      const content = cleanSessionPrepHeadings(page.text?.content);
+      if (content !== page.text?.content) updates.push({ _id: page.id, "text.content": content });
+    }
+    if (updates.length) await journal.updateEmbeddedDocuments("JournalEntryPage", updates);
+    await journal.setFlag(FLAG_SCOPE, "sessionPrepVersion", 2);
+  }
 }
 
 class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -1435,7 +1466,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     const journal = await JournalEntry.create({
       name: this.sessionPrep.title.trim(),
-      flags: { [FLAG_SCOPE]: { sessionPrep: true, createdAt: new Date().toISOString(), sessionGoal: this.sessionPrep.goal.trim() } },
+      flags: { [FLAG_SCOPE]: { sessionPrep: true, sessionPrepVersion: 2, createdAt: new Date().toISOString(), sessionGoal: this.sessionPrep.goal.trim() } },
       pages: [],
     });
     const pages = sessionJournalPages(this.sessionPrep).map((page, index) => ({ name: page.name, type: "text", text: { content: page.content }, sort: (index + 1) * 100000 }));
@@ -1684,7 +1715,7 @@ Hooks.once("init", () => {
   });
 });
 
-Hooks.once("ready", () => {
+Hooks.once("ready", async () => {
   if (game.system.id !== "pf2e") {
     ui.notifications.error("Lore Smith requires the Pathfinder Second Edition system.");
     return;
@@ -1696,6 +1727,11 @@ Hooks.once("ready", () => {
     buildCoverageReport: (tokens, partyIds = null, enemyIds = null) =>
       actionCoverageReport(tokens, partyIds, enemyIds),
   };
+  try {
+    await migrateSessionPrepJournals();
+  } catch (error) {
+    console.warn("Lore Smith | Could not clean older Session Prep Journal headings.", error);
+  }
 });
 
 Hooks.on("getSceneControlButtons", (controls) => {

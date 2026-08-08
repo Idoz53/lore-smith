@@ -6,7 +6,7 @@ Pathfinder Second Edition system.
 The module provides:
 
 - a five-step Session Prep dashboard that turns a session goal, three or more
-  image-backed locations, five-senses details, people, scenes, rewards, and GM
+  image-backed locations, sensory descriptions, people, scenes, rewards, and GM
   reminders into one linked, editable Foundry Journal, with an automatically
   saved draft that survives navigation and reopening the dashboard;
 - image-backed NPC prep cards with roles, motivations, and secrets, generated as
