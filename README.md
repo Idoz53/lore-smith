@@ -22,8 +22,9 @@ The module provides:
 - an optional Bestiary Ability Glossary-only filter for creature abilities;
 - GM Core level benchmark menus for creature statistics;
 - native Foundry Journal sheets with their standard formatting, images, and page
-  sidebar, an editor embedded inside the parent Journal window, and `[[wiki links]]`
-  that open or create pages inside the same Journal;
+  sidebar; owned text pages open directly in an always-editable native editor
+  inside the parent Journal, while `[[wiki links]]` open or create pages in that
+  same Journal;
 - side-by-side creature and item source previews before copying a compendium entry.
 - PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
   separately from the randomized character victory estimate.

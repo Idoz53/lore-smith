@@ -1026,109 +1026,85 @@ function lsActivateJournalWikiLinks(container) {
   }
 }
 
-function lsFindOpenJournalSheet(journal) {
-  const v1Windows = Object.values(ui.windows ?? {});
-  const v2Collection = foundry.applications.instances;
-  const v2Windows = v2Collection instanceof Map
-    ? [...v2Collection.values()]
-    : Object.values(v2Collection ?? {});
-  return [journal._sheet, ...v1Windows, ...v2Windows].find((candidate) => {
-    const document = candidate?.document ?? candidate?.object;
-    return candidate?.rendered && document?.documentName === "JournalEntry" && document.id === journal.id;
-  }) ?? journal._sheet ?? journal.sheet;
-}
+async function lsMountAlwaysEditableJournalPage(journalSheet, page, pageNode) {
+  if (!journalSheet || page?.type !== "text" || !pageNode || !page.isOwner) return;
+  if (pageNode.dataset.loreSmithEditor === "ready" || pageNode.dataset.loreSmithEditor === "loading") return;
+  pageNode.dataset.loreSmithEditor = "loading";
 
-async function lsOpenInlineNativeJournalEditor(journalSheet, page, pageNode) {
-  if (!journalSheet || !page || !pageNode) return;
-  const existing = pageNode.querySelector(".ls-inline-journal-editor");
-  if (existing) return;
   const SheetClass = page._getSheetClass?.();
   if (!SheetClass?.isV2) {
-    page.sheet.render(true);
+    delete pageNode.dataset.loreSmithEditor;
     return;
   }
+
+  journalSheet._loreSmithInlineEditors ??= new Map();
+  const previous = journalSheet._loreSmithInlineEditors.get(page.id);
+  if (previous && !previous.host?.isConnected) {
+    journalSheet._loreSmithInlineEditors.delete(page.id);
+    await previous.sheet.close({ animate: false }).catch(() => {});
+  } else if (previous?.host?.isConnected) {
+    pageNode.dataset.loreSmithEditor = "ready";
+    return;
+  }
+
   const pageSheet = new SheetClass({
-    id: `lore-smith-${page.id}-inline-edit`,
-    tag: "div",
+    id: `lore-smith-${page.id}-always-editing`,
     document: page,
     mode: "edit",
     includeTOC: true,
     window: { frame: false, positioned: false },
   });
   pageSheet._loreSmithInline = true;
+  // The ProseMirror collaboration layer already saves the document. Prevent its
+  // autosave callback from re-rendering the parent Journal while the user types.
+  pageSheet._onAutosave = () => {};
   await pageSheet.render({ force: true });
+
   const editor = lsRoot(pageSheet.element);
-  if (!editor) return;
-  editor.classList.add("ls-inline-journal-page-sheet");
-
-  const host = document.createElement("section");
-  host.className = "ls-inline-journal-editor";
-  const toolbar = document.createElement("header");
-  toolbar.className = "ls-inline-journal-editor-header";
-  toolbar.innerHTML = `
-    <strong><i class="fa-solid fa-feather-pointed"></i> Editing ${foundry.utils.escapeHTML(page.name)}</strong>
-    <button type="button"><i class="fa-solid fa-check"></i> Done</button>`;
-  toolbar.querySelector("button").addEventListener("click", async () => {
-    await pageSheet.close();
-    await journalSheet.render({ force: true, pageId: page.id });
-  });
-  host.append(toolbar, editor);
-  pageNode.replaceChildren(host);
-  journalSheet.bringToTop?.();
-}
-
-function lsEmbedNativeJournalEditor(pageSheet, html, attempt = 0) {
-  if (pageSheet._loreSmithInline) return;
-  const page = pageSheet.object ?? pageSheet.document;
-  const journal = page?.parent;
-  if (journal?.documentName !== "JournalEntry" || pageSheet.options?.editable === false) return;
-  const parentApp = pageSheet.parent ?? pageSheet.options?.parent;
-  const parentDocument = parentApp?.document ?? parentApp?.object;
-  const journalSheet = parentDocument?.id === journal.id ? parentApp : lsFindOpenJournalSheet(journal);
-  const journalRoot = lsRoot(journalSheet?.element);
-  const exactPage = journalRoot?.querySelector(`article.journal-entry-page[data-page-id="${page.id}"]`)
-    ?? journalRoot?.querySelector(`[data-page-id="${page.id}"].journal-entry-page`)
-    ?? journalRoot?.querySelector(`.journal-entry-page[data-page-id="${page.id}"]`)
-    ?? journalRoot?.querySelector(`[data-document-id="${page.id}"].journal-entry-page`);
-  const selectedControl = journalRoot?.querySelector(`[data-page-id="${page.id}"].active, [data-page-id="${page.id}"][aria-selected="true"]`);
-  const pageNode = exactPage
-    ?? (selectedControl ? journalRoot?.querySelector("article.journal-entry-page, .journal-entry-page") : null);
-  const rendered = lsRoot(html);
-  const wrapper = lsRoot(pageSheet.element)
-    ?? rendered?.closest?.(".window-app, .application")
-    ?? rendered;
-  if (!pageNode || !wrapper) {
-    if (attempt < 30) setTimeout(() => lsEmbedNativeJournalEditor(pageSheet, html, attempt + 1), 50);
-    else console.warn("Lore Smith | Could not locate the native Journal page host for inline editing.", {
-      page: page.id,
-      journal: journal.id,
-      journalSheet: journalSheet?.constructor?.name,
-      pageSheet: pageSheet.constructor?.name,
-    });
+  const proseMirror = editor?.querySelector('prose-mirror[name="text.content"]');
+  if (!editor || !proseMirror) {
+    delete pageNode.dataset.loreSmithEditor;
+    await pageSheet.close({ animate: false }).catch(() => {});
+    console.warn("Lore Smith | Foundry did not provide a native ProseMirror editor for this Journal page.", page);
     return;
   }
-  if (wrapper.dataset.loreSmithEmbeddedEditor === "ready") return;
 
-  wrapper.dataset.loreSmithEmbeddedEditor = "ready";
-  wrapper.classList.add("ls-inline-journal-page-sheet");
+  editor.querySelectorAll(":scope > .journal-header, :scope > .journal-footer, :scope > .form-footer").forEach((element) => element.remove());
+  editor.classList.add("ls-inline-journal-page-sheet");
+  editor.style.removeProperty("left");
+  editor.style.removeProperty("top");
+  editor.style.removeProperty("width");
+  editor.style.removeProperty("height");
+
   const host = document.createElement("section");
   host.className = "ls-inline-journal-editor";
-  const toolbar = document.createElement("header");
-  toolbar.className = "ls-inline-journal-editor-header";
-  toolbar.innerHTML = `
-    <strong><i class="fa-solid fa-feather-pointed"></i> Editing ${foundry.utils.escapeHTML(page.name)}</strong>
-    <button type="button"><i class="fa-solid fa-arrow-left"></i> Back to page</button>`;
-  toolbar.querySelector("button").addEventListener("click", async () => {
-    await pageSheet.close();
-    await journalSheet.render(true, { pageId: page.id });
-  });
-  host.append(toolbar, wrapper);
+  if (page.title?.show !== false) {
+    const title = document.createElement("input");
+    title.className = "ls-inline-journal-title";
+    title.type = "text";
+    title.value = page.name;
+    title.setAttribute("aria-label", game.i18n.localize("JOURNALENTRYPAGE.PageTitle"));
+    const saveTitle = () => {
+      const value = title.value.trim();
+      if (value && value !== page.name) void page.update({ name: value });
+      else if (!value) title.value = page.name;
+    };
+    title.addEventListener("change", saveTitle);
+    title.addEventListener("blur", saveTitle);
+    host.append(title);
+  }
+  host.append(editor);
   pageNode.replaceChildren(host);
-  wrapper.style.removeProperty("left");
-  wrapper.style.removeProperty("top");
-  wrapper.style.removeProperty("width");
-  wrapper.style.removeProperty("height");
-  journalSheet.bringToTop?.();
+  pageNode.dataset.loreSmithEditor = "ready";
+  journalSheet._loreSmithInlineEditors.set(page.id, { sheet: pageSheet, host });
+}
+
+function lsMountAlwaysEditableJournalPages(journalSheet, root) {
+  if (!journalSheet?.document?.isOwner || !root?.isConnected) return;
+  for (const pageNode of root.querySelectorAll("article.journal-entry-page[data-page-id], .journal-entry-page[data-page-id]")) {
+    const page = journalSheet.document.pages.get(pageNode.dataset.pageId);
+    if (page?.type === "text") void lsMountAlwaysEditableJournalPage(journalSheet, page, pageNode);
+  }
 }
 
 function lsEnhanceNativeJournal(app, html) {
@@ -1139,22 +1115,18 @@ function lsEnhanceNativeJournal(app, html) {
     ...root.querySelectorAll(".journal-page-content, article.journal-entry-page, .journal-entry-page .editor-content"),
   ];
   for (const container of new Set(containers)) lsActivateJournalWikiLinks(container);
+  queueMicrotask(() => lsMountAlwaysEditableJournalPages(app, root));
   if (root.dataset.loreSmithWikiLinks === "ready") return;
   root.dataset.loreSmithWikiLinks = "ready";
-  root.addEventListener("click", (event) => {
-    const edit = event.target.closest?.('[data-action="editPage"]');
-    if (!edit) return;
-    const pageNode = edit.closest(".journal-entry-page[data-page-id]");
-    const page = journal.pages.get(pageNode?.dataset.pageId);
-    if (!page || !pageNode) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    void lsOpenInlineNativeJournalEditor(app, page, pageNode);
-  }, { capture: true });
   const observer = new MutationObserver((mutations) => {
+    let pagesChanged = false;
     for (const mutation of mutations) {
       for (const added of mutation.addedNodes) {
         if (!(added instanceof HTMLElement)) continue;
+        if (added.matches("article.journal-entry-page[data-page-id], .journal-entry-page[data-page-id]")
+          || added.querySelector?.("article.journal-entry-page[data-page-id], .journal-entry-page[data-page-id]")) {
+          pagesChanged = true;
+        }
         if (added.matches(".journal-page-content, article.journal-entry-page, .journal-entry-page .editor-content")) {
           lsActivateJournalWikiLinks(added);
         }
@@ -1163,6 +1135,7 @@ function lsEnhanceNativeJournal(app, html) {
         }
       }
     }
+    if (pagesChanged) queueMicrotask(() => lsMountAlwaysEditableJournalPages(app, root));
   });
   observer.observe(root, { childList: true, subtree: true });
   root.addEventListener("click", async (event) => {
@@ -1293,18 +1266,16 @@ Hooks.on("renderJournalSheet", (app, html) => {
   lsEnhanceNativeJournal(app, html);
 });
 
-Hooks.on("renderJournalPageSheet", lsEmbedNativeJournalEditor);
-Hooks.on("renderJournalTextPageSheet", lsEmbedNativeJournalEditor);
-Hooks.on("renderApplication", (app, html) => {
-  const document = app.document ?? app.object;
-  if (document?.documentName === "JournalEntryPage") lsEmbedNativeJournalEditor(app, html);
+Hooks.on("closeJournalSheet", (app) => {
+  for (const { sheet } of app._loreSmithInlineEditors?.values?.() ?? []) {
+    void sheet.close({ animate: false }).catch(() => {});
+  }
+  app._loreSmithInlineEditors?.clear?.();
 });
 
 Hooks.on("renderApplicationV2", (app, html) => {
   const document = app.document ?? app.object ?? app.actor ?? app.item;
-  if (document?.documentName === "JournalEntryPage") {
-    lsEmbedNativeJournalEditor(app, html);
-  } else if (document?.documentName === "Actor" && document.type === "npc") {
+  if (document?.documentName === "Actor" && document.type === "npc") {
     lsAddSheetButton(app, html, {
       kind: "creature",
       icon: "fa-solid fa-dragon",

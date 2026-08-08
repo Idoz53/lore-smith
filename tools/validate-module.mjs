@@ -28,6 +28,12 @@ const template = await readFile(resolve(root, "templates/dashboard.hbs"), "utf8"
 const creatureTemplate = await readFile(resolve(root, "templates/creature-builder.hbs"), "utf8");
 const itemTemplate = await readFile(resolve(root, "templates/item-builder.hbs"), "utf8");
 const liveTemplate = await readFile(resolve(root, "templates/live-combat.hbs"), "utf8");
+if (!nativeScript.includes("lsMountAlwaysEditableJournalPages")) {
+  throw new Error("Always-editable native Journal mounting is missing.");
+}
+if (nativeScript.includes('data-action="editPage"')) {
+  throw new Error("Lore Smith must not require Foundry's page edit button.");
+}
 const templateActions = [...template.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]);
 for (const action of new Set(templateActions)) {
   if (!new RegExp(`\\b${action}:\\s*LoreSmithDashboard\\.`).test(script)) {
