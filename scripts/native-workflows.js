@@ -1084,6 +1084,8 @@ async function lsMountAlwaysEditableJournalPage(journalSheet, page, pageNode) {
 
   const host = document.createElement("section");
   host.className = "ls-inline-journal-editor";
+  const pageHeader = document.createElement("header");
+  pageHeader.className = "ls-inline-journal-header";
   if (page.title?.show !== false) {
     const title = document.createElement("input");
     title.className = "ls-inline-journal-title";
@@ -1097,9 +1099,33 @@ async function lsMountAlwaysEditableJournalPage(journalSheet, page, pageNode) {
     };
     title.addEventListener("change", saveTitle);
     title.addEventListener("blur", saveTitle);
-    host.append(title);
+    pageHeader.append(title);
   }
-  host.append(editor);
+  const wikiTools = document.createElement("div");
+  wikiTools.className = "ls-journal-wiki-tools";
+  wikiTools.innerHTML = `
+    <span><i class="fa-solid fa-link"></i> Type <kbd>[[</kbd> to link another page</span>
+    <button type="button"><i class="fa-solid fa-link"></i> Insert page link</button>
+    <small>Click a blue link to open it · Ctrl/Cmd-click to edit its name</small>`;
+  wikiTools.querySelector("button").addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    const selection = document.getSelection();
+    const editable = proseMirror.querySelector('[contenteditable="true"]');
+    if (!selection?.anchorNode || !proseMirror.contains(selection.anchorNode)) {
+      editable?.focus();
+      const range = document.createRange();
+      range.selectNodeContents(editable ?? proseMirror);
+      range.collapse(false);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+    document.execCommand("insertText", false, "[[]]");
+    selection?.modify?.("move", "backward", "character");
+    selection?.modify?.("move", "backward", "character");
+    queueMicrotask(() => proseMirror.dispatchEvent(new Event("input", { bubbles: true })));
+  });
+  pageHeader.append(wikiTools);
+  host.append(pageHeader, editor);
   pageNode.replaceChildren(host);
   pageNode.dataset.loreSmithEditor = "ready";
   const wikiObserver = lsEnableJournalWikiLinksInEditor(journalSheet, page, proseMirror, host);
@@ -1186,6 +1212,66 @@ function lsJournalWikiMatchFromSelection(root) {
   return lsJournalWikiMatchAt(root, selection.anchorNode, selection.anchorOffset);
 }
 
+function lsJournalWikiDraftFromSelection(root) {
+  const selection = document.getSelection();
+  if (!selection?.isCollapsed || !selection.anchorNode || !root.contains(selection.anchorNode)) return null;
+  const node = selection.anchorNode;
+  const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  const block = element?.closest("p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, td, th") ?? root;
+  if (block !== root && !root.contains(block)) return null;
+  const before = document.createRange();
+  before.selectNodeContents(block);
+  try {
+    before.setEnd(node, selection.anchorOffset);
+  } catch (_error) {
+    return null;
+  }
+  const cursor = before.toString().length;
+  const text = block.textContent ?? "";
+  const open = text.slice(0, cursor).lastIndexOf("[[");
+  if (open < 0) return null;
+  const tail = text.slice(open, cursor);
+  const match = tail.match(/^\[\[([^\]\n]{0,100})$/);
+  if (!match) return null;
+  return {
+    query: match[1],
+    hasClosing: text.slice(cursor, cursor + 2) === "]]",
+    range: selection.getRangeAt(0).cloneRange(),
+  };
+}
+
+function lsInsertJournalWikiCompletion(draft, name) {
+  const selection = document.getSelection();
+  if (!selection?.isCollapsed || !draft || !name) return false;
+  for (let index = 0; index < draft.query.length; index += 1) {
+    selection.modify?.("extend", "backward", "character");
+  }
+  document.execCommand("insertText", false, `${name}${draft.hasClosing ? "" : "]]"}`);
+  if (draft.hasClosing) {
+    selection.modify?.("move", "forward", "character");
+    selection.modify?.("move", "forward", "character");
+  }
+  return true;
+}
+
+async function lsEnsureJournalPage(journalSheet, pageName, { notify = true } = {}) {
+  const journal = journalSheet?.document;
+  const name = pageName?.trim();
+  if (!journal || !name) return null;
+
+  let page = journal.pages.find((candidate) =>
+    candidate.name.localeCompare(name, undefined, { sensitivity: "accent" }) === 0);
+  if (page) return page;
+  [page] = await journal.createEmbeddedDocuments("JournalEntryPage", [{
+    name,
+    type: "text",
+    text: { content: "" },
+    sort: Math.max(0, ...journal.pages.map((candidate) => candidate.sort ?? 0)) + 100000,
+  }]);
+  if (notify) ui.notifications.info(`Created page "${name}" inside ${journal.name}.`);
+  return page;
+}
+
 async function lsOpenOrCreateJournalPage(journalSheet, pageName, { currentPage = null, proseMirror = null } = {}) {
   const journal = journalSheet?.document;
   const name = pageName?.trim();
@@ -1196,17 +1282,8 @@ async function lsOpenOrCreateJournalPage(journalSheet, pageName, { currentPage =
     await currentPage.update({ "text.content": currentContent });
   }
 
-  let page = journal.pages.find((candidate) =>
-    candidate.name.localeCompare(name, undefined, { sensitivity: "accent" }) === 0);
-  if (!page) {
-    [page] = await journal.createEmbeddedDocuments("JournalEntryPage", [{
-      name,
-      type: "text",
-      text: { content: "" },
-      sort: Math.max(0, ...journal.pages.map((candidate) => candidate.sort ?? 0)) + 100000,
-    }]);
-    ui.notifications.info(`Created page "${name}" inside ${journal.name}.`);
-  }
+  const page = await lsEnsureJournalPage(journalSheet, name);
+  if (!page) return;
   await journalSheet.render(true);
   if (typeof journalSheet.goToPage === "function") await journalSheet.goToPage(page.id);
   else {
@@ -1217,9 +1294,96 @@ async function lsOpenOrCreateJournalPage(journalSheet, pageName, { currentPage =
 }
 
 function lsEnableJournalWikiLinksInEditor(journalSheet, page, proseMirror, host) {
+  const popup = document.createElement("div");
+  popup.className = "ls-journal-link-autocomplete";
+  popup.hidden = true;
+  popup.setAttribute("role", "listbox");
+  document.body.append(popup);
+  let suggestions = [];
+  let selectedIndex = 0;
+
+  const hideAutocomplete = () => {
+    popup.hidden = true;
+    popup.replaceChildren();
+    suggestions = [];
+    selectedIndex = 0;
+  };
+
+  const chooseSuggestion = async (suggestion = suggestions[selectedIndex]) => {
+    const draft = lsJournalWikiDraftFromSelection(proseMirror);
+    if (!draft || !suggestion?.name) return;
+    const inserted = lsInsertJournalWikiCompletion(draft, suggestion.name);
+    hideAutocomplete();
+    if (!inserted) return;
+    const currentContent = proseMirror._getValue?.();
+    if (typeof currentContent === "string" && currentContent !== page.text?.content) {
+      await page.update({ "text.content": currentContent });
+    }
+    await lsEnsureJournalPage(journalSheet, suggestion.name, { notify: suggestion.create });
+  };
+
+  const renderAutocomplete = () => {
+    const draft = lsJournalWikiDraftFromSelection(proseMirror);
+    if (!draft || !host.isConnected) {
+      hideAutocomplete();
+      return;
+    }
+    const query = draft.query.trim();
+    const normalized = query.toLocaleLowerCase();
+    const pages = journalSheet.document.pages
+      .filter((candidate) => candidate.type === "text")
+      .map((candidate) => candidate.name)
+      .filter((name) => !normalized || name.toLocaleLowerCase().includes(normalized))
+      .sort((left, right) => {
+        const leftStarts = left.toLocaleLowerCase().startsWith(normalized) ? 0 : 1;
+        const rightStarts = right.toLocaleLowerCase().startsWith(normalized) ? 0 : 1;
+        return leftStarts - rightStarts || left.localeCompare(right);
+      })
+      .slice(0, 12)
+      .map((name) => ({ name, create: false }));
+    const exact = pages.some((candidate) => candidate.name.localeCompare(query, undefined, { sensitivity: "accent" }) === 0);
+    suggestions = query && !exact ? [{ name: query, create: true }, ...pages].slice(0, 12) : pages;
+    if (!suggestions.length) {
+      hideAutocomplete();
+      return;
+    }
+    selectedIndex = Math.min(selectedIndex, suggestions.length - 1);
+    popup.replaceChildren();
+    const heading = document.createElement("div");
+    heading.className = "ls-journal-link-autocomplete-heading";
+    heading.textContent = query ? `Link pages matching “${query}”` : "Link a page";
+    popup.append(heading);
+    suggestions.forEach((suggestion, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "ls-journal-link-option";
+      option.classList.toggle("selected", index === selectedIndex);
+      option.dataset.index = String(index);
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(index === selectedIndex));
+      option.innerHTML = `<i class="fa-solid ${suggestion.create ? "fa-file-circle-plus" : "fa-file-lines"}"></i><span></span><small>${suggestion.create ? "Create page" : "Journal page"}</small>`;
+      option.querySelector("span").textContent = suggestion.name;
+      option.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        selectedIndex = index;
+        void chooseSuggestion(suggestion);
+      });
+      popup.append(option);
+    });
+    const rect = draft.range.getBoundingClientRect();
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - 328);
+    const preferredTop = rect.bottom + 8;
+    const top = preferredTop + 310 < window.innerHeight ? preferredTop : Math.max(8, rect.top - 310);
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+    popup.hidden = false;
+    popup.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
+  };
+
   const refresh = () => {
     lsJournalWikiHighlightRanges.set(host, lsCollectJournalWikiRanges(proseMirror));
     lsRefreshJournalWikiHighlights();
+    renderAutocomplete();
   };
   const scheduleRefresh = () => queueMicrotask(refresh);
 
@@ -1238,6 +1402,42 @@ function lsEnableJournalWikiLinksInEditor(journalSheet, page, proseMirror, host)
     void lsOpenOrCreateJournalPage(journalSheet, match.name, { currentPage: page, proseMirror });
   }, { capture: true });
   proseMirror.addEventListener("keydown", (event) => {
+    if (event.key === "[" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      const selection = document.getSelection();
+      if (selection?.isCollapsed && selection.anchorNode && proseMirror.contains(selection.anchorNode)) {
+        const prefix = selection.anchorNode.nodeType === Node.TEXT_NODE
+          ? selection.anchorNode.nodeValue.slice(0, selection.anchorOffset)
+          : "";
+        if (prefix.endsWith("[")) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          document.execCommand("insertText", false, "[]]");
+          selection.modify?.("move", "backward", "character");
+          selection.modify?.("move", "backward", "character");
+          scheduleRefresh();
+          return;
+        }
+      }
+    }
+    if (!popup.hidden && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      selectedIndex = (selectedIndex + direction + suggestions.length) % suggestions.length;
+      renderAutocomplete();
+      return;
+    }
+    if (!popup.hidden && ["Enter", "Tab"].includes(event.key) && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void chooseSuggestion();
+      return;
+    }
+    if (event.key === "Escape" && !popup.hidden) {
+      event.preventDefault();
+      hideAutocomplete();
+      return;
+    }
     if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
     const match = lsJournalWikiMatchFromSelection(proseMirror);
     if (!match?.name) return;
@@ -1248,8 +1448,21 @@ function lsEnableJournalWikiLinksInEditor(journalSheet, page, proseMirror, host)
 
   const observer = new MutationObserver(scheduleRefresh);
   observer.observe(proseMirror, { childList: true, subtree: true, characterData: true });
+  const selectionListener = () => {
+    if (!host.isConnected) return;
+    const selection = document.getSelection();
+    if (selection?.anchorNode && proseMirror.contains(selection.anchorNode)) renderAutocomplete();
+    else hideAutocomplete();
+  };
+  document.addEventListener("selectionchange", selectionListener);
   refresh();
-  return observer;
+  return {
+    disconnect() {
+      observer.disconnect();
+      document.removeEventListener("selectionchange", selectionListener);
+      popup.remove();
+    },
+  };
 }
 
 function lsEnhanceNativeJournal(app, html) {
@@ -1257,6 +1470,19 @@ function lsEnhanceNativeJournal(app, html) {
   const root = lsRoot(html);
   if (journal?.documentName !== "JournalEntry" || !root) return;
   root.classList.add("ls-always-editable-journal");
+  const windowShell = root.closest(".window-app, .application") ?? root.parentElement;
+  windowShell?.classList.add("ls-lore-journal-window");
+  const sidebar = root.querySelector(".journal-sidebar");
+  if (sidebar) {
+    let brand = sidebar.querySelector(":scope > .ls-journal-brand");
+    if (!brand) {
+      brand = document.createElement("div");
+      brand.className = "ls-journal-brand";
+      const search = sidebar.querySelector(":scope > search, :scope > .directory-header");
+      sidebar.insertBefore(brand, search ?? sidebar.firstChild);
+    }
+    brand.innerHTML = `<i class="fa-solid fa-book-open"></i><span><strong>Campaign Chronicle</strong><small>${journal.pages.size} ${journal.pages.size === 1 ? "page" : "pages"}</small></span>`;
+  }
   const containers = [
     ...root.querySelectorAll(".journal-page-content, article.journal-entry-page, .journal-entry-page .editor-content"),
   ];
@@ -1298,6 +1524,8 @@ function lsEnhanceNativeJournal(app, html) {
     }
     if (pagesChanged) queueMicrotask(() => lsMountAlwaysEditableJournalPages(app, root));
   });
+  app._loreSmithJournalObserver?.disconnect();
+  app._loreSmithJournalObserver = observer;
   observer.observe(root, { childList: true, subtree: true });
   root.addEventListener("click", async (event) => {
     const link = event.target.closest?.(".ls-journal-wiki-link");
@@ -1409,6 +1637,8 @@ Hooks.on("renderJournalSheet", (app, html) => {
 });
 
 Hooks.on("closeJournalSheet", (app) => {
+  app._loreSmithJournalObserver?.disconnect();
+  delete app._loreSmithJournalObserver;
   for (const { sheet, host, wikiObserver } of app._loreSmithInlineEditors?.values?.() ?? []) {
     wikiObserver?.disconnect();
     lsJournalWikiHighlightRanges.delete(host);

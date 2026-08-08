@@ -5,7 +5,9 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- an inline Journal-backed campaign notebook with `[[wiki links]]`;
+- a responsive leather-and-parchment Journal notebook that retains Foundry's
+  native page sidebar, permissions, formatting toolbar, headings, lists, tables,
+  images, and document links;
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
 - encounter setup using actors and tokens already in the Foundry world;
 - Combat Tracker buttons for randomized iteration logs and live Scene combat;
@@ -27,9 +29,11 @@ The module provides:
   same Journal;
 - persistent inline Journal editing after autosaves and document re-renders,
   without reopening Foundry's separate page-editor window;
-- edit-mode wiki links are highlighted in blue and remain functional: press
-  Enter or click a completed `[[Page Name]]` to open or create that page inside
-  the same Journal; Ctrl/Cmd-click keeps the caret in the link for editing;
+- edit-mode wiki links are highlighted in blue and remain functional: typing
+  `[[` supplies the closing brackets and opens searchable page autocomplete;
+  use the mouse wheel, arrow keys, Enter, or Tab to choose a page, click a
+  completed link to open it, or Ctrl/Cmd-click to edit its name. Missing pages
+  are created inside the same Journal;
 - side-by-side creature and item source previews before copying a compendium entry.
 - PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
   separately from the randomized character victory estimate.
