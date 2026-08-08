@@ -148,9 +148,9 @@ async function rollNativeStatistic(statistic, options) {
   if (!statistic?.check?.roll) return null;
   return statistic.check.roll({
     ...options,
-    createMessage: false,
+    createMessage: true,
     skipDialog: true,
-    rollMode: "roll",
+    rollMode: "gmroll",
   });
 }
 
@@ -167,8 +167,9 @@ export async function resolveNativeCheck({
       const variantIndex = mapPenalty >= 10 ? 2 : mapPenalty >= 5 ? 1 : 0;
       const variant = option.nativeAction.variants[Math.min(variantIndex, option.nativeAction.variants.length - 1)];
       const result = await variant?.roll?.({
-        createMessage: false,
+        createMessage: true,
         skipDialog: true,
+        rollMode: "gmroll",
         target: target.token?.object ?? null,
         options: ["lore-smith", "action:live-combat"],
       });
@@ -262,6 +263,77 @@ export function resolveModeledCheck({
     degree,
     multiplier: degree === 3 ? 2 : degree === 2 ? 1 : 0,
     statistic: "attack",
+  };
+}
+
+function signedFormula(modifier) {
+  const value = Number(modifier) || 0;
+  return `1d20 ${value >= 0 ? "+" : "-"} ${Math.abs(value)}`;
+}
+
+async function createPrivateGmRoll(formula, { speaker = null, flavor = "Lore Smith simulation roll" } = {}) {
+  const roll = await new Roll(formula).evaluate();
+  const whisper = ChatMessage.getWhisperRecipients?.("GM")?.map((user) => user.id) ?? [];
+  await roll.toMessage({
+    speaker: speaker ?? { alias: "Lore Smith" },
+    flavor,
+    whisper,
+  }, { rollMode: "gmroll" });
+  return roll;
+}
+
+export async function resolveModeledCheckWithRoll({
+  option,
+  attacker,
+  target,
+  mapPenalty = 0,
+  ac,
+  saveModifier,
+  checkDegree,
+}) {
+  if (option.automatic) return resolveModeledCheck({
+    option,
+    attacker,
+    target,
+    mapPenalty,
+    ac,
+    saveModifier,
+    rollDie: () => 10,
+    checkDegree,
+  });
+
+  const isSave = Boolean(option.save);
+  const modifier = isSave
+    ? saveModifier(target, option.save)
+    : Number(option.attack) - (option.attackTrait ? mapPenalty : 0);
+  const statisticDc = option.defenseStatistic
+    ? target.actor?.getStatistic?.(option.defenseStatistic)?.dc?.value
+      ?? target.actor?.getStatistic?.(option.defenseStatistic)?.dc
+    : null;
+  const dc = isSave
+    ? Number(option.dc)
+    : finite(statisticDc) ? Number(statisticDc) : ac(target);
+  const roller = isSave ? target : attacker;
+  const roll = await createPrivateGmRoll(signedFormula(modifier), {
+    speaker: ChatMessage.getSpeaker?.({ actor: roller.actor, token: roller.token?.object ?? roller.token })
+      ?? { alias: roller.name },
+    flavor: isSave
+      ? `${target.name} rolls ${option.save} against ${option.name} (DC ${dc})`
+      : `${attacker.name} uses ${option.name} against ${target.name} (DC ${dc})`,
+  });
+  const natural = Number(roll.dice?.[0]?.total ?? roll.terms?.find?.((term) => term?.faces === 20)?.total ?? 10);
+  const total = Number(roll.total);
+  const degree = checkDegree(total, dc, natural);
+  return {
+    source: isSave ? "Explicit saving-throw adapter" : "Explicit attack-check adapter",
+    natural,
+    modifier,
+    total,
+    dc,
+    degree,
+    multiplier: isSave ? [2, 1, 0.5, 0][degree] : degree === 3 ? 2 : degree === 2 ? 1 : 0,
+    statistic: isSave ? option.save : "attack",
+    roll,
   };
 }
 
@@ -396,7 +468,7 @@ export async function applyNativeStructuredEffects(option, attacker, target) {
   const applied = [];
   if (option.selfEffect) {
     const effect = await resolveEffectDocument(option.selfEffect);
-    if (effect) {
+    if (typeof effect?.toObject === "function") {
       const source = effect.toObject();
       delete source._id;
       await attacker.actor.createEmbeddedDocuments("Item", [source]);
@@ -406,12 +478,21 @@ export async function applyNativeStructuredEffects(option, attacker, target) {
   for (const operation of option.conditionOperations ?? []) {
     const recipient = operation.target === "self" ? attacker : target;
     if (!recipient?.actor) continue;
-    if (operation.operation === "remove") {
-      await recipient.actor.decreaseCondition?.(operation.slug, { forceRemove: true });
-      applied.push(`removed ${operation.slug}`);
-    } else if (operation.operation === "apply") {
-      await recipient.actor.increaseCondition?.(operation.slug, { value: operation.value ?? 1 });
-      applied.push(`${operation.slug}${Number(operation.value) > 1 ? ` ${operation.value}` : ""}`);
+    const conditionDocument = game.pf2e.ConditionManager.getCondition(operation.slug);
+    if (!conditionDocument) {
+      console.warn(`Lore Smith | Ignoring unknown PF2e condition operation ${operation.slug}.`);
+      continue;
+    }
+    try {
+      if (operation.operation === "remove") {
+        await recipient.actor.decreaseCondition?.(operation.slug, { forceRemove: true });
+        applied.push(`removed ${operation.slug}`);
+      } else if (operation.operation === "apply") {
+        await recipient.actor.increaseCondition?.(operation.slug, { value: operation.value ?? 1 });
+        applied.push(`${operation.slug}${Number(operation.value) > 1 ? ` ${operation.value}` : ""}`);
+      }
+    } catch (error) {
+      console.warn(`Lore Smith | Could not resolve PF2e condition operation ${operation.operation}:${operation.slug}.`, error);
     }
   }
   return applied;

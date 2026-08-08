@@ -31,8 +31,11 @@ const liveTemplate = await readFile(resolve(root, "templates/live-combat.hbs"), 
 if (!nativeScript.includes("lsMountAlwaysEditableJournalPages")) {
   throw new Error("Always-editable native Journal mounting is missing.");
 }
-if (nativeScript.includes('data-action="editPage"')) {
-  throw new Error("Lore Smith must not require Foundry's page edit button.");
+if (!nativeScript.includes('data-action="editPage"') || !nativeScript.includes("stopImmediatePropagation")) {
+  throw new Error("The native Journal edit-popup interception is missing.");
+}
+if (!script.includes("combatantInsideTemplate") || !script.includes("resolveModeledCheckWithRoll")) {
+  throw new Error("Live area hit-testing or private modeled rolls are missing.");
 }
 const templateActions = [...template.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]);
 for (const action of new Set(templateActions)) {

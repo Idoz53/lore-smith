@@ -25,12 +25,17 @@ The module provides:
   sidebar; owned text pages open directly in an always-editable native editor
   inside the parent Journal, while `[[wiki links]]` open or create pages in that
   same Journal;
+- persistent inline Journal editing after autosaves and document re-renders,
+  without reopening Foundry's separate page-editor window;
 - side-by-side creature and item source previews before copying a compendium entry.
 - PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
   separately from the randomized character victory estimate.
 - PF2e-native live checks for prepared strikes, spellcasting statistics, saving
   throws, skill actions, damage, healing, conditions, shield state, and finite
   resources, with explicit modeled fallbacks when a native call is unavailable;
+- live measured-template hit testing against the grid spaces actually occupied by
+  each token, plus GM-private Foundry roll cards for initiative, checks, saves,
+  damage, and healing;
 - explicit adapters for attacks, saves, damage, healing, IWR, conditions, area
   templates, spell slots, frequencies, recharge timers, and common skill actions;
 - data-driven tactical profiles for all 29 PF2e classes, selected from the

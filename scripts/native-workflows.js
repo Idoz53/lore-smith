@@ -1028,7 +1028,10 @@ function lsActivateJournalWikiLinks(container) {
 
 async function lsMountAlwaysEditableJournalPage(journalSheet, page, pageNode) {
   if (!journalSheet || page?.type !== "text" || !pageNode || !page.isOwner) return;
-  if (pageNode.dataset.loreSmithEditor === "ready" || pageNode.dataset.loreSmithEditor === "loading") return;
+  const mountedEditor = pageNode.querySelector(":scope > .ls-inline-journal-editor");
+  if (pageNode.dataset.loreSmithEditor === "ready" && mountedEditor) return;
+  if (pageNode.dataset.loreSmithEditor === "ready" && !mountedEditor) delete pageNode.dataset.loreSmithEditor;
+  if (pageNode.dataset.loreSmithEditor === "loading") return;
   pageNode.dataset.loreSmithEditor = "loading";
 
   const SheetClass = page._getSheetClass?.();
@@ -1111,6 +1114,7 @@ function lsEnhanceNativeJournal(app, html) {
   const journal = app.document;
   const root = lsRoot(html);
   if (journal?.documentName !== "JournalEntry" || !root) return;
+  root.classList.add("ls-always-editable-journal");
   const containers = [
     ...root.querySelectorAll(".journal-page-content, article.journal-entry-page, .journal-entry-page .editor-content"),
   ];
@@ -1118,9 +1122,24 @@ function lsEnhanceNativeJournal(app, html) {
   queueMicrotask(() => lsMountAlwaysEditableJournalPages(app, root));
   if (root.dataset.loreSmithWikiLinks === "ready") return;
   root.dataset.loreSmithWikiLinks = "ready";
+  root.addEventListener("click", (event) => {
+    const edit = event.target.closest?.('[data-action="editPage"]');
+    if (!edit) return;
+    const pageNode = edit.closest(".journal-entry-page[data-page-id]");
+    const page = journal.pages.get(pageNode?.dataset.pageId);
+    if (!page || !pageNode) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    delete pageNode.dataset.loreSmithEditor;
+    void lsMountAlwaysEditableJournalPage(app, page, pageNode);
+  }, { capture: true });
   const observer = new MutationObserver((mutations) => {
     let pagesChanged = false;
     for (const mutation of mutations) {
+      const changedPage = mutation.target instanceof HTMLElement
+        ? mutation.target.closest?.(".journal-entry-page[data-page-id]")
+        : null;
+      if (changedPage && !changedPage.querySelector(":scope > .ls-inline-journal-editor")) pagesChanged = true;
       for (const added of mutation.addedNodes) {
         if (!(added instanceof HTMLElement)) continue;
         if (added.matches("article.journal-entry-page[data-page-id], .journal-entry-page[data-page-id]")

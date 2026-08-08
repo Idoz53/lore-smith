@@ -17,6 +17,7 @@ import {
   consumeNativeResource,
   applyNativeStructuredEffects,
   resolveModeledCheck,
+  resolveModeledCheckWithRoll,
   resolveNativeCheck,
 } from "./simulation-adapters.js";
 import { getTacticalProfile } from "./tactical-profiles.js";
@@ -477,6 +478,27 @@ async function pause(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+async function postPrivateGmRoll(roll, flavor) {
+  const whisper = ChatMessage.getWhisperRecipients?.("GM")?.map((user) => user.id) ?? [];
+  await roll.toMessage({
+    speaker: { alias: "Lore Smith" },
+    flavor,
+    whisper,
+  }, { rollMode: "gmroll" });
+}
+
+function liveRollSummary(roll) {
+  const expression = roll.result ?? roll.formula ?? "roll";
+  return `${expression} = ${Number(roll.total) || 0}`;
+}
+
+function liveCheckSummary(check) {
+  if (!Number.isFinite(Number(check?.natural))) return String(check?.total ?? "automatic");
+  const natural = Number(check.natural);
+  const modifier = Number(check.total) - natural;
+  return `d20 ${natural} ${modifier >= 0 ? "+" : "-"} ${Math.abs(modifier)} = ${check.total}`;
+}
+
 async function applyLiveDamage(target, formula, degree, multiplierOverride = null) {
   const before = actorHp(target.actor).value;
   const multiplier = multiplierOverride ?? (degree === 3 ? 2 : 1);
@@ -484,6 +506,7 @@ async function applyLiveDamage(target, formula, degree, multiplierOverride = nul
   if (DamageRollClass && typeof target.actor.applyDamage === "function") {
     try {
       const damage = await new DamageRollClass(`{(${formula}) * ${multiplier}}`).evaluate();
+      await postPrivateGmRoll(damage, `Damage roll against ${target.name}`);
       await target.actor.applyDamage({
         damage,
         token: target.token.object,
@@ -495,17 +518,19 @@ async function applyLiveDamage(target, formula, degree, multiplierOverride = nul
       target.hp = after;
       target.maxHp = actorHp(target.actor).max;
       target.defeated = after <= 0;
-      return Math.max(1, before - after);
+      return { amount: Math.max(0, before - after), roll: damage, summary: liveRollSummary(damage) };
     } catch (error) {
       console.warn(`${MODULE_ID} | PF2e damage application failed; using HP fallback.`, error);
     }
   }
-  const rolled = Math.max(1, rollFormula(formula)) * multiplier;
+  const damage = await new Roll(`(${formula}) * ${multiplier}`).evaluate();
+  await postPrivateGmRoll(damage, `Damage roll against ${target.name}`);
+  const rolled = Math.max(1, Number(damage.total) || 0);
   const after = Math.max(0, before - rolled);
   await target.actor.update({ "system.attributes.hp.value": after });
   target.hp = after;
   target.defeated = after <= 0;
-  return Math.max(1, before - after);
+  return { amount: Math.max(0, before - after), roll: damage, summary: liveRollSummary(damage) };
 }
 
 async function applyLiveHealing(target, formula) {
@@ -514,6 +539,7 @@ async function applyLiveHealing(target, formula) {
   if (DamageRollClass && typeof target.actor.applyDamage === "function") {
     try {
       const healing = await new DamageRollClass(`{${formula}[healing]}`).evaluate();
+      await postPrivateGmRoll(healing, `Healing roll for ${target.name}`);
       await target.actor.applyDamage({
         damage: healing,
         token: target.token.object,
@@ -524,18 +550,20 @@ async function applyLiveHealing(target, formula) {
       target.hp = afterNative.value;
       target.maxHp = afterNative.max;
       target.defeated = false;
-      return Math.max(0, afterNative.value - hp.value);
+      return { amount: Math.max(0, afterNative.value - hp.value), roll: healing, summary: liveRollSummary(healing) };
     } catch (error) {
       console.warn(`${MODULE_ID} | PF2e healing application failed; using HP fallback.`, error);
     }
   }
-  const amount = Math.max(1, rollFormula(formula));
+  const healing = await new Roll(formula).evaluate();
+  await postPrivateGmRoll(healing, `Healing roll for ${target.name}`);
+  const amount = Math.max(1, Number(healing.total) || 0);
   const after = Math.min(hp.max, hp.value + amount);
   await target.actor.update({ "system.attributes.hp.value": after });
   target.hp = after;
   target.maxHp = hp.max;
   target.defeated = false;
-  return after - hp.value;
+  return { amount: after - hp.value, roll: healing, summary: liveRollSummary(healing) };
 }
 
 async function sceneDistance(left, right) {
@@ -543,6 +571,30 @@ async function sceneDistance(left, right) {
   const leftCenter = left.center ?? { x: left.x + left.w / 2, y: left.y + left.h / 2 };
   const rightCenter = right.center ?? { x: right.x + right.w / 2, y: right.y + right.h / 2 };
   return grid.measurePath([leftCenter, rightCenter]).distance;
+}
+
+function combatantInsideTemplate(templateDocument, combatant) {
+  const template = templateDocument?.object ?? canvas.templates?.get?.(templateDocument?.id);
+  const token = combatant.token?.object;
+  if (!template?.shape || !token) return false;
+  const grid = canvas.grid;
+  if (grid.type === CONST.GRID_TYPES.GRIDLESS) return template.testPoint(token.center);
+  const [i0, j0, i1, j1] = grid.getOffsetRange(token.bounds);
+  for (let i = i0; i < i1; i += 1) {
+    for (let j = j0; j < j1; j += 1) {
+      if (template.testPoint(grid.getCenterPoint({ i, j }))) return true;
+    }
+  }
+  return false;
+}
+
+async function waitForTemplateShape(templateDocument) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const template = templateDocument?.object ?? canvas.templates?.get?.(templateDocument?.id);
+    if (template?.shape) return true;
+    await pause(25);
+  }
+  return false;
 }
 
 async function moveToward(attacker, target) {
@@ -589,10 +641,19 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
   const combatants = tokens
     .filter((token) => partyIds.has(token.id) || enemyIds.has(token.id))
     .map((token) => virtualCombatant(token, partyIds.has(token.id) ? "party" : "enemy"));
-  const order = combatants.map((combatant) => {
+  const order = [];
+  for (const combatant of combatants) {
     const tracked = combat?.combatants?.find((entry) => entry.tokenId === combatant.id);
-    return { combatant, score: tracked?.initiative ?? rollDie(20) + combatant.initiative, tracked };
-  }).sort((left, right) => right.score - left.score);
+    let score = Number(tracked?.initiative);
+    if (!Number.isFinite(score)) {
+      const modifier = Number(combatant.initiative) || 0;
+      const initiative = await new Roll(`1d20 ${modifier >= 0 ? "+" : "-"} ${Math.abs(modifier)}`).evaluate();
+      await postPrivateGmRoll(initiative, `${combatant.name} rolls initiative`);
+      score = Number(initiative.total);
+    }
+    order.push({ combatant, score, tracked });
+  }
+  order.sort((left, right) => right.score - left.score);
   const emit = async (text, kind = "action") => {
     await onLog?.({ text, kind, timestamp: Date.now() });
     if (game.settings.settings.has(`${MODULE_ID}.mirrorLiveToChat`) && game.settings.get(MODULE_ID, "mirrorLiveToChat")) {
@@ -637,6 +698,8 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         }
         const choice = chooseCatalogAction(attacker, combatants, actionsRemaining, map, round);
         if (!choice) break;
+        let temporaryTemplate = null;
+        try {
         const { option, target, cost } = choice;
         if (!option.defensive && target !== attacker) {
           const currentDistance = await sceneDistance(attacker.token.object, target.token.object);
@@ -662,8 +725,8 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         actionsRemaining -= cost;
         consumeUse(attacker, option, target);
         if (option.healing) {
-          const restored = await applyLiveHealing(target, option.healing);
-          await emit(`${attacker.name} casts ${option.name} through ${nativeUse.source} on ${target.name}, restoring ${restored} HP; ${target.name} has ${target.hp}/${target.maxHp} HP.`, "heal");
+          const healing = await applyLiveHealing(target, option.healing);
+          await emit(`${attacker.name} casts ${option.name} through ${nativeUse.source} on ${target.name}; rolls ${healing.summary}; restores ${healing.amount} HP. ${target.name} has ${target.hp}/${target.maxHp} HP.`, "heal");
           await pause(actionDelay());
           continue;
         }
@@ -674,13 +737,18 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           await pause(actionDelay());
           continue;
         }
-        const targetList = actionTargets(option, target, combatants);
-        let templateDocument = null;
         const templateSource = templateData(option, attacker.token.object, target.token.object);
         if (templateSource && canvas.scene) {
           const cleanTemplate = Object.fromEntries(Object.entries(templateSource).filter(([, value]) => value !== undefined));
-          [templateDocument] = await canvas.scene.createEmbeddedDocuments("MeasuredTemplate", [cleanTemplate]);
+          [temporaryTemplate] = await canvas.scene.createEmbeddedDocuments("MeasuredTemplate", [cleanTemplate]);
+          await waitForTemplateShape(temporaryTemplate);
         }
+        const targetList = actionTargets(
+          option,
+          target,
+          combatants,
+          temporaryTemplate ? (candidate) => combatantInsideTemplate(temporaryTemplate, candidate) : null,
+        );
         const outcomes = [];
         for (const affected of targetList) {
           const nativeCheck = option.automatic ? null : await resolveNativeCheck({
@@ -691,14 +759,13 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             dc: option.save ? option.dc : actorAc(affected.actor),
             checkDegree,
           });
-          const check = nativeCheck ?? resolveModeledCheck({
+          const check = nativeCheck ?? await resolveModeledCheckWithRoll({
             option,
             attacker,
             target: affected,
             mapPenalty: map,
             ac: (candidate) => actorAc(candidate.actor),
             saveModifier,
-            rollDie,
             checkDegree,
           });
           const degree = check.degree;
@@ -709,30 +776,37 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             : check.multiplier;
           const outcome = nativeCheck
             ? option.save
-              ? `${affected.name} rolls ${option.save}: ${nativeCheck.total} vs DC ${option.dc}, ${degreeText(degree)} [PF2e native]`
-              : `${affected.name}: ${nativeCheck.total} vs ${option.defenseStatistic ?? "AC"} ${nativeCheck.dc}, ${degreeText(degree)} [PF2e native]`
+              ? `${affected.name} rolls ${option.save}: ${liveCheckSummary(nativeCheck)} vs DC ${option.dc}, ${degreeText(degree)} [PF2e native]`
+              : `${affected.name}: ${liveCheckSummary(nativeCheck)} vs ${option.defenseStatistic ?? "AC"} ${nativeCheck.dc}, ${degreeText(degree)} [PF2e native]`
             : option.automatic
               ? `${affected.name}: no check is required by the PF2e entry`
               : option.save
-                ? `${affected.name} rolls ${option.save}: ${check.total} vs DC ${check.dc}, ${degreeText(degree)} [modeled adapter]`
-                : `${affected.name}: ${check.total} vs ${option.defenseStatistic ?? "AC"} ${check.dc}, ${degreeText(degree)} [modeled adapter]`;
+                ? `${affected.name} rolls ${option.save}: ${liveCheckSummary(check)} vs DC ${check.dc}, ${degreeText(degree)} [modeled adapter]`
+                : `${affected.name}: ${liveCheckSummary(check)} vs ${option.defenseStatistic ?? "AC"} ${check.dc}, ${degreeText(degree)} [modeled adapter]`;
           const effectApplies = option.save ? degree <= 1 : option.automatic || degree >= 2;
-          let damage = 0;
+          let damage = null;
           if (option.damage && multiplier > 0) damage = await applyLiveDamage(affected, option.damage, degree, multiplier);
           const conditions = effectApplies ? await applyConditions(affected, option.conditions) : [];
           const structured = effectApplies ? await applyNativeStructuredEffects(option, attacker, affected) : [];
-          outcomes.push(`${outcome}${damage ? `; ${damage} ${option.damageType || ""} damage, HP ${affected.hp}/${affected.maxHp}` : ""}${conditions.length || structured.length ? `; ${[...conditions, ...structured].join(", ")}` : ""}`);
+          outcomes.push(`${outcome}${damage ? `; damage roll ${damage.summary}; ${damage.amount} ${option.damageType || ""} damage applied, HP ${affected.hp}/${affected.maxHp}` : ""}${conditions.length || structured.length ? `; ${[...conditions, ...structured].join(", ")}` : ""}`);
           if (affected.defeated) {
             const trackedTarget = activeCombat()?.combatants?.find((candidate) => candidate.tokenId === affected.id);
             await trackedTarget?.update({ defeated: true });
           }
         }
-        await emit(`${attacker.name} uses ${option.name}${option.kind === "spell" ? ` through ${nativeUse.source}` : ""}, spending ${cost} action${cost === 1 ? "" : "s"}: ${outcomes.join(" | ")}.`, option.damage ? "damage" : "action");
+        const resolution = outcomes.length ? outcomes.join(" | ") : "no tokens occupy the highlighted area";
+        await emit(`${attacker.name} uses ${option.name}${option.kind === "spell" ? ` through ${nativeUse.source}` : ""}, spending ${cost} action${cost === 1 ? "" : "s"}: ${resolution}.`, option.damage ? "damage" : "action");
         target.token.object?.control({ releaseOthers: true });
         await canvas.animatePan({ x: target.token.object?.center.x, y: target.token.object?.center.y, duration: Math.min(500, actionDelay() / 3) });
         await pause(actionDelay());
-        if (templateDocument) await templateDocument.delete();
+        if (temporaryTemplate) await temporaryTemplate.delete();
         if (option.attackTrait) map += 5;
+        } catch (error) {
+          if (temporaryTemplate) await temporaryTemplate.delete().catch(() => {});
+          console.error(`${MODULE_ID} | Could not resolve ${attacker.name}'s selected action.`, error);
+          await emit(`${attacker.name}'s selected action could not be resolved safely and was skipped: ${error.message ?? error}.`, "error");
+          break;
+        }
       }
       if (!combatants.some((candidate) => candidate.team === "party" && !candidate.defeated)
         || !combatants.some((candidate) => candidate.team === "enemy" && !candidate.defeated)) {
@@ -777,7 +851,7 @@ async function runLiveReplayLegacy(tokens, partyIds, enemyIds, { combat = game.c
         actions -= 1;
         await ChatMessage.create({
           speaker: ChatMessage.getSpeaker({ actor: attacker.actor, token: attacker.token }),
-          content: `<p><strong>${attacker.name}</strong> uses <strong>${healing.name}</strong> on ${healingTarget.name}, restoring <strong>${restored} HP</strong>. ${healingTarget.name} has ${healingTarget.hp}/${healingTarget.maxHp} HP.</p>`,
+          content: `<p><strong>${attacker.name}</strong> uses <strong>${healing.name}</strong> on ${healingTarget.name}, restoring <strong>${restored.amount} HP</strong>. ${healingTarget.name} has ${healingTarget.hp}/${healingTarget.maxHp} HP.</p>`,
         });
       }
       while (actions > 0) {
@@ -811,7 +885,7 @@ async function runLiveReplayLegacy(tokens, partyIds, enemyIds, { combat = game.c
         let content = `<p><strong>${attacker.name}</strong> targets <strong>${target.name}</strong> with ${strike.name}: [[1d20 + ${modifier}]] → ${total} vs AC ${actorAc(target.actor)}, <strong>${degreeLabel(degree)}</strong>.</p>`;
         if (degree >= 2) {
           const damage = await applyLiveDamage(target, strike.damage, degree);
-          content += `<p>${target.name} takes <strong>${damage} damage</strong> and has ${target.hp}/${target.maxHp} HP.</p>`;
+          content += `<p>${target.name} takes <strong>${damage.amount} damage</strong> and has ${target.hp}/${target.maxHp} HP.</p>`;
           if (target.defeated) {
             const trackedTarget = combat?.combatants?.find((candidate) => candidate.tokenId === target.id);
             await trackedTarget?.update({ defeated: true });

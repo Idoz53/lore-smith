@@ -598,10 +598,12 @@ export function saveModifier(target, save) {
   return numberValue(target.actor?.system?.saves?.[save], numberValue(target.actor?.system?.details?.level, 0) + 5);
 }
 
-export function actionTargets(option, primaryTarget, combatants) {
+export function actionTargets(option, primaryTarget, combatants, isInsideArea = null) {
   if (!option.area) return [primaryTarget];
-  return combatants
-    .filter((candidate) => candidate.team === primaryTarget.team && !candidate.defeated)
+  const candidates = combatants
+    .filter((candidate) => candidate.team === primaryTarget.team && !candidate.defeated);
+  if (typeof isInsideArea === "function") return candidates.filter(isInsideArea);
+  return candidates
     .sort((left, right) => left.hp - right.hp)
     .slice(0, 3);
 }
@@ -634,13 +636,17 @@ export async function applyConditions(target, conditions) {
   const applied = [];
   for (const condition of conditions) {
     try {
+      const conditionDocument = game.pf2e.ConditionManager.getCondition(condition.slug);
+      if (!conditionDocument) {
+        console.warn(`Lore Smith | Ignoring unknown PF2e condition ${condition.slug}.`);
+        continue;
+      }
       if (typeof target.actor.increaseCondition === "function") {
         await target.actor.increaseCondition(condition.slug, { value: condition.value });
         applied.push(`${condition.slug}${condition.value > 1 ? ` ${condition.value}` : ""}`);
         continue;
       }
-      const source = game.pf2e.ConditionManager.getCondition(condition.slug)?.toObject();
-      if (!source) continue;
+      const source = conditionDocument.toObject();
       delete source._id;
       if (condition.value > 1 && source.system?.value) source.system.value.value = condition.value;
       await target.actor.createEmbeddedDocuments("Item", [source]);

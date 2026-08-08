@@ -13,12 +13,27 @@ globalThis.document = {
     };
   },
 };
-globalThis.Roll = { replaceFormulaData: (formula) => formula };
+const rollMessages = [];
+globalThis.Roll = class TestRoll {
+  static replaceFormulaData(formula) { return formula; }
+  constructor(formula) {
+    this.formula = formula;
+    this.total = 15;
+    this.dice = [{ total: 10 }];
+    this.terms = this.dice;
+  }
+  async evaluate() { return this; }
+  async toMessage(data, options) { rollMessages.push({ data, options }); }
+};
+globalThis.ChatMessage = {
+  getSpeaker: ({ actor: speakerActor }) => ({ alias: speakerActor?.name ?? "Tester" }),
+  getWhisperRecipients: () => [{ id: "gm" }],
+};
 globalThis.CONFIG = { PF2E: { damageTypes: {} } };
-globalThis.game = { pf2e: { actions: new Map() } };
+globalThis.game = { pf2e: { actions: new Map(), ConditionManager: { getCondition: () => null } } };
 
-const { buildActionCatalog } = await import("../scripts/combat-engine.js");
-const { consumeNativeResource } = await import("../scripts/simulation-adapters.js");
+const { actionTargets, buildActionCatalog, checkDegree } = await import("../scripts/combat-engine.js");
+const { consumeNativeResource, resolveModeledCheckWithRoll } = await import("../scripts/simulation-adapters.js");
 
 function item(overrides = {}) {
   const result = {
@@ -139,5 +154,34 @@ threeAction.actor = variantActor;
 const variableOptions = buildActionCatalog(variantActor).filter((option) => option.item?.original === variableSpell);
 assert.deepEqual(variableOptions.map((option) => option.costs), [[1], [3]]);
 assert.deepEqual(variableOptions.map((option) => option.id), [`${variableSpell.id}:one`, `${variableSpell.id}:three`]);
+
+const areaOption = { area: { type: "cone", value: 15 } };
+const primaryTarget = { id: "inside", team: "enemy", defeated: false, hp: 10 };
+const areaCombatants = [
+  primaryTarget,
+  { id: "also-inside", team: "enemy", defeated: false, hp: 20 },
+  { id: "outside", team: "enemy", defeated: false, hp: 1 },
+  { id: "ally", team: "party", defeated: false, hp: 1 },
+];
+assert.deepEqual(
+  actionTargets(areaOption, primaryTarget, areaCombatants, (candidate) => candidate.id.includes("inside")).map((target) => target.id),
+  ["inside", "also-inside"],
+);
+
+const modeledAttacker = { name: "Attacker", actor: { name: "Attacker" }, token: null };
+const modeledTarget = { name: "Target", actor: { name: "Target" }, token: null };
+const modeledCheck = await resolveModeledCheckWithRoll({
+  option: { id: "save", name: "Save effect", save: "reflex", dc: 15 },
+  attacker: modeledAttacker,
+  target: modeledTarget,
+  ac: () => 18,
+  saveModifier: () => 5,
+  checkDegree,
+});
+assert.equal(modeledCheck.total, 15);
+assert.equal(modeledCheck.natural, 10);
+assert.equal(modeledCheck.degree, 2);
+assert.equal(rollMessages.at(-1).options.rollMode, "gmroll");
+assert.deepEqual(rollMessages.at(-1).data.whisper, ["gm"]);
 
 console.log("Lore Smith combat-engine regression tests passed.");
