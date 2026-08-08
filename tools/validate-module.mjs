@@ -28,19 +28,17 @@ const template = await readFile(resolve(root, "templates/dashboard.hbs"), "utf8"
 const creatureTemplate = await readFile(resolve(root, "templates/creature-builder.hbs"), "utf8");
 const itemTemplate = await readFile(resolve(root, "templates/item-builder.hbs"), "utf8");
 const liveTemplate = await readFile(resolve(root, "templates/live-combat.hbs"), "utf8");
-if (!nativeScript.includes("lsMountAlwaysEditableJournalPages")) {
-  throw new Error("Always-editable native Journal mounting is missing.");
-}
-if (!nativeScript.includes('data-action="editPage"') || !nativeScript.includes("stopImmediatePropagation")) {
-  throw new Error("The native Journal edit-popup interception is missing.");
+if (nativeScript.includes("lsMountAlwaysEditableJournalPages") || nativeScript.includes('data-action="editPage"')) {
+  throw new Error("Lore Smith must leave Foundry's native read view and edit button intact.");
 }
 if (!nativeScript.includes("lsEnableJournalWikiLinksInEditor")
+  || !nativeScript.includes("lsEnhanceJournalPageEditor")
   || !nativeScript.includes("lsOpenOrCreateJournalPage")
   || !nativeScript.includes("lsJournalWikiDraftFromSelection")
   || !nativeScript.includes("ls-journal-link-autocomplete")
   || !nativeScript.includes("lore-smith-wiki-brackets")
   || !nativeScript.includes("lore-smith-wiki-links")) {
-  throw new Error("Always-editable Journal wiki-link handling is missing.");
+  throw new Error("Journal page-editor wiki-link handling is missing.");
 }
 if (!script.includes("combatantInsideTemplate") || !script.includes("rollNativeDamage")) {
   throw new Error("Live area hit-testing or native PF2e damage controls are missing.");

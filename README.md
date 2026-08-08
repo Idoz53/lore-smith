@@ -6,7 +6,7 @@ Pathfinder Second Edition system.
 The module provides:
 
 - a responsive, Obsidian-style single-note Journal vault with its page tree on
-  the left and one continuously editable note on the right, while retaining Foundry's
+  the left and one clean rendered note on the right, while retaining Foundry's
   native page sidebar, permissions, formatting toolbar, headings, lists, tables,
   images, and document links;
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
@@ -24,18 +24,14 @@ The module provides:
 - browse-all compendium source libraries with keyword, level, trait, and type filters;
 - an optional Bestiary Ability Glossary-only filter for creature abilities;
 - GM Core level benchmark menus for creature statistics;
-- native Foundry Journal sheets with their standard formatting, images, and page
-  sidebar; owned text pages open directly in an always-editable native editor
-  inside the parent Journal, while `[[wiki links]]` open or create pages in that
-  same Journal;
-- persistent inline Journal editing after autosaves and document re-renders,
-  without reopening Foundry's separate page-editor window;
-- edit-mode wiki links are highlighted in blue and remain functional: typing
+- native Foundry Journal sheets with their standard read view, compact page
+  sidebar, edit button, separate page-editor window, formatting, images, tables,
+  permissions, and Show Players controls;
+- edit-window wiki links remain first-class: typing
   `[[` supplies the closing brackets and opens searchable page autocomplete;
-  use the mouse wheel, arrow keys, Enter, or Tab to choose a page, click a
-  completed link to open it, or Ctrl/Cmd-click to edit its name. Missing pages
-  are created inside the same Journal. Completed links display as clean blue
-  note names; their `[[brackets]]` are revealed only while the caret edits them;
+  use the mouse wheel, arrow keys, Enter, or Tab to choose a page. After saving,
+  completed links display as clean blue note names and open or create pages in
+  the same Journal when clicked;
 - side-by-side creature and item source previews before copying a compendium entry.
 - PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
   separately from the randomized character victory estimate.
