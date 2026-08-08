@@ -126,7 +126,13 @@ const spellOption = buildActionCatalog(caster).find((option) => option.item === 
 const castResult = await consumeNativeResource(spellOption, caster);
 assert.equal(castResult.available, true);
 assert.equal(castCalls.length, 1);
-assert.deepEqual(castCalls[0][1], { rank: 0, slotId: undefined, consume: true, message: false });
+assert.deepEqual(castCalls[0][1], {
+  rank: 0,
+  slotId: undefined,
+  consume: true,
+  message: true,
+  rollMode: "gmroll",
+});
 
 const variableSpell = item({
   type: "spell",

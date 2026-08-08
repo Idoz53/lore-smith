@@ -16,8 +16,10 @@ import {
   applyNativeDefense,
   consumeNativeResource,
   applyNativeStructuredEffects,
+  clickNativeCardEffect,
+  postNativeActionCard,
   resolveModeledCheck,
-  resolveModeledCheckWithRoll,
+  rollNativeDamage,
   resolveNativeCheck,
 } from "./simulation-adapters.js";
 import { getTacticalProfile } from "./tactical-profiles.js";
@@ -566,6 +568,36 @@ async function applyLiveHealing(target, formula) {
   return { amount: after - hp.value, roll: healing, summary: liveRollSummary(healing) };
 }
 
+async function applyNativeDamageOrHealing(target, roll, degree, option) {
+  const nativeRoll = roll?.roll ?? roll?.rolls?.[0] ?? roll;
+  if (!nativeRoll || typeof target.actor?.applyDamage !== "function") return null;
+  const before = actorHp(target.actor);
+  const outcome = option.healing
+    ? null
+    : degree === 3 ? "criticalSuccess"
+      : degree === 2 ? "success"
+        : degree === 1 ? "failure"
+          : "criticalFailure";
+  await target.actor.applyDamage({
+    damage: nativeRoll,
+    token: target.token.object,
+    item: option.item ?? null,
+    rollOptions: new Set(["lore-smith", "action:live-combat", option.healing ? "healing" : "damage"]),
+    ...(outcome ? { outcome } : {}),
+  });
+  const after = actorHp(target.actor);
+  target.hp = after.value;
+  target.maxHp = after.max;
+  target.defeated = after.value <= 0;
+  return {
+    amount: option.healing
+      ? Math.max(0, after.value - before.value)
+      : Math.max(0, before.value - after.value),
+    roll: nativeRoll,
+    summary: liveRollSummary(nativeRoll),
+  };
+}
+
 async function sceneDistance(left, right) {
   const grid = canvas.grid;
   const leftCenter = left.center ?? { x: left.x + left.w / 2, y: left.y + left.h / 2 };
@@ -645,12 +677,25 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
   for (const combatant of combatants) {
     const tracked = combat?.combatants?.find((entry) => entry.tokenId === combatant.id);
     let score = Number(tracked?.initiative);
-    if (!Number.isFinite(score)) {
-      const modifier = Number(combatant.initiative) || 0;
-      const initiative = await new Roll(`1d20 ${modifier >= 0 ? "+" : "-"} ${Math.abs(modifier)}`).evaluate();
-      await postPrivateGmRoll(initiative, `${combatant.name} rolls initiative`);
-      score = Number(initiative.total);
+    if (!Number.isFinite(score) && tracked && typeof combat?.rollInitiative === "function") {
+      await combat.rollInitiative([tracked.id], {
+        updateTurn: false,
+        messageOptions: { rollMode: "gmroll" },
+      });
+      score = Number(combat.combatants?.get?.(tracked.id)?.initiative ?? tracked.initiative);
     }
+    if (!Number.isFinite(score)) {
+      const initiativeSlug = combatant.actor.system?.initiative?.statistic ?? "perception";
+      const statistic = combatant.actor.getStatistic?.(initiativeSlug);
+      const result = await statistic?.check?.roll?.({
+        createMessage: true,
+        skipDialog: true,
+        rollMode: "gmroll",
+        options: ["lore-smith", "action:roll-initiative"],
+      });
+      score = Number(result?.roll?.total ?? result?.total);
+    }
+    if (!Number.isFinite(score)) score = 0;
     order.push({ combatant, score, tracked });
   }
   order.sort((left, right) => right.score - left.score);
@@ -724,9 +769,16 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         }
         actionsRemaining -= cost;
         consumeUse(attacker, option, target);
+        const nativeActionCard = nativeUse.message ?? await postNativeActionCard(option);
         if (option.healing) {
-          const healing = await applyLiveHealing(target, option.healing);
-          await emit(`${attacker.name} casts ${option.name} through ${nativeUse.source} on ${target.name}; rolls ${healing.summary}; restores ${healing.amount} HP. ${target.name} has ${target.hp}/${target.maxHp} HP.`, "heal");
+          const healingRoll = await rollNativeDamage(option, attacker, target, 2, map);
+          const healing = await applyNativeDamageOrHealing(target, healingRoll, 2, option);
+          if (!healing) {
+            await emit(`${attacker.name} uses ${option.name}, but PF2e exposed no native healing button for this entry. Lore Smith did not invent a healing formula.`, "error");
+            await pause(actionDelay());
+            continue;
+          }
+          await emit(`${attacker.name} uses ${option.name} through ${nativeUse.source} on ${target.name}; PF2e rolls ${healing.summary}; restores ${healing.amount} HP. ${target.name} has ${target.hp}/${target.maxHp} HP.`, "heal");
           await pause(actionDelay());
           continue;
         }
@@ -750,6 +802,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           temporaryTemplate ? (candidate) => combatantInsideTemplate(temporaryTemplate, candidate) : null,
         );
         const outcomes = [];
+        const nativeRolls = new Map();
         for (const affected of targetList) {
           const nativeCheck = option.automatic ? null : await resolveNativeCheck({
             option,
@@ -759,36 +812,39 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             dc: option.save ? option.dc : actorAc(affected.actor),
             checkDegree,
           });
-          const check = nativeCheck ?? await resolveModeledCheckWithRoll({
-            option,
-            attacker,
-            target: affected,
-            mapPenalty: map,
-            ac: (candidate) => actorAc(candidate.actor),
-            saveModifier,
-            checkDegree,
-          });
+          if (!option.automatic && !nativeCheck) {
+            outcomes.push(`${affected.name}: PF2e exposed no executable native roll control; no modeled roll was substituted`);
+            continue;
+          }
+          const check = nativeCheck ?? { degree: 2, total: null, dc: null, natural: null };
           const degree = check.degree;
-          const multiplier = nativeCheck
-            ? option.save
-              ? [2, 1, 0.5, 0][degree]
-              : degree === 3 ? 2 : degree === 2 ? 1 : 0
-            : check.multiplier;
           const outcome = nativeCheck
             ? option.save
               ? `${affected.name} rolls ${option.save}: ${liveCheckSummary(nativeCheck)} vs DC ${option.dc}, ${degreeText(degree)} [PF2e native]`
               : `${affected.name}: ${liveCheckSummary(nativeCheck)} vs ${option.defenseStatistic ?? "AC"} ${nativeCheck.dc}, ${degreeText(degree)} [PF2e native]`
-            : option.automatic
-              ? `${affected.name}: no check is required by the PF2e entry`
-              : option.save
-                ? `${affected.name} rolls ${option.save}: ${liveCheckSummary(check)} vs DC ${check.dc}, ${degreeText(degree)} [modeled adapter]`
-                : `${affected.name}: ${liveCheckSummary(check)} vs ${option.defenseStatistic ?? "AC"} ${check.dc}, ${degreeText(degree)} [modeled adapter]`;
+            : `${affected.name}: the PF2e entry requires no check`;
           const effectApplies = option.save ? degree <= 1 : option.automatic || degree >= 2;
           let damage = null;
-          if (option.damage && multiplier > 0) damage = await applyLiveDamage(affected, option.damage, degree, multiplier);
+          if (option.damage && (option.save || degree >= 2)) {
+            const rollKey = option.save ? "save" : degree === 3 ? "critical" : "success";
+            let damageRoll = nativeRolls.get(rollKey);
+            if (!damageRoll) {
+              damageRoll = await rollNativeDamage(option, attacker, affected, degree, map);
+              if (damageRoll) nativeRolls.set(rollKey, damageRoll);
+            }
+            damage = await applyNativeDamageOrHealing(affected, damageRoll, degree, option);
+          }
           const conditions = effectApplies ? await applyConditions(affected, option.conditions) : [];
-          const structured = effectApplies ? await applyNativeStructuredEffects(option, attacker, affected) : [];
-          outcomes.push(`${outcome}${damage ? `; damage roll ${damage.summary}; ${damage.amount} ${option.damageType || ""} damage applied, HP ${affected.hp}/${affected.maxHp}` : ""}${conditions.length || structured.length ? `; ${[...conditions, ...structured].join(", ")}` : ""}`);
+          const clickedCardEffect = effectApplies && nativeActionCard
+            ? await clickNativeCardEffect(nativeActionCard)
+            : false;
+          const structured = effectApplies && !clickedCardEffect
+            ? await applyNativeStructuredEffects(option, attacker, affected)
+            : [];
+          const missingDamage = option.damage && (option.save || degree >= 2) && !damage
+            ? "; PF2e exposed no native damage button, so no formula was invented"
+            : "";
+          outcomes.push(`${outcome}${damage ? `; native damage roll ${damage.summary}; ${damage.amount} ${option.damageType || ""} damage applied, HP ${affected.hp}/${affected.maxHp}` : ""}${missingDamage}${conditions.length || structured.length || clickedCardEffect ? `; ${[...conditions, ...structured, ...(clickedCardEffect ? ["native card effect"] : [])].join(", ")}` : ""}`);
           if (affected.defeated) {
             const trackedTarget = activeCombat()?.combatants?.find((candidate) => candidate.tokenId === affected.id);
             await trackedTarget?.update({ defeated: true });

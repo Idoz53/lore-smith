@@ -30,9 +30,11 @@ The module provides:
 - side-by-side creature and item source previews before copying a compendium entry.
 - PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
   separately from the randomized character victory estimate.
-- PF2e-native live checks for prepared strikes, spellcasting statistics, saving
-  throws, skill actions, damage, healing, conditions, shield state, and finite
-  resources, with explicit modeled fallbacks when a native call is unavailable;
+- PF2e-native live targeting and controls for Combat Tracker initiative,
+  prepared strikes, spell Cast/Attack/Damage buttons, actor saving throws,
+  system skill actions, healing, conditions, shield state, and finite resources;
+- live combat never silently substitutes a reconstructed formula when PF2e has
+  no executable control: the action is reported as unsupported instead;
 - live measured-template hit testing against the grid spaces actually occupied by
   each token, plus GM-private Foundry roll cards for initiative, checks, saves,
   damage, and healing;
@@ -75,6 +77,13 @@ Both simulation modes include a collapsible **Simulation coverage** report.
 Review partial and unsupported entries before treating an encounter estimate as
 reliable; the report is deliberately explicit about mechanics that still need a
 dedicated adapter.
+
+The **Live Combat** mode drives the installed PF2e system as a GM would: it sets
+the actual Foundry target, invokes native action/statistic/cast controls, consumes
+the actor's real resources, and applies the resulting native damage or healing
+roll. All native roll cards created by the simulator are private to GMs. The
+multi-iteration estimate remains a non-destructive model so it can run many
+encounters without consuming or damaging the world actors.
 
 Lore Smith does not maintain exceptions for named actors, NPCs, spells, or
 abilities. It reads the mechanics declared by each installed PF2e document. An

@@ -60,13 +60,21 @@ export function attachSimulationAdapters(option) {
 
   const native = {
     check: option.kind === "strike" && Boolean(option.nativeAction?.variants?.[0]?.roll)
+      || option.kind === "spell" && option.attackTrait && Boolean(option.item?.rollAttack)
+      || Boolean(option.nativeSystemAction?.use)
       || Boolean(option.nativeStatistic?.check?.roll),
-    damage: Boolean(option.damage),
-    healing: Boolean(option.healing),
+    damage: !option.damage || option.kind === "strike" && Boolean(option.nativeAction?.damage)
+      || Boolean(option.item?.rollDamage),
+    healing: !option.healing || Boolean(option.item?.rollDamage),
     condition: Boolean(option.conditions?.length || option.selfEffect || option.conditionOperations?.length),
     template: Boolean(option.area),
-    resource: option.limitedUses !== null,
+    resource: option.limitedUses === null || option.kind === "spell" && Boolean(option.item),
   };
+  if (!option.automatic && !native.check && (option.attackTrait || option.save || option.checkStatistic)) {
+    unsupported.push("Live combat: PF2e exposes no native roll control");
+  }
+  if (option.damage && !native.damage) unsupported.push("Live combat: PF2e exposes no native damage button");
+  if (option.healing && !native.healing) unsupported.push("Live combat: PF2e exposes no native healing button");
   const status = option.supportedResolution === false ? "unsupported" : unsupported.length
     ? adapters.length ? "partial" : "unsupported"
     : native.check || option.automatic || option.save ? "native" : "modeled";
@@ -131,10 +139,22 @@ export function buildCoverageReport(tokens, partyIds = null, enemyIds = null, bu
 }
 
 function normalizeNativeResult(result, fallbackDc, checkDegree) {
-  const roll = result?.roll ?? result;
-  const total = Number(roll?.total ?? result?.total);
+  const candidate = Array.isArray(result) ? result[0] : result;
+  const roll = candidate?.roll ?? candidate;
+  const total = Number(roll?.total ?? candidate?.total);
   const die = Number(roll?.dice?.[0]?.total ?? roll?.terms?.find?.((term) => term?.faces === 20)?.total);
-  const nativeDegree = Number(result?.degreeOfSuccess ?? roll?.degreeOfSuccess);
+  const degreeSlug = String(candidate?.outcome ?? candidate?.degreeOfSuccess ?? roll?.degreeOfSuccess ?? "");
+  const degreeBySlug = {
+    criticalFailure: 0,
+    failure: 1,
+    success: 2,
+    criticalSuccess: 3,
+    "critical-failure": 0,
+    "critical-success": 3,
+  };
+  const nativeDegree = degreeSlug in degreeBySlug
+    ? degreeBySlug[degreeSlug]
+    : Number(candidate?.degreeOfSuccess ?? roll?.degreeOfSuccess);
   return {
     total: finite(total) ? total : null,
     natural: finite(die) ? die : null,
@@ -142,6 +162,23 @@ function normalizeNativeResult(result, fallbackDc, checkDegree) {
       : finite(total) && finite(fallbackDc) ? checkDegree(total, fallbackDc, finite(die) ? die : 10)
         : null,
   };
+}
+
+function privateGmEvent() {
+  if (typeof MouseEvent === "function") {
+    return new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true });
+  }
+  return { type: "click", ctrlKey: true, metaKey: true, shiftKey: false };
+}
+
+export async function setNativeTarget(target) {
+  const token = target?.token?.object ?? target?.object ?? target;
+  if (!token?.setTarget) return false;
+  for (const current of [...(game.user?.targets ?? [])]) {
+    if (current !== token) current.setTarget(false, { releaseOthers: false, groupSelection: false });
+  }
+  token.setTarget(true, { releaseOthers: true, groupSelection: false });
+  return game.user?.targets?.has?.(token) ?? true;
 }
 
 async function rollNativeStatistic(statistic, options) {
@@ -163,6 +200,7 @@ export async function resolveNativeCheck({
   checkDegree,
 }) {
   try {
+    await setNativeTarget(target);
     if (option.kind === "strike" && option.nativeAction?.variants?.length) {
       const variantIndex = mapPenalty >= 10 ? 2 : mapPenalty >= 5 ? 1 : 0;
       const variant = option.nativeAction.variants[Math.min(variantIndex, option.nativeAction.variants.length - 1)];
@@ -177,6 +215,13 @@ export async function resolveNativeCheck({
       if (normalized.total !== null) return { ...normalized, dc, source: "PF2e Strike" };
     }
 
+    if (option.kind === "spell" && option.attackTrait && option.item?.rollAttack) {
+      const attackNumber = mapPenalty >= 10 ? 3 : mapPenalty >= 5 ? 2 : 1;
+      const result = await option.item.rollAttack(privateGmEvent(), attackNumber);
+      const normalized = normalizeNativeResult(result, dc, checkDegree);
+      if (normalized.total !== null) return { ...normalized, dc, source: "PF2e spell attack button" };
+    }
+
     if (option.save) {
       const statistic = target.actor?.getStatistic?.(option.save);
       const result = await rollNativeStatistic(statistic, {
@@ -186,6 +231,25 @@ export async function resolveNativeCheck({
       });
       const normalized = normalizeNativeResult(result, option.dc, checkDegree);
       if (normalized.total !== null) return { ...normalized, dc: option.dc, source: `PF2e ${option.save} save` };
+    }
+
+
+    if (option.kind === "skill" && option.nativeSystemAction?.use) {
+      const result = await option.nativeSystemAction.use({
+        actors: [attacker.actor],
+        target: target.token?.object ?? null,
+        event: privateGmEvent(),
+        multipleAttackPenalty: option.attackTrait ? Math.round(mapPenalty / 5) : 0,
+        message: { create: true },
+      });
+      const statisticDc = option.defenseStatistic
+        ? target.actor?.getStatistic?.(option.defenseStatistic)?.dc?.value
+          ?? target.actor?.getStatistic?.(option.defenseStatistic)?.dc
+        : dc;
+      const normalized = normalizeNativeResult(result, statisticDc, checkDegree);
+      if (normalized.total !== null) {
+        return { ...normalized, dc: Number(statisticDc), source: `PF2e ${option.name} action button` };
+      }
     }
 
     if (option.nativeStatistic?.check?.roll) {
@@ -202,9 +266,61 @@ export async function resolveNativeCheck({
       if (normalized.total !== null) return { ...normalized, dc: Number(statisticDc), source: "PF2e statistic" };
     }
   } catch (error) {
-    console.warn("Lore Smith | Native PF2e check failed; using the explicit modeled adapter.", error);
+    console.warn("Lore Smith | Native PF2e check could not be executed.", error);
   }
   return null;
+}
+
+function newestMessageAfter(beforeIds, item) {
+  return [...(game.messages?.contents ?? [])].reverse().find((message) =>
+    !beforeIds.has(message.id)
+    && (!item || message.item?.id === item.id || message.flags?.pf2e?.origin?.uuid === item.uuid)) ?? null;
+}
+
+export async function rollNativeDamage(option, attacker, target, degree, mapPenalty = 0) {
+  await setNativeTarget(target);
+  const event = privateGmEvent();
+  try {
+    if (option.kind === "strike" && option.nativeAction) {
+      const context = {
+        event,
+        target: target.token?.object ?? null,
+        mapIncreases: option.attackTrait ? Math.round(mapPenalty / 5) : 0,
+      };
+      return degree === 3
+        ? await option.nativeAction.critical?.(context)
+        : await option.nativeAction.damage?.(context);
+    }
+    if (option.kind === "spell" && option.item?.rollDamage) {
+      return option.item.rollDamage(event, option.attackTrait ? Math.round(mapPenalty / 5) : undefined);
+    }
+    if (option.item?.rollDamage) return option.item.rollDamage(event);
+  } catch (error) {
+    console.warn("Lore Smith | Native PF2e damage/healing button could not be executed.", error);
+  }
+  return null;
+}
+
+export async function postNativeActionCard(option) {
+  if (!option.item?.toMessage || option.kind === "spell" || option.kind === "strike") return null;
+  const beforeIds = new Set(game.messages?.keys?.() ?? []);
+  try {
+    await option.item.toMessage(privateGmEvent());
+    return newestMessageAfter(beforeIds, option.item);
+  } catch (error) {
+    console.warn("Lore Smith | Native PF2e item card could not be created.", error);
+    return null;
+  }
+}
+
+export async function clickNativeCardEffect(message) {
+  if (!message?.id || typeof document === "undefined") return false;
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const root = document.querySelector(`[data-message-id="${message.id}"]`);
+  const control = root?.querySelector('[data-action="applyEffect"], [data-action="activate"]');
+  if (!control) return false;
+  control.click();
+  return true;
 }
 
 export function resolveModeledCheck({
@@ -417,14 +533,21 @@ export async function consumeNativeResource(option, actor) {
     if (item.type === "spell") {
       const cast = spellCastContext(option, actor);
       if (!cast.available) return { available: false, consumed: false, source: cast.source };
+      const beforeIds = new Set(game.messages?.keys?.() ?? []);
       await cast.entry.cast(item, {
         rank: cast.rank,
         slotId: cast.slotId,
         consume: true,
-        message: false,
+        message: true,
+        rollMode: "gmroll",
       });
       const unlimited = option.traits?.includes("cantrip") || item.isCantrip || item.atWill;
-      return { available: true, consumed: !unlimited, source: cast.source };
+      return {
+        available: true,
+        consumed: !unlimited,
+        source: cast.source,
+        message: newestMessageAfter(beforeIds, item),
+      };
     }
 
     const frequency = item.system?.frequency;

@@ -34,8 +34,11 @@ if (!nativeScript.includes("lsMountAlwaysEditableJournalPages")) {
 if (!nativeScript.includes('data-action="editPage"') || !nativeScript.includes("stopImmediatePropagation")) {
   throw new Error("The native Journal edit-popup interception is missing.");
 }
-if (!script.includes("combatantInsideTemplate") || !script.includes("resolveModeledCheckWithRoll")) {
-  throw new Error("Live area hit-testing or private modeled rolls are missing.");
+if (!script.includes("combatantInsideTemplate") || !script.includes("rollNativeDamage")) {
+  throw new Error("Live area hit-testing or native PF2e damage controls are missing.");
+}
+if (script.includes("nativeCheck ?? await resolveModeledCheckWithRoll")) {
+  throw new Error("Live combat must not silently replace a failed PF2e control with a modeled roll.");
 }
 const templateActions = [...template.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]);
 for (const action of new Set(templateActions)) {
