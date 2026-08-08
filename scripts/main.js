@@ -972,10 +972,15 @@ function newSessionLocation() {
   return { id: foundry.utils.randomID(), name: "", image: "", purpose: "", sight: "", hearing: "", smell: "", touch: "", taste: "" };
 }
 
+function newSessionNpc() {
+  return { id: foundry.utils.randomID(), name: "", image: "", role: "", motivation: "", secret: "" };
+}
+
 function newSessionPrep() {
   return {
     title: "", goal: "", opening: "", ending: "",
     locations: [newSessionLocation(), newSessionLocation(), newSessionLocation()],
+    npcs: [newSessionNpc()],
     people: "", opposition: "", scenes: "", rewards: "", reminders: "",
   };
 }
@@ -998,8 +1003,17 @@ function sessionLocationPage(location) {
   return `${image}${sessionBlock("Why this place matters", location.purpose)}${senses ? `<hr><h2>Five senses</h2>${senses}` : ""}` || "<p>Describe this location before play.</p>";
 }
 
+function sessionNpcPage(npc) {
+  const image = String(npc.image ?? "").trim()
+    ? `<figure><img src="${escapeHtml(npc.image)}" alt="${escapeHtml(npc.name)}"></figure>` : "";
+  return `${image}${sessionBlock("Role in the session", npc.role)}${sessionBlock("Motivation", npc.motivation)}${sessionBlock("Secret or complication", npc.secret)}`
+    || "<p>Add this NPC's role, motivation, and secrets here.</p>";
+}
+
 function sessionJournalPages(prep) {
   const placeNames = prep.locations.map((location, index) => location.name.trim() || `Important Place ${index + 1}`);
+  const npcs = (prep.npcs ?? []).filter((npc) => [npc.name, npc.image, npc.role, npc.motivation, npc.secret].some((value) => String(value ?? "").trim()));
+  const npcNames = npcs.map((npc, index) => npc.name.trim() || `Important NPC ${index + 1}`);
   const overview = [
     sessionBlock("Main goal", prep.goal), sessionBlock("Opening situation", prep.opening), sessionBlock("Likely ending or cliffhanger", prep.ending),
     `<hr><h2>Important places</h2><ul>${placeNames.map((name) => `<li>[[Place — ${escapeHtml(name)}]]</li>`).join("")}</ul>`,
@@ -1007,8 +1021,14 @@ function sessionJournalPages(prep) {
   ].filter(Boolean).join("");
   const pages = [{ name: "Session Overview", content: overview }];
   for (const [index, location] of prep.locations.entries()) pages.push({ name: `Place — ${placeNames[index]}`, content: sessionLocationPage({ ...location, name: placeNames[index] }) });
+  const peopleOverview = [
+    npcNames.length ? `<h2>Important NPCs</h2><ul>${npcNames.map((name) => `<li>[[NPC - ${escapeHtml(name)}]]</li>`).join("")}</ul>` : "",
+    sessionBlock("Other people and factions", prep.people),
+    sessionBlock("Opposition, hazards, and encounters", prep.opposition),
+  ].filter(Boolean).join("") || "<p>Who can help, hinder, or surprise the party?</p>";
+  pages.push({ name: "People & Opposition", content: peopleOverview });
+  for (const [index, npc] of npcs.entries()) pages.push({ name: `NPC - ${npcNames[index]}`, content: sessionNpcPage({ ...npc, name: npcNames[index] }) });
   pages.push(
-    { name: "People & Opposition", content: `${sessionBlock("NPCs and factions", prep.people)}${sessionBlock("Opposition, hazards, and encounters", prep.opposition)}` || "<p>Who can help, hinder, or surprise the party?</p>" },
     { name: "Scenes, Clues & Rewards", content: `${sessionBlock("Likely scenes and clues", prep.scenes)}${sessionBlock("Rewards, consequences, and changes", prep.rewards)}` || "<p>Prepare situations, clues, and consequences here.</p>" },
     { name: "GM Reminders & Secrets", content: sessionBlock("GM-only notes", prep.reminders) || "<p>Private reminders, secrets, and contingencies.</p>" },
   );
@@ -1031,6 +1051,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       addLocation: LoreSmithDashboard.addLocation,
       removeLocation: LoreSmithDashboard.removeLocation,
       browseLocationImage: LoreSmithDashboard.browseLocationImage,
+      addSessionNpc: LoreSmithDashboard.addSessionNpc,
+      removeSessionNpc: LoreSmithDashboard.removeSessionNpc,
+      browseSessionNpcImage: LoreSmithDashboard.browseSessionNpcImage,
       createSessionJournal: LoreSmithDashboard.createSessionJournal,
       openLastSessionJournal: LoreSmithDashboard.openLastSessionJournal,
       createNote: LoreSmithDashboard.createNote,
@@ -1101,6 +1124,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
             locations: storedLocations.length
               ? storedLocations.map((location) => ({ ...newSessionLocation(), ...location, id: location.id || foundry.utils.randomID() }))
               : fresh.locations,
+            npcs: Array.isArray(storedPrep.npcs)
+              ? storedPrep.npcs.map((npc) => ({ ...newSessionNpc(), ...npc, id: npc.id || foundry.utils.randomID() }))
+              : fresh.npcs,
           };
           this.sessionStep = Math.max(0, Math.min(4, Number(stored?.step) || 0));
         }
@@ -1146,6 +1172,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       this.lastSessionJournalId = latestSession?.id ?? null;
     }
     const locationViews = this.sessionPrep.locations.map((location, index) => ({ ...location, number: index + 1, canRemove: this.sessionPrep.locations.length > 3 }));
+    const npcViews = (this.sessionPrep.npcs ?? []).map((npc, index) => ({ ...npc, number: index + 1 }));
     const sessionValidation = [];
     if (!this.sessionPrep.title.trim()) sessionValidation.push("Add a session title.");
     if (!this.sessionPrep.goal.trim()) sessionValidation.push("Add the session's main goal.");
@@ -1173,7 +1200,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         ? game.settings.get(MODULE_ID, "combatIterations")
         : this.iterations,
       result: this.result,
-      sessionPrep: { ...this.sessionPrep, locations: locationViews },
+      sessionPrep: { ...this.sessionPrep, locations: locationViews, npcs: npcViews },
       sessionSteps,
       sessionValidation,
       canSessionBack: this.sessionStep > 0,
@@ -1300,6 +1327,13 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
       return { ...previous.get(id), id, name: field("locationName"), image: field("locationImage"), purpose: field("locationPurpose"), sight: field("locationSight"), hearing: field("locationHearing"), smell: field("locationSmell"), touch: field("locationTouch"), taste: field("locationTaste") };
     });
+    const previousNpcs = new Map((this.sessionPrep.npcs ?? []).map((npc) => [npc.id, npc]));
+    const npcCards = [...root.querySelectorAll("[data-session-npc-id]")];
+    if (npcCards.length) this.sessionPrep.npcs = npcCards.map((card) => {
+      const id = card.dataset.sessionNpcId;
+      const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
+      return { ...previousNpcs.get(id), id, name: field("npcName"), image: field("npcImage"), role: field("npcRole"), motivation: field("npcMotivation"), secret: field("npcSecret") };
+    });
     await this.saveSessionPrepDraft();
   }
 
@@ -1359,6 +1393,32 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!location) return;
     new FilePicker({ type: "imagevideo", current: location.image, callback: async (path) => {
       location.image = path;
+      await this.saveSessionPrepDraft();
+      await this.render();
+    } }).browse();
+  }
+
+  static async addSessionNpc() {
+    await this.syncSessionPrepForm();
+    this.sessionPrep.npcs ??= [];
+    this.sessionPrep.npcs.push(newSessionNpc());
+    await this.saveSessionPrepDraft();
+    await this.render();
+  }
+
+  static async removeSessionNpc(_event, target) {
+    await this.syncSessionPrepForm();
+    this.sessionPrep.npcs = (this.sessionPrep.npcs ?? []).filter((npc) => npc.id !== target.dataset.id);
+    await this.saveSessionPrepDraft();
+    await this.render();
+  }
+
+  static async browseSessionNpcImage(_event, target) {
+    await this.syncSessionPrepForm();
+    const npc = (this.sessionPrep.npcs ?? []).find((entry) => entry.id === target.dataset.id);
+    if (!npc) return;
+    new FilePicker({ type: "imagevideo", current: npc.image, callback: async (path) => {
+      npc.image = path;
       await this.saveSessionPrepDraft();
       await this.render();
     } }).browse();

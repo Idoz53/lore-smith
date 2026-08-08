@@ -41,7 +41,16 @@
 
         {{#if sessionSteps.people.active}}
           <section class="ls-session-step"><div class="ls-step-kicker">Step 3 of 5</div><h2>People, factions, and opposition</h2><p>Keep this short: who needs something, who stands in the way, and what secret can change the session?</p>
-            <div class="ls-session-form"><label>Important NPCs and factions<textarea name="sessionPeople" rows="8" placeholder="Captain Vell — wants the sabotage stopped quietly.\nThe Ash Knives — need the festival chaos as cover.\nMira the dockworker — witnessed the culprit but fears retaliation.">{{sessionPrep.people}}</textarea></label><label>Opposition, hazards, or encounters<textarea name="sessionOpposition" rows="8" placeholder="Dockside chase; trapped lighthouse stair; cultists at the signal fire. Add encounter links if you already have them.">{{sessionPrep.opposition}}</textarea></label></div>
+            <div class="ls-npc-stack">{{#each sessionPrep.npcs}}<article class="ls-session-npc-card" data-session-npc-id="{{id}}">
+              <header><div><span>Important NPC {{number}}</span><strong>{{#if name}}{{name}}{{else}}Unnamed NPC{{/if}}</strong></div><button class="danger" data-action="removeSessionNpc" data-id="{{id}}" data-tooltip="Remove NPC"><i class="fa-solid fa-trash"></i></button></header>
+              <div class="ls-session-npc-body"><div class="ls-session-npc-portrait">{{#if image}}<img src="{{image}}" alt="{{name}}">{{else}}<i class="fa-solid fa-user"></i>{{/if}}</div><div class="ls-session-form">
+                <label>NPC name<input name="npcName" value="{{name}}" placeholder="Captain Vell"></label><label>Portrait<span class="ls-inline-control"><input name="npcImage" value="{{image}}" placeholder="Choose an NPC image"><button data-action="browseSessionNpcImage" data-id="{{id}}" type="button">Browse</button></span></label>
+                <label>Role in this session<textarea name="npcRole" rows="2" placeholder="Helpful harbour captain and reluctant quest giver.">{{role}}</textarea></label><label>What do they want?<textarea name="npcMotivation" rows="2" placeholder="Stop the sabotage without causing public panic.">{{motivation}}</textarea></label>
+                <label class="wide">Secret or complication<textarea name="npcSecret" rows="2" placeholder="They recognized the culprit but are protecting someone close to them.">{{secret}}</textarea></label>
+              </div></div>
+            </article>{{else}}<div class="ls-empty">No important NPCs prepared yet.</div>{{/each}}</div>
+            <button data-action="addSessionNpc"><i class="fa-solid fa-user-plus"></i> Add NPC</button>
+            <div class="ls-session-form ls-people-notes"><label>Other people and factions<textarea name="sessionPeople" rows="6" placeholder="The Ash Knives — need the festival chaos as cover.\nDockworkers — afraid but willing to talk in private.">{{sessionPrep.people}}</textarea></label><label>Opposition, hazards, or encounters<textarea name="sessionOpposition" rows="6" placeholder="Dockside chase; trapped lighthouse stair; cultists at the signal fire. Add encounter links if you already have them.">{{sessionPrep.opposition}}</textarea></label></div>
           </section>
         {{/if}}
 
