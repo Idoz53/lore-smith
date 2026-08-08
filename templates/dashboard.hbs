@@ -56,12 +56,13 @@
 
         {{#if sessionSteps.music.active}}
           <section class="ls-session-step"><div class="ls-step-kicker">Step 4 of 6</div><h2>Music and atmosphere</h2><p>Prepare only the cues that matter. Choose an existing Foundry Playlist or a direct audio file, then note the moment and feeling it should support.</p>
+            {{#unless hasFoundryPlaylists}}<div class="ls-warning"><strong>No Foundry Playlist exists yet.</strong><div>Lore Smith will create a session Playlist automatically and add your audio cues to it.</div></div>{{/unless}}
             <div class="ls-music-stack">{{#each sessionPrep.musicCues}}<article class="ls-music-card" data-session-music-id="{{id}}">
               <header><div><span>Music cue {{number}}</span><strong>{{#if name}}{{name}}{{else}}{{moment}}{{/if}}</strong></div><button class="danger" data-action="removeMusicCue" data-id="{{id}}" data-tooltip="Remove music cue"><i class="fa-solid fa-trash"></i></button></header>
               <div class="ls-music-body"><div class="ls-music-icon"><i class="fa-solid fa-music"></i></div><div class="ls-session-form">
                 <label>Cue name<input name="musicName" value="{{name}}" placeholder="The lighthouse awakens"></label><label>Moment<select name="musicMoment">{{#each momentOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
                 <label>Mood and purpose<input name="musicMood" value="{{mood}}" placeholder="Ancient wonder turning into unease"></label><label>Foundry Playlist<select name="musicPlaylist">{{#each playlistOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-                <label class="wide">Direct audio file <span class="ls-inline-control"><input name="musicAudio" value="{{audio}}" placeholder="Optional audio file when no Playlist is used"><button data-action="browseMusicAudio" data-id="{{id}}" type="button">Browse</button></span></label>
+                <label class="wide">Audio track <span class="ls-inline-control"><input name="musicAudio" value="{{audio}}" placeholder="This file will be added to the selected Playlist"><button data-action="browseMusicAudio" data-id="{{id}}" type="button">Browse</button></span></label>
                 <label class="wide">When should it start, change, or stop?<textarea name="musicNotes" rows="3" placeholder="Begin quietly when the lens starts turning. Stop on the first attack, then switch to the combat Playlist.">{{notes}}</textarea></label>
               </div></div>
             </article>{{else}}<div class="ls-empty">No music cues prepared. Deliberate silence is also a valid choice.</div>{{/each}}</div>

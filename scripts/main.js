@@ -1017,8 +1017,50 @@ function sessionNpcPage(npc) {
     || "<p>Add this NPC's role, motivation, and secrets here.</p>";
 }
 
+function activeSessionMusicCues(prep) {
+  return (prep.musicCues ?? []).filter((cue) => [cue.name, cue.mood, cue.playlistId, cue.audio, cue.notes].some((value) => String(value ?? "").trim()));
+}
+
+async function getOrCreateSessionPlaylist(prep) {
+  const title = String(prep.title ?? "").trim() || "Next Session";
+  const name = `${title} — Music`;
+  const existing = game.playlists.find((playlist) => playlist.name === name);
+  if (existing) return existing;
+  return Playlist.create({
+    name,
+    flags: { [FLAG_SCOPE]: { sessionMusic: true, sessionTitle: title } },
+  });
+}
+
+async function ensureSessionPlaylistAvailable(prep) {
+  if (game.playlists.size) return null;
+  const playlist = await getOrCreateSessionPlaylist(prep);
+  for (const cue of prep.musicCues ?? []) if (!cue.playlistId) cue.playlistId = playlist.id;
+  return playlist;
+}
+
+async function materializeSessionMusic(prep) {
+  const cues = activeSessionMusicCues(prep);
+  let defaultPlaylist = null;
+  if (!game.playlists.size || cues.some((cue) => !game.playlists.get(cue.playlistId))) {
+    defaultPlaylist = await getOrCreateSessionPlaylist(prep);
+  }
+  for (const cue of cues) {
+    const playlist = game.playlists.get(cue.playlistId) ?? defaultPlaylist;
+    if (!playlist) continue;
+    cue.playlistId = playlist.id;
+    const audio = String(cue.audio ?? "").trim();
+    if (!audio || playlist.sounds.some((sound) => sound.path === audio)) continue;
+    await playlist.createEmbeddedDocuments("PlaylistSound", [{
+      name: cue.name.trim() || `${cue.moment || "Music"} cue`,
+      path: audio,
+    }]);
+  }
+  return defaultPlaylist;
+}
+
 function sessionMusicPage(prep) {
-  const cues = (prep.musicCues ?? []).filter((cue) => [cue.name, cue.mood, cue.playlistId, cue.audio, cue.notes].some((value) => String(value ?? "").trim()));
+  const cues = activeSessionMusicCues(prep);
   if (!cues.length) return "<p>Add music, ambience, and moments of deliberate silence here.</p>";
   return cues.map((cue, index) => {
     const playlist = game.playlists.get(cue.playlistId);
@@ -1273,6 +1315,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       sessionValidation,
       canSessionBack: this.sessionStep > 0,
       lastSessionJournalId: this.lastSessionJournalId,
+      hasFoundryPlaylists: game.playlists.size > 0,
     };
   }
 
@@ -1437,6 +1480,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   static async nextSessionStep() {
     await this.syncSessionPrepForm();
     this.sessionStep = Math.min(5, this.sessionStep + 1);
+    if (this.sessionStep === 3) await ensureSessionPlaylistAvailable(this.sessionPrep);
     await this.saveSessionPrepDraft();
     await this.render();
   }
@@ -1444,6 +1488,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   static async goToSessionStep(_event, target) {
     await this.syncSessionPrepForm();
     this.sessionStep = Math.max(0, Math.min(5, Number(target.dataset.step) || 0));
+    if (this.sessionStep === 3) await ensureSessionPlaylistAvailable(this.sessionPrep);
     await this.saveSessionPrepDraft();
     await this.render();
   }
@@ -1534,6 +1579,12 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       this.sessionStep = 5;
       await this.render();
       return ui.notifications.warn("Complete the title, goal, and all three important places before creating the Journal.");
+    }
+    try {
+      await materializeSessionMusic(this.sessionPrep);
+    } catch (error) {
+      console.error("Lore Smith | Could not create the session Playlist.", error);
+      return ui.notifications.error("Lore Smith could not add the session music to Foundry. Check the selected audio files and try again.");
     }
     const journal = await JournalEntry.create({
       name: this.sessionPrep.title.trim(),
