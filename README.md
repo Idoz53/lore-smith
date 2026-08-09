@@ -71,8 +71,15 @@ The module provides:
   damage, and healing;
 - explicit adapters for attacks, saves, damage, healing, IWR, conditions, area
   templates, spell slots, frequencies, recharge timers, and common skill actions;
-- data-driven tactical profiles for all 29 PF2e classes, selected from the
-  actor's Class item rather than a character's name;
+- the complete old-app tactical flowchart library: one shared legality,
+  rescue, targeting, movement, cover, off-guard, trained-skill, MAP, defense,
+  and resolution loop plus data-driven overlays for all 29 PF2e classes;
+- class overlays are selected from the actor's actual Class item and score only
+  actions, spells, strikes, items, and trained system actions the actor owns;
+- both Monte Carlo and live combat use the same decision policy. The fast model
+  resolves it through explicit adapters, while live combat executes the chosen
+  option through native PF2e targets, checks, Cast controls, resources, effects,
+  damage, healing, conditions, and measured templates;
 - a per-encounter coverage report that identifies native, modeled, partial, and
   unsupported actions for every combatant.
 - schema-driven effect ownership and linked condition operations: self effects
@@ -107,7 +114,9 @@ visible instead of silently stopping.
 Both simulation modes include a collapsible **Simulation coverage** report.
 Review partial and unsupported entries before treating an encounter estimate as
 reliable; the report is deliberately explicit about mechanics that still need a
-dedicated adapter.
+dedicated adapter. Each actor also reports its assigned class flow, positioning
+policy, available class-priority tags, and class priorities for which the actor
+does not currently own a matching Foundry action.
 
 The **Live Combat** mode drives the installed PF2e system as a GM would: it sets
 the actual Foundry target, invokes native action/statistic/cast controls, consumes

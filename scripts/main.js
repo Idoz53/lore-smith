@@ -22,7 +22,7 @@ import {
   rollNativeDamage,
   resolveNativeCheck,
 } from "./simulation-adapters.js";
-import { getTacticalProfile } from "./tactical-profiles.js";
+import { decisionFlowStatus, getTacticalProfile, initializeDecisionFlows } from "./tactical-profiles.js";
 
 const MODULE_ID = "lore-smith";
 const FLAG_SCOPE = MODULE_ID;
@@ -331,6 +331,7 @@ function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = 
     .map((combatant) => ({ combatant, score: rollDie(20) + combatant.initiative }))
     .sort((left, right) => right.score - left.score);
   push(`Initiative: ${initiatives.map(({ combatant, score }) => `${combatant.name} ${score}`).join(", ")}.`, "round");
+  push(`Tactical flows: ${combatants.map((combatant) => `${combatant.name} — ${combatant.profile.flow?.name ?? "General Tactical AI"}`).join("; ")}.`, "action");
 
   let rounds = 0;
   while (rounds < 30) {
@@ -708,6 +709,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
     }
   };
   await emit(`Initiative: ${order.map(({ combatant, score }) => `${combatant.name} ${score}`).join(", ")}.`, "round");
+  await emit(`Tactical flows: ${combatants.map((combatant) => `${combatant.name} — ${combatant.profile.flow?.name ?? "General Tactical AI"}`).join("; ")}.`, "action");
   for (let round = 1; round <= 20; round += 1) {
     if (await waitForControl()) {
       await emit("Live combat stopped by the GM.", "round");
@@ -2266,13 +2268,16 @@ Hooks.once("ready", async () => {
     ui.notifications.error("Lore Smith requires the Pathfinder Second Edition system.");
     return;
   }
-  game.loreSmith = {
+  Object.assign(game.loreSmith ??= {}, {
     open: openLoreSmith,
     simulateEncounter,
     runLiveReplay,
     buildCoverageReport: (tokens, partyIds = null, enemyIds = null) =>
       actionCoverageReport(tokens, partyIds, enemyIds),
-  };
+    decisionFlows: decisionFlowStatus,
+    ensureDecisionFlows: initializeDecisionFlows,
+  });
+  await initializeDecisionFlows();
   try {
     await migrateSessionPrepJournals();
   } catch (error) {

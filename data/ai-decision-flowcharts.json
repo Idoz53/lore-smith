@@ -1,0 +1,5523 @@
+{
+  "schema": "pf2e-gm-tool/ai-decision-flowcharts@1",
+  "generated_at": "2026-07-31T19:54:48.316Z",
+  "general": {
+    "id": "general-tactical-ai",
+    "name": "General Tactical AI",
+    "description": "Shared PF2e turn loop used before and after every class-specific policy.",
+    "nodes": [
+      {
+        "id": "turn-start",
+        "label": "Start turn",
+        "type": "start",
+        "detail": "Refresh reaction, MAP, action budget, and per-turn flags."
+      },
+      {
+        "id": "can-act",
+        "label": "Can the combatant act?",
+        "type": "decision",
+        "detail": "Check unconscious, dying, paralyzed, stunned, slowed, and quickened."
+      },
+      {
+        "id": "recovery",
+        "label": "Resolve recovery or incapacitation",
+        "type": "process",
+        "detail": "Use PF2e dying and recovery rules; otherwise skip the turn."
+      },
+      {
+        "id": "emergency",
+        "label": "Ally dying or critically wounded?",
+        "type": "decision",
+        "detail": "Look for legal healing before stabilization; verify range and actions."
+      },
+      {
+        "id": "rescue",
+        "label": "Use the best legal rescue",
+        "type": "process",
+        "detail": "Prioritize healing that restores HP. Stabilize only when no healing can save the ally."
+      },
+      {
+        "id": "class-overlay",
+        "label": "Run assigned class flow",
+        "type": "class",
+        "detail": "Apply class resources, stances, marks, auras, companions, and action priorities."
+      },
+      {
+        "id": "target",
+        "label": "Choose a legal target",
+        "type": "decision",
+        "detail": "Respect team, taunt, line of sight, line of effect, range, and target validity."
+      },
+      {
+        "id": "actions",
+        "label": "Actions remaining?",
+        "type": "decision",
+        "detail": "Never announce or resolve an action after the budget reaches zero."
+      },
+      {
+        "id": "range-path",
+        "label": "In range with a legal path?",
+        "type": "decision",
+        "detail": "Check reach, ranged increment, walls, occupied squares, sight, and effect."
+      },
+      {
+        "id": "reposition",
+        "label": "Stride, Step, or seek another target",
+        "type": "process",
+        "detail": "Path square by square; avoid walls, unsafe flanks, and unnecessary exposure."
+      },
+      {
+        "id": "cover",
+        "label": "Does the target have cover?",
+        "type": "decision",
+        "detail": "Use attacker-to-target corridor. Walls grant standard cover; larger creatures can grant lesser cover."
+      },
+      {
+        "id": "cover-plan",
+        "label": "Reposition or accept cover",
+        "type": "process",
+        "detail": "After repeated cover-caused misses, seek a legal firing lane when the payoff exceeds the risk."
+      },
+      {
+        "id": "off-guard",
+        "label": "Can off-guard be created safely?",
+        "type": "decision",
+        "detail": "Check a rules-legal opposite-side flank, prone, grabbed, hidden, feint, or class effect."
+      },
+      {
+        "id": "off-guard-plan",
+        "label": "Flank or apply off-guard",
+        "type": "process",
+        "detail": "Do not flank into encirclement; use a trained or granted option."
+      },
+      {
+        "id": "skill",
+        "label": "Useful trained skill action?",
+        "type": "decision",
+        "detail": "Demoralize uses Intimidation; Trip, Grapple, and Shove use Athletics; Tumble Through uses Acrobatics."
+      },
+      {
+        "id": "skill-action",
+        "label": "Use best skill action",
+        "type": "process",
+        "detail": "Compare expected condition, movement, MAP, immunities, and follow-up value."
+      },
+      {
+        "id": "best-action",
+        "label": "Score legal actions",
+        "type": "process",
+        "detail": "Evaluate healing, class actions, spells, abilities, strikes, maneuvers, defense, and movement."
+      },
+      {
+        "id": "third-attack",
+        "label": "Would this be a poor third MAP attack?",
+        "type": "decision",
+        "detail": "Prefer a useful non-attack action unless hit odds remain unusually favorable."
+      },
+      {
+        "id": "defense",
+        "label": "Raise Shield, Take Cover, Step, or support",
+        "type": "process",
+        "detail": "Take Cover only with a legal wall, obstacle, larger creature, prone ranged defense, or tower shield."
+      },
+      {
+        "id": "resolve",
+        "label": "Resolve action completely",
+        "type": "process",
+        "detail": "Spend actions, roll checks, apply damage/healing/conditions, reactions, resources, recharge, and logs."
+      },
+      {
+        "id": "defeated",
+        "label": "Encounter decided?",
+        "type": "decision",
+        "detail": "Stop if one side has no conscious living combatants."
+      },
+      {
+        "id": "turn-end",
+        "label": "End turn",
+        "type": "end",
+        "detail": "Resolve persistent damage, recovery flat checks, duration changes, and hand off initiative."
+      }
+    ],
+    "edges": [
+      {
+        "from": "turn-start",
+        "to": "can-act",
+        "condition": ""
+      },
+      {
+        "from": "can-act",
+        "to": "recovery",
+        "condition": "No"
+      },
+      {
+        "from": "can-act",
+        "to": "emergency",
+        "condition": "Yes"
+      },
+      {
+        "from": "recovery",
+        "to": "turn-end",
+        "condition": ""
+      },
+      {
+        "from": "emergency",
+        "to": "rescue",
+        "condition": "Yes"
+      },
+      {
+        "from": "emergency",
+        "to": "class-overlay",
+        "condition": "No"
+      },
+      {
+        "from": "rescue",
+        "to": "class-overlay",
+        "condition": "Actions remain"
+      },
+      {
+        "from": "rescue",
+        "to": "turn-end",
+        "condition": "No actions remain"
+      },
+      {
+        "from": "class-overlay",
+        "to": "target",
+        "condition": ""
+      },
+      {
+        "from": "target",
+        "to": "actions",
+        "condition": ""
+      },
+      {
+        "from": "actions",
+        "to": "turn-end",
+        "condition": "No"
+      },
+      {
+        "from": "actions",
+        "to": "range-path",
+        "condition": "Yes"
+      },
+      {
+        "from": "range-path",
+        "to": "reposition",
+        "condition": "No"
+      },
+      {
+        "from": "range-path",
+        "to": "cover",
+        "condition": "Yes"
+      },
+      {
+        "from": "reposition",
+        "to": "actions",
+        "condition": "Action spent"
+      },
+      {
+        "from": "cover",
+        "to": "cover-plan",
+        "condition": "Yes and reposition is worthwhile"
+      },
+      {
+        "from": "cover",
+        "to": "off-guard",
+        "condition": "No or accept cover"
+      },
+      {
+        "from": "cover-plan",
+        "to": "actions",
+        "condition": ""
+      },
+      {
+        "from": "off-guard",
+        "to": "off-guard-plan",
+        "condition": "Yes"
+      },
+      {
+        "from": "off-guard",
+        "to": "skill",
+        "condition": "No"
+      },
+      {
+        "from": "off-guard-plan",
+        "to": "actions",
+        "condition": "Action spent"
+      },
+      {
+        "from": "skill",
+        "to": "skill-action",
+        "condition": "Yes"
+      },
+      {
+        "from": "skill",
+        "to": "best-action",
+        "condition": "No"
+      },
+      {
+        "from": "skill-action",
+        "to": "resolve",
+        "condition": ""
+      },
+      {
+        "from": "best-action",
+        "to": "third-attack",
+        "condition": ""
+      },
+      {
+        "from": "third-attack",
+        "to": "defense",
+        "condition": "Yes"
+      },
+      {
+        "from": "third-attack",
+        "to": "resolve",
+        "condition": "No"
+      },
+      {
+        "from": "defense",
+        "to": "resolve",
+        "condition": ""
+      },
+      {
+        "from": "resolve",
+        "to": "defeated",
+        "condition": ""
+      },
+      {
+        "from": "defeated",
+        "to": "turn-end",
+        "condition": "Yes"
+      },
+      {
+        "from": "defeated",
+        "to": "actions",
+        "condition": "No"
+      }
+    ],
+    "invariants": [
+      "Only use actions the actor actually owns or universally available trained skill actions.",
+      "Never spend more actions, reactions, focus points, spell slots, ammunition, or frequency uses than remain.",
+      "Movement, targeting, cover, line of sight, and line of effect are evaluated from current grid positions.",
+      "Class flow adjusts priorities but cannot bypass the shared legality checks.",
+      "Healing a dying ally is preferred over Stabilize whenever legal healing can restore Hit Points."
+    ]
+  },
+  "classes": {
+    "alchemist": {
+      "id": "class-alchemist",
+      "class_slug": "alchemist",
+      "class_name": "Alchemist",
+      "role": "adaptive support and item striker",
+      "role_profile": {
+        "primary": "Annoyer",
+        "secondary": "DPS",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Alchemist.",
+      "positioning": "Midline with safe access to allies and legal bomb lanes.",
+      "weights": {
+        "quick-alchemy": 14,
+        "healing": 11,
+        "weakness": 10,
+        "bomb": 6,
+        "support": 5,
+        "strike": -1
+      },
+      "conditional_rules": [
+        {
+          "when": "ally_critical",
+          "tag": "healing",
+          "weight": 28
+        },
+        {
+          "when": "enemy_weakness_known",
+          "tag": "weakness",
+          "weight": 18
+        },
+        {
+          "when": "resource_low",
+          "tag": "quick-alchemy",
+          "weight": -8
+        }
+      ],
+      "nodes": [
+        {
+          "id": "alchemist-enter",
+          "label": "Enter Alchemist flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "alchemist-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Identify enemy weaknesses and reserve versatile vials for the highest-impact formula."
+        },
+        {
+          "id": "alchemist-opening",
+          "label": "Identify enemy weaknesses and reserve versatile vials for the highest-impact formula.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "alchemist-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Track prepared items, versatile vials, bombs, elixirs, poisons, and ally needs."
+        },
+        {
+          "id": "alchemist-maintenance",
+          "label": "Track prepared items, versatile vials, bombs, elixirs, poisons, and ally needs.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "alchemist-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Midline with safe access to allies and legal bomb lanes."
+        },
+        {
+          "id": "alchemist-position",
+          "label": "Reposition: Midline with safe access to allies and legal bomb lanes.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "alchemist-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use Quick Alchemy for a weakness, urgent remedy, or strong tactical consumable; then deliver or administer it."
+        },
+        {
+          "id": "alchemist-core",
+          "label": "Use Quick Alchemy for a weakness, urgent remedy, or strong tactical consumable; then deliver or administer it.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "alchemist-fallback",
+          "label": "Use a stocked bomb or weapon, Recall Knowledge, reposition, or support an ally.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "alchemist-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "alchemist-enter",
+          "to": "alchemist-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "alchemist-opening-check",
+          "to": "alchemist-opening",
+          "condition": "No"
+        },
+        {
+          "from": "alchemist-opening-check",
+          "to": "alchemist-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "alchemist-opening",
+          "to": "alchemist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "alchemist-maintenance-check",
+          "to": "alchemist-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "alchemist-maintenance-check",
+          "to": "alchemist-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "alchemist-maintenance",
+          "to": "alchemist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "alchemist-position-check",
+          "to": "alchemist-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "alchemist-position-check",
+          "to": "alchemist-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "alchemist-position",
+          "to": "alchemist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "alchemist-core-check",
+          "to": "alchemist-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "alchemist-core-check",
+          "to": "alchemist-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "alchemist-core",
+          "to": "alchemist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "alchemist-fallback",
+          "to": "alchemist-return",
+          "condition": ""
+        }
+      ]
+    },
+    "animist": {
+      "id": "class-animist",
+      "class_slug": "animist",
+      "class_name": "Animist",
+      "role": "flexible prepared caster",
+      "role_profile": {
+        "primary": "Annoyer",
+        "secondary": "Healer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Animist.",
+      "positioning": "Backline or protected midline within spell range.",
+      "weights": {
+        "apparition": 13,
+        "vessel-spell": 12,
+        "sustain": 10,
+        "spell": 5,
+        "knowledge": 4,
+        "melee": -8
+      },
+      "conditional_rules": [
+        {
+          "when": "missing_apparition",
+          "tag": "apparition",
+          "weight": 24
+        },
+        {
+          "when": "effect_needs_sustain",
+          "tag": "sustain",
+          "weight": 18
+        },
+        {
+          "when": "threatened_in_melee",
+          "tag": "reposition",
+          "weight": 12
+        }
+      ],
+      "nodes": [
+        {
+          "id": "animist-enter",
+          "label": "Enter Animist flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "animist-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Attune the apparition whose lore, vessel spell, and repertoire best answer the encounter."
+        },
+        {
+          "id": "animist-opening",
+          "label": "Attune the apparition whose lore, vessel spell, and repertoire best answer the encounter.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "animist-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Sustain vessel spells and reassess apparition value as threats change."
+        },
+        {
+          "id": "animist-maintenance",
+          "label": "Sustain vessel spells and reassess apparition value as threats change.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "animist-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Backline or protected midline within spell range."
+        },
+        {
+          "id": "animist-position",
+          "label": "Reposition: Backline or protected midline within spell range.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "animist-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use the attuned apparition's vessel or apparition spell when its effect outperforms a normal prepared spell."
+        },
+        {
+          "id": "animist-core",
+          "label": "Use the attuned apparition's vessel or apparition spell when its effect outperforms a normal prepared spell.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "animist-fallback",
+          "label": "Cast a fitting spell or cantrip, Recall Knowledge, or reposition behind the frontline.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "animist-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "animist-enter",
+          "to": "animist-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "animist-opening-check",
+          "to": "animist-opening",
+          "condition": "No"
+        },
+        {
+          "from": "animist-opening-check",
+          "to": "animist-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "animist-opening",
+          "to": "animist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "animist-maintenance-check",
+          "to": "animist-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "animist-maintenance-check",
+          "to": "animist-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "animist-maintenance",
+          "to": "animist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "animist-position-check",
+          "to": "animist-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "animist-position-check",
+          "to": "animist-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "animist-position",
+          "to": "animist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "animist-core-check",
+          "to": "animist-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "animist-core-check",
+          "to": "animist-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "animist-core",
+          "to": "animist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "animist-fallback",
+          "to": "animist-return",
+          "condition": ""
+        }
+      ]
+    },
+    "barbarian": {
+      "id": "class-barbarian",
+      "class_slug": "barbarian",
+      "class_name": "Barbarian",
+      "role": "durable melee damage dealer",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Tank",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Barbarian.",
+      "positioning": "Frontline, adjacent to priority threats without becoming needlessly surrounded.",
+      "weights": {
+        "rage": 30,
+        "melee": 8,
+        "strike": 7,
+        "athletics": 6,
+        "demoralize": 4,
+        "concentrate": -20,
+        "ranged": -4
+      },
+      "conditional_rules": [
+        {
+          "when": "missing_rage",
+          "tag": "rage",
+          "weight": 36
+        },
+        {
+          "when": "target_out_of_melee",
+          "tag": "reposition",
+          "weight": 12
+        },
+        {
+          "when": "attack_one_plus",
+          "tag": "athletics",
+          "weight": 5
+        }
+      ],
+      "nodes": [
+        {
+          "id": "barbarian-enter",
+          "label": "Enter Barbarian flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "barbarian-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Rage before the first meaningful melee exchange when legal."
+        },
+        {
+          "id": "barbarian-opening",
+          "label": "Rage before the first meaningful melee exchange when legal.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "barbarian-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Remain in Rage, exploit instinct benefits, and keep a high-value enemy threatened."
+        },
+        {
+          "id": "barbarian-maintenance",
+          "label": "Remain in Rage, exploit instinct benefits, and keep a high-value enemy threatened.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "barbarian-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Frontline, adjacent to priority threats without becoming needlessly surrounded."
+        },
+        {
+          "id": "barbarian-position",
+          "label": "Reposition: Frontline, adjacent to priority threats without becoming needlessly surrounded.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "barbarian-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Stride to melee, use a high-value Rage action or powerful Strike, then use Athletics when it improves follow-up attacks."
+        },
+        {
+          "id": "barbarian-core",
+          "label": "Stride to melee, use a high-value Rage action or powerful Strike, then use Athletics when it improves follow-up attacks.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "barbarian-fallback",
+          "label": "Demoralize before closing, reposition, Raise Shield if equipped, or attack at favorable MAP.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "barbarian-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "barbarian-enter",
+          "to": "barbarian-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "barbarian-opening-check",
+          "to": "barbarian-opening",
+          "condition": "No"
+        },
+        {
+          "from": "barbarian-opening-check",
+          "to": "barbarian-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "barbarian-opening",
+          "to": "barbarian-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "barbarian-maintenance-check",
+          "to": "barbarian-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "barbarian-maintenance-check",
+          "to": "barbarian-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "barbarian-maintenance",
+          "to": "barbarian-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "barbarian-position-check",
+          "to": "barbarian-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "barbarian-position-check",
+          "to": "barbarian-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "barbarian-position",
+          "to": "barbarian-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "barbarian-core-check",
+          "to": "barbarian-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "barbarian-core-check",
+          "to": "barbarian-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "barbarian-core",
+          "to": "barbarian-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "barbarian-fallback",
+          "to": "barbarian-return",
+          "condition": ""
+        }
+      ]
+    },
+    "bard": {
+      "id": "class-bard",
+      "class_slug": "bard",
+      "class_name": "Bard",
+      "role": "composition support caster",
+      "role_profile": {
+        "primary": "Annoyer",
+        "secondary": "Healer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Bard.",
+      "positioning": "Protected midline maximizing composition coverage.",
+      "weights": {
+        "composition": 24,
+        "support": 12,
+        "spell": 7,
+        "demoralize": 5,
+        "knowledge": 4,
+        "melee": -5
+      },
+      "conditional_rules": [
+        {
+          "when": "composition_inactive",
+          "tag": "composition",
+          "weight": 30
+        },
+        {
+          "when": "many_allies_in_area",
+          "tag": "support",
+          "weight": 12
+        },
+        {
+          "when": "threatened_in_melee",
+          "tag": "reposition",
+          "weight": 10
+        }
+      ],
+      "nodes": [
+        {
+          "id": "bard-enter",
+          "label": "Enter Bard flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "bard-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Select the composition that improves the most allies or hinders the most enemies."
+        },
+        {
+          "id": "bard-opening",
+          "label": "Select the composition that improves the most allies or hinders the most enemies.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "bard-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Refresh the composition before it expires and keep allies inside its area."
+        },
+        {
+          "id": "bard-maintenance",
+          "label": "Refresh the composition before it expires and keep allies inside its area.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "bard-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Protected midline maximizing composition coverage."
+        },
+        {
+          "id": "bard-position",
+          "label": "Reposition: Protected midline maximizing composition coverage.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "bard-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use a composition, then a spell, skill action, or Strike that benefits from the party-wide modifier."
+        },
+        {
+          "id": "bard-core",
+          "label": "Use a composition, then a spell, skill action, or Strike that benefits from the party-wide modifier.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "bard-fallback",
+          "label": "Demoralize, Recall Knowledge, cast a cantrip, or reposition to preserve composition coverage.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "bard-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "bard-enter",
+          "to": "bard-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "bard-opening-check",
+          "to": "bard-opening",
+          "condition": "No"
+        },
+        {
+          "from": "bard-opening-check",
+          "to": "bard-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "bard-opening",
+          "to": "bard-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "bard-maintenance-check",
+          "to": "bard-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "bard-maintenance-check",
+          "to": "bard-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "bard-maintenance",
+          "to": "bard-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "bard-position-check",
+          "to": "bard-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "bard-position-check",
+          "to": "bard-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "bard-position",
+          "to": "bard-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "bard-core-check",
+          "to": "bard-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "bard-core-check",
+          "to": "bard-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "bard-core",
+          "to": "bard-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "bard-fallback",
+          "to": "bard-return",
+          "condition": ""
+        }
+      ]
+    },
+    "champion": {
+      "id": "class-champion",
+      "class_slug": "champion",
+      "class_name": "Champion",
+      "role": "protective aura frontline",
+      "role_profile": {
+        "primary": "Tank",
+        "secondary": "Healer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Champion.",
+      "positioning": "Frontline anchor near allies, between enemies and vulnerable party members.",
+      "weights": {
+        "aura": 20,
+        "healing": 18,
+        "raise-shield": 10,
+        "reaction": 12,
+        "melee": 5,
+        "reposition": 7
+      },
+      "conditional_rules": [
+        {
+          "when": "ally_critical",
+          "tag": "healing",
+          "weight": 34
+        },
+        {
+          "when": "aura_misses_allies",
+          "tag": "reposition",
+          "weight": 18
+        },
+        {
+          "when": "last_action",
+          "tag": "raise-shield",
+          "weight": 12
+        }
+      ],
+      "nodes": [
+        {
+          "id": "champion-enter",
+          "label": "Enter Champion flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "champion-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Take a position where the champion's aura and reaction can protect vulnerable allies."
+        },
+        {
+          "id": "champion-opening",
+          "label": "Take a position where the champion's aura and reaction can protect vulnerable allies.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "champion-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Keep the most threatened allies and enemies inside reaction range; preserve the reaction."
+        },
+        {
+          "id": "champion-maintenance",
+          "label": "Keep the most threatened allies and enemies inside reaction range; preserve the reaction.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "champion-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Frontline anchor near allies, between enemies and vulnerable party members."
+        },
+        {
+          "id": "champion-position",
+          "label": "Reposition: Frontline anchor near allies, between enemies and vulnerable party members.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "champion-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Strike or use a devotion spell while holding a protective lane and keeping a shield ready."
+        },
+        {
+          "id": "champion-core",
+          "label": "Strike or use a devotion spell while holding a protective lane and keeping a shield ready.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "champion-fallback",
+          "label": "Stride to restore aura coverage, Raise Shield, Lay on Hands, or use Athletics.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "champion-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "champion-enter",
+          "to": "champion-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "champion-opening-check",
+          "to": "champion-opening",
+          "condition": "No"
+        },
+        {
+          "from": "champion-opening-check",
+          "to": "champion-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "champion-opening",
+          "to": "champion-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "champion-maintenance-check",
+          "to": "champion-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "champion-maintenance-check",
+          "to": "champion-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "champion-maintenance",
+          "to": "champion-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "champion-position-check",
+          "to": "champion-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "champion-position-check",
+          "to": "champion-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "champion-position",
+          "to": "champion-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "champion-core-check",
+          "to": "champion-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "champion-core-check",
+          "to": "champion-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "champion-core",
+          "to": "champion-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "champion-fallback",
+          "to": "champion-return",
+          "condition": ""
+        }
+      ]
+    },
+    "cleric": {
+      "id": "class-cleric",
+      "class_slug": "cleric",
+      "class_name": "Cleric",
+      "role": "divine healer and support caster",
+      "role_profile": {
+        "primary": "Healer",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Cleric.",
+      "positioning": "Protected midline with legal healing paths to the whole party.",
+      "weights": {
+        "healing": 26,
+        "area-heal": 15,
+        "support": 10,
+        "spell": 5,
+        "stabilize": -18,
+        "melee": -4
+      },
+      "conditional_rules": [
+        {
+          "when": "ally_dying",
+          "tag": "healing",
+          "weight": 80
+        },
+        {
+          "when": "ally_critical",
+          "tag": "healing",
+          "weight": 38
+        },
+        {
+          "when": "healing_available",
+          "tag": "stabilize",
+          "weight": -100
+        }
+      ],
+      "nodes": [
+        {
+          "id": "cleric-enter",
+          "label": "Enter Cleric flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "cleric-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Assess expected damage, ally HP, divine font, and enemy weaknesses before spending ranked slots."
+        },
+        {
+          "id": "cleric-opening",
+          "label": "Assess expected damage, ally HP, divine font, and enemy weaknesses before spending ranked slots.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "cleric-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Keep enough healing to recover a dying ally and avoid standing in unnecessary melee danger."
+        },
+        {
+          "id": "cleric-maintenance",
+          "label": "Keep enough healing to recover a dying ally and avoid standing in unnecessary melee danger.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "cleric-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Protected midline with legal healing paths to the whole party."
+        },
+        {
+          "id": "cleric-position",
+          "label": "Reposition: Protected midline with legal healing paths to the whole party.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "cleric-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Heal allies early enough to prevent collapse; use buffs, debuffs, sanctification, or damage when no urgent healing is needed."
+        },
+        {
+          "id": "cleric-core",
+          "label": "Heal allies early enough to prevent collapse; use buffs, debuffs, sanctification, or damage when no urgent healing is needed.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "cleric-fallback",
+          "label": "Use a cantrip, weapon, Recall Knowledge, Raise Shield, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "cleric-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "cleric-enter",
+          "to": "cleric-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "cleric-opening-check",
+          "to": "cleric-opening",
+          "condition": "No"
+        },
+        {
+          "from": "cleric-opening-check",
+          "to": "cleric-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "cleric-opening",
+          "to": "cleric-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "cleric-maintenance-check",
+          "to": "cleric-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "cleric-maintenance-check",
+          "to": "cleric-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "cleric-maintenance",
+          "to": "cleric-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "cleric-position-check",
+          "to": "cleric-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "cleric-position-check",
+          "to": "cleric-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "cleric-position",
+          "to": "cleric-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "cleric-core-check",
+          "to": "cleric-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "cleric-core-check",
+          "to": "cleric-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "cleric-core",
+          "to": "cleric-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "cleric-fallback",
+          "to": "cleric-return",
+          "condition": ""
+        }
+      ]
+    },
+    "commander": {
+      "id": "class-commander",
+      "class_slug": "commander",
+      "class_name": "Commander",
+      "role": "formation and tactic coordinator",
+      "role_profile": {
+        "primary": "Annoyer",
+        "secondary": "Tank",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Commander.",
+      "positioning": "Midline where banner and tactics reach multiple allies.",
+      "weights": {
+        "tactic": 24,
+        "command": 20,
+        "banner": 16,
+        "support": 12,
+        "strike": 2,
+        "reposition": 5
+      },
+      "conditional_rules": [
+        {
+          "when": "many_allies_in_area",
+          "tag": "tactic",
+          "weight": 18
+        },
+        {
+          "when": "ally_can_react",
+          "tag": "command",
+          "weight": 10
+        },
+        {
+          "when": "isolated",
+          "tag": "reposition",
+          "weight": 12
+        }
+      ],
+      "nodes": [
+        {
+          "id": "commander-enter",
+          "label": "Enter Commander flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "commander-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Choose a formation and tactic that grants the most valuable allied movement or attacks."
+        },
+        {
+          "id": "commander-opening",
+          "label": "Choose a formation and tactic that grants the most valuable allied movement or attacks.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "commander-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Keep the banner relevant and do not command allies into illegal or unsafe positions."
+        },
+        {
+          "id": "commander-maintenance",
+          "label": "Keep the banner relevant and do not command allies into illegal or unsafe positions.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "commander-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Midline where banner and tactics reach multiple allies."
+        },
+        {
+          "id": "commander-position",
+          "label": "Reposition: Midline where banner and tactics reach multiple allies.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "commander-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use a tactic when its subordinate actions outperform the commander's own action."
+        },
+        {
+          "id": "commander-core",
+          "label": "Use a tactic when its subordinate actions outperform the commander's own action.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "commander-fallback",
+          "label": "Strike, Raise Shield, Recall Knowledge, or reposition the formation.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "commander-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "commander-enter",
+          "to": "commander-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "commander-opening-check",
+          "to": "commander-opening",
+          "condition": "No"
+        },
+        {
+          "from": "commander-opening-check",
+          "to": "commander-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "commander-opening",
+          "to": "commander-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "commander-maintenance-check",
+          "to": "commander-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "commander-maintenance-check",
+          "to": "commander-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "commander-maintenance",
+          "to": "commander-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "commander-position-check",
+          "to": "commander-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "commander-position-check",
+          "to": "commander-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "commander-position",
+          "to": "commander-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "commander-core-check",
+          "to": "commander-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "commander-core-check",
+          "to": "commander-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "commander-core",
+          "to": "commander-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "commander-fallback",
+          "to": "commander-return",
+          "condition": ""
+        }
+      ]
+    },
+    "druid": {
+      "id": "class-druid",
+      "class_slug": "druid",
+      "class_name": "Druid",
+      "role": "primal controller, healer, or form combatant",
+      "role_profile": {
+        "primary": "Annoyer",
+        "secondary": "Healer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Druid.",
+      "positioning": "Backline for casting; frontline only while an appropriate battle form is active.",
+      "weights": {
+        "control": 14,
+        "healing": 14,
+        "area": 9,
+        "battle-form": 12,
+        "companion": 10,
+        "spell": 6
+      },
+      "conditional_rules": [
+        {
+          "when": "ally_critical",
+          "tag": "healing",
+          "weight": 32
+        },
+        {
+          "when": "clustered_enemies",
+          "tag": "area",
+          "weight": 16
+        },
+        {
+          "when": "battle_form_active",
+          "tag": "melee",
+          "weight": 12
+        }
+      ],
+      "nodes": [
+        {
+          "id": "druid-enter",
+          "label": "Enter Druid flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "druid-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Select the order-specific plan: spell control, animal companion support, healing, or battle form."
+        },
+        {
+          "id": "druid-opening",
+          "label": "Select the order-specific plan: spell control, animal companion support, healing, or battle form.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "druid-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Sustain control effects and command a companion only when its two actions justify the cost."
+        },
+        {
+          "id": "druid-maintenance",
+          "label": "Sustain control effects and command a companion only when its two actions justify the cost.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "druid-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Backline for casting; frontline only while an appropriate battle form is active."
+        },
+        {
+          "id": "druid-position",
+          "label": "Reposition: Backline for casting; frontline only while an appropriate battle form is active.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "druid-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use terrain, areas, summons, forms, or healing according to the chosen order and battlefield."
+        },
+        {
+          "id": "druid-core",
+          "label": "Use terrain, areas, summons, forms, or healing according to the chosen order and battlefield.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "druid-fallback",
+          "label": "Cast a cantrip, Recall Knowledge, Raise Shield, command the companion, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "druid-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "druid-enter",
+          "to": "druid-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "druid-opening-check",
+          "to": "druid-opening",
+          "condition": "No"
+        },
+        {
+          "from": "druid-opening-check",
+          "to": "druid-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "druid-opening",
+          "to": "druid-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "druid-maintenance-check",
+          "to": "druid-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "druid-maintenance-check",
+          "to": "druid-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "druid-maintenance",
+          "to": "druid-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "druid-position-check",
+          "to": "druid-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "druid-position-check",
+          "to": "druid-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "druid-position",
+          "to": "druid-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "druid-core-check",
+          "to": "druid-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "druid-core-check",
+          "to": "druid-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "druid-core",
+          "to": "druid-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "druid-fallback",
+          "to": "druid-return",
+          "condition": ""
+        }
+      ]
+    },
+    "exemplar": {
+      "id": "class-exemplar",
+      "class_slug": "exemplar",
+      "class_name": "Exemplar",
+      "role": "ikon-cycling martial",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Tank",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Exemplar.",
+      "positioning": "Frontline or skirmish range dictated by the active ikon.",
+      "weights": {
+        "immanence": 18,
+        "transcendence": 22,
+        "shift-immanence": 16,
+        "melee": 6,
+        "support": 6
+      },
+      "conditional_rules": [
+        {
+          "when": "missing_immanence",
+          "tag": "shift-immanence",
+          "weight": 28
+        },
+        {
+          "when": "transcendence_ready",
+          "tag": "transcendence",
+          "weight": 26
+        },
+        {
+          "when": "transcendence_used",
+          "tag": "shift-immanence",
+          "weight": 22
+        }
+      ],
+      "nodes": [
+        {
+          "id": "exemplar-enter",
+          "label": "Enter Exemplar flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "exemplar-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Choose the ikon whose immanence best supports the opening position and target."
+        },
+        {
+          "id": "exemplar-opening",
+          "label": "Choose the ikon whose immanence best supports the opening position and target.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "exemplar-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Track the divine spark and avoid shifting without a meaningful immanence or transcendence payoff."
+        },
+        {
+          "id": "exemplar-maintenance",
+          "label": "Track the divine spark and avoid shifting without a meaningful immanence or transcendence payoff.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "exemplar-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Frontline or skirmish range dictated by the active ikon."
+        },
+        {
+          "id": "exemplar-position",
+          "label": "Reposition: Frontline or skirmish range dictated by the active ikon.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "exemplar-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Exploit the current immanence, Transcend at a high-value moment, then Shift Immanence to the next useful ikon."
+        },
+        {
+          "id": "exemplar-core",
+          "label": "Exploit the current immanence, Transcend at a high-value moment, then Shift Immanence to the next useful ikon.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "exemplar-fallback",
+          "label": "Strike, use Athletics, protect an ally, or reposition for the current ikon.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "exemplar-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "exemplar-enter",
+          "to": "exemplar-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "exemplar-opening-check",
+          "to": "exemplar-opening",
+          "condition": "No"
+        },
+        {
+          "from": "exemplar-opening-check",
+          "to": "exemplar-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "exemplar-opening",
+          "to": "exemplar-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "exemplar-maintenance-check",
+          "to": "exemplar-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "exemplar-maintenance-check",
+          "to": "exemplar-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "exemplar-maintenance",
+          "to": "exemplar-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "exemplar-position-check",
+          "to": "exemplar-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "exemplar-position-check",
+          "to": "exemplar-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "exemplar-position",
+          "to": "exemplar-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "exemplar-core-check",
+          "to": "exemplar-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "exemplar-core-check",
+          "to": "exemplar-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "exemplar-core",
+          "to": "exemplar-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "exemplar-fallback",
+          "to": "exemplar-return",
+          "condition": ""
+        }
+      ]
+    },
+    "fighter": {
+      "id": "class-fighter",
+      "class_slug": "fighter",
+      "class_name": "Fighter",
+      "role": "accurate weapon controller",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Tank",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Fighter.",
+      "positioning": "Frontline control square with safe flanking and reaction coverage.",
+      "weights": {
+        "strike": 8,
+        "reaction": 16,
+        "athletics": 8,
+        "flank": 8,
+        "raise-shield": 7,
+        "ranged": 2
+      },
+      "conditional_rules": [
+        {
+          "when": "target_not_off_guard",
+          "tag": "athletics",
+          "weight": 8
+        },
+        {
+          "when": "safe_flank_available",
+          "tag": "flank",
+          "weight": 12
+        },
+        {
+          "when": "last_action",
+          "tag": "raise-shield",
+          "weight": 8
+        }
+      ],
+      "nodes": [
+        {
+          "id": "fighter-enter",
+          "label": "Enter Fighter flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "fighter-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Occupy a lane that threatens enemy movement and enables Reactive Strike."
+        },
+        {
+          "id": "fighter-opening",
+          "label": "Occupy a lane that threatens enemy movement and enables Reactive Strike.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "fighter-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Keep a legal reaction, weapon configuration, and target under pressure."
+        },
+        {
+          "id": "fighter-maintenance",
+          "label": "Keep a legal reaction, weapon configuration, and target under pressure.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "fighter-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Frontline control square with safe flanking and reaction coverage."
+        },
+        {
+          "id": "fighter-position",
+          "label": "Reposition: Frontline control square with safe flanking and reaction coverage.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "fighter-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use the most accurate press, flourish, maneuver, or Strike sequence for the current MAP."
+        },
+        {
+          "id": "fighter-core",
+          "label": "Use the most accurate press, flourish, maneuver, or Strike sequence for the current MAP.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "fighter-fallback",
+          "label": "Trip, Grapple, Shove, Raise Shield, Step, or reposition to threaten a key enemy.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "fighter-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "fighter-enter",
+          "to": "fighter-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "fighter-opening-check",
+          "to": "fighter-opening",
+          "condition": "No"
+        },
+        {
+          "from": "fighter-opening-check",
+          "to": "fighter-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "fighter-opening",
+          "to": "fighter-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "fighter-maintenance-check",
+          "to": "fighter-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "fighter-maintenance-check",
+          "to": "fighter-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "fighter-maintenance",
+          "to": "fighter-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "fighter-position-check",
+          "to": "fighter-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "fighter-position-check",
+          "to": "fighter-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "fighter-position",
+          "to": "fighter-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "fighter-core-check",
+          "to": "fighter-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "fighter-core-check",
+          "to": "fighter-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "fighter-core",
+          "to": "fighter-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "fighter-fallback",
+          "to": "fighter-return",
+          "condition": ""
+        }
+      ]
+    },
+    "guardian": {
+      "id": "class-guardian",
+      "class_slug": "guardian",
+      "class_name": "Guardian",
+      "role": "damage-intercepting defender",
+      "role_profile": {
+        "primary": "Tank",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Guardian.",
+      "positioning": "Frontline bodyguard adjacent to the ally most likely to be attacked.",
+      "weights": {
+        "taunt": 30,
+        "intercept": 24,
+        "protection": 20,
+        "raise-shield": 10,
+        "athletics": 7,
+        "strike": 2
+      },
+      "conditional_rules": [
+        {
+          "when": "target_unmarked",
+          "tag": "taunt",
+          "weight": 30
+        },
+        {
+          "when": "target_marked",
+          "tag": "taunt",
+          "weight": -100
+        },
+        {
+          "when": "ally_threatened",
+          "tag": "protection",
+          "weight": 22
+        }
+      ],
+      "nodes": [
+        {
+          "id": "guardian-enter",
+          "label": "Enter Guardian flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "guardian-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Taunt the most dangerous enemy that is not already affected by this guardian's Taunt."
+        },
+        {
+          "id": "guardian-opening",
+          "label": "Taunt the most dangerous enemy that is not already affected by this guardian's Taunt.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "guardian-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Stay close enough to intercept attacks against vulnerable allies and avoid re-taunting the same target."
+        },
+        {
+          "id": "guardian-maintenance",
+          "label": "Stay close enough to intercept attacks against vulnerable allies and avoid re-taunting the same target.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "guardian-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Frontline bodyguard adjacent to the ally most likely to be attacked."
+        },
+        {
+          "id": "guardian-position",
+          "label": "Reposition: Frontline bodyguard adjacent to the ally most likely to be attacked.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "guardian-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Control the taunted threat, Intercept Attack when valuable, and use shield or armor techniques."
+        },
+        {
+          "id": "guardian-core",
+          "label": "Control the taunted threat, Intercept Attack when valuable, and use shield or armor techniques.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "guardian-fallback",
+          "label": "Strike, Grapple, Shove, Raise Shield, or reposition between threat and ally.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "guardian-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "guardian-enter",
+          "to": "guardian-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "guardian-opening-check",
+          "to": "guardian-opening",
+          "condition": "No"
+        },
+        {
+          "from": "guardian-opening-check",
+          "to": "guardian-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "guardian-opening",
+          "to": "guardian-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "guardian-maintenance-check",
+          "to": "guardian-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "guardian-maintenance-check",
+          "to": "guardian-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "guardian-maintenance",
+          "to": "guardian-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "guardian-position-check",
+          "to": "guardian-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "guardian-position-check",
+          "to": "guardian-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "guardian-position",
+          "to": "guardian-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "guardian-core-check",
+          "to": "guardian-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "guardian-core-check",
+          "to": "guardian-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "guardian-core",
+          "to": "guardian-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "guardian-fallback",
+          "to": "guardian-return",
+          "condition": ""
+        }
+      ]
+    },
+    "gunslinger": {
+      "id": "class-gunslinger",
+      "class_slug": "gunslinger",
+      "class_name": "Gunslinger",
+      "role": "mobile ranged weapon specialist",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Gunslinger.",
+      "positioning": "Backline with clear sight, useful cover, and room to retreat.",
+      "weights": {
+        "ranged": 12,
+        "reload": 26,
+        "slingers-reload": 30,
+        "cover": 7,
+        "reposition": 8,
+        "melee": -12
+      },
+      "conditional_rules": [
+        {
+          "when": "weapon_unloaded",
+          "tag": "reload",
+          "weight": 40
+        },
+        {
+          "when": "threatened_in_melee",
+          "tag": "reposition",
+          "weight": 18
+        },
+        {
+          "when": "clear_shot",
+          "tag": "ranged",
+          "weight": 12
+        }
+      ],
+      "nodes": [
+        {
+          "id": "gunslinger-enter",
+          "label": "Enter Gunslinger flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "gunslinger-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Establish a clear firing lane and load the preferred firearm or crossbow."
+        },
+        {
+          "id": "gunslinger-opening",
+          "label": "Establish a clear firing lane and load the preferred firearm or crossbow.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "gunslinger-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Reload through the way-specific reload whenever its extra effect is useful."
+        },
+        {
+          "id": "gunslinger-maintenance",
+          "label": "Reload through the way-specific reload whenever its extra effect is useful.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "gunslinger-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Backline with clear sight, useful cover, and room to retreat."
+        },
+        {
+          "id": "gunslinger-position",
+          "label": "Reposition: Backline with clear sight, useful cover, and room to retreat.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "gunslinger-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Fire the best loaded weapon at favorable range, then reload or reposition before another shot."
+        },
+        {
+          "id": "gunslinger-core",
+          "label": "Fire the best loaded weapon at favorable range, then reload or reposition before another shot.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "gunslinger-fallback",
+          "label": "Create a Diversion, Demoralize, Take Cover legally, Recall Knowledge, or switch weapons.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "gunslinger-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "gunslinger-enter",
+          "to": "gunslinger-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "gunslinger-opening-check",
+          "to": "gunslinger-opening",
+          "condition": "No"
+        },
+        {
+          "from": "gunslinger-opening-check",
+          "to": "gunslinger-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "gunslinger-opening",
+          "to": "gunslinger-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "gunslinger-maintenance-check",
+          "to": "gunslinger-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "gunslinger-maintenance-check",
+          "to": "gunslinger-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "gunslinger-maintenance",
+          "to": "gunslinger-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "gunslinger-position-check",
+          "to": "gunslinger-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "gunslinger-position-check",
+          "to": "gunslinger-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "gunslinger-position",
+          "to": "gunslinger-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "gunslinger-core-check",
+          "to": "gunslinger-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "gunslinger-core-check",
+          "to": "gunslinger-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "gunslinger-core",
+          "to": "gunslinger-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "gunslinger-fallback",
+          "to": "gunslinger-return",
+          "condition": ""
+        }
+      ]
+    },
+    "inventor": {
+      "id": "class-inventor",
+      "class_slug": "inventor",
+      "class_name": "Inventor",
+      "role": "innovation-powered martial",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Inventor.",
+      "positioning": "Range appropriate to the innovation while avoiding allies in harmful areas.",
+      "weights": {
+        "overdrive": 28,
+        "innovation": 16,
+        "unstable": 9,
+        "area": 7,
+        "strike": 6,
+        "repair": 5
+      },
+      "conditional_rules": [
+        {
+          "when": "missing_overdrive",
+          "tag": "overdrive",
+          "weight": 32
+        },
+        {
+          "when": "clustered_enemies",
+          "tag": "area",
+          "weight": 12
+        },
+        {
+          "when": "unstable_used",
+          "tag": "unstable",
+          "weight": -100
+        }
+      ],
+      "nodes": [
+        {
+          "id": "inventor-enter",
+          "label": "Enter Inventor flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "inventor-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Activate Overdrive before repeated Strikes when the expected fight duration justifies the action."
+        },
+        {
+          "id": "inventor-opening",
+          "label": "Activate Overdrive before repeated Strikes when the expected fight duration justifies the action.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "inventor-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Track Overdrive, unstable use, innovation mode, and repair needs."
+        },
+        {
+          "id": "inventor-maintenance",
+          "label": "Track Overdrive, unstable use, innovation mode, and repair needs.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "inventor-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Range appropriate to the innovation while avoiding allies in harmful areas."
+        },
+        {
+          "id": "inventor-position",
+          "label": "Reposition: Range appropriate to the innovation while avoiding allies in harmful areas.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "inventor-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use an innovation action or Strike enhanced by Overdrive; use unstable actions only for meaningful payoff."
+        },
+        {
+          "id": "inventor-core",
+          "label": "Use an innovation action or Strike enhanced by Overdrive; use unstable actions only for meaningful payoff.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "inventor-fallback",
+          "label": "Explode against a safe cluster, Strike, Recall Knowledge, Repair when possible, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "inventor-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "inventor-enter",
+          "to": "inventor-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "inventor-opening-check",
+          "to": "inventor-opening",
+          "condition": "No"
+        },
+        {
+          "from": "inventor-opening-check",
+          "to": "inventor-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "inventor-opening",
+          "to": "inventor-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "inventor-maintenance-check",
+          "to": "inventor-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "inventor-maintenance-check",
+          "to": "inventor-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "inventor-maintenance",
+          "to": "inventor-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "inventor-position-check",
+          "to": "inventor-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "inventor-position-check",
+          "to": "inventor-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "inventor-position",
+          "to": "inventor-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "inventor-core-check",
+          "to": "inventor-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "inventor-core-check",
+          "to": "inventor-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "inventor-core",
+          "to": "inventor-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "inventor-fallback",
+          "to": "inventor-return",
+          "condition": ""
+        }
+      ]
+    },
+    "investigator": {
+      "id": "class-investigator",
+      "class_slug": "investigator",
+      "class_name": "Investigator",
+      "role": "foreknowledge precision striker",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Investigator.",
+      "positioning": "Skirmish or ranged line that preserves target options after Devise a Stratagem.",
+      "weights": {
+        "devise": 32,
+        "strategic-strike": 22,
+        "knowledge": 8,
+        "skill": 6,
+        "strike": 3
+      },
+      "conditional_rules": [
+        {
+          "when": "no_devised_roll",
+          "tag": "devise",
+          "weight": 36
+        },
+        {
+          "when": "devised_roll_good",
+          "tag": "strike",
+          "weight": 24
+        },
+        {
+          "when": "devised_roll_bad",
+          "tag": "attack",
+          "weight": -30
+        }
+      ],
+      "nodes": [
+        {
+          "id": "investigator-enter",
+          "label": "Enter Investigator flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "investigator-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Devise a Stratagem against the target most likely to reward Strategic Strike."
+        },
+        {
+          "id": "investigator-opening",
+          "label": "Devise a Stratagem against the target most likely to reward Strategic Strike.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "investigator-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Use the foreseen d20 to decide whether to attack that target or spend actions elsewhere."
+        },
+        {
+          "id": "investigator-maintenance",
+          "label": "Use the foreseen d20 to decide whether to attack that target or spend actions elsewhere.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "investigator-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Skirmish or ranged line that preserves target options after Devise a Stratagem."
+        },
+        {
+          "id": "investigator-position",
+          "label": "Reposition: Skirmish or ranged line that preserves target options after Devise a Stratagem.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "investigator-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "On a good devised result, make the qualifying Strike; on a poor result, use a save spell, skill, aid, movement, or different target."
+        },
+        {
+          "id": "investigator-core",
+          "label": "On a good devised result, make the qualifying Strike; on a poor result, use a save spell, skill, aid, movement, or different target.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "investigator-fallback",
+          "label": "Pursue a Lead benefit, Recall Knowledge, support, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "investigator-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "investigator-enter",
+          "to": "investigator-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "investigator-opening-check",
+          "to": "investigator-opening",
+          "condition": "No"
+        },
+        {
+          "from": "investigator-opening-check",
+          "to": "investigator-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "investigator-opening",
+          "to": "investigator-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "investigator-maintenance-check",
+          "to": "investigator-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "investigator-maintenance-check",
+          "to": "investigator-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "investigator-maintenance",
+          "to": "investigator-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "investigator-position-check",
+          "to": "investigator-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "investigator-position-check",
+          "to": "investigator-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "investigator-position",
+          "to": "investigator-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "investigator-core-check",
+          "to": "investigator-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "investigator-core-check",
+          "to": "investigator-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "investigator-core",
+          "to": "investigator-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "investigator-fallback",
+          "to": "investigator-return",
+          "condition": ""
+        }
+      ]
+    },
+    "kineticist": {
+      "id": "class-kineticist",
+      "class_slug": "kineticist",
+      "class_name": "Kineticist",
+      "role": "repeatable elemental controller",
+      "role_profile": {
+        "primary": "Annoyer",
+        "secondary": "DPS",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Kineticist.",
+      "positioning": "Midline at the safest range that still places aura and impulses correctly.",
+      "weights": {
+        "channel-elements": 32,
+        "impulse": 18,
+        "overflow": 10,
+        "aura": 10,
+        "elemental-blast": 7,
+        "weakness": 8
+      },
+      "conditional_rules": [
+        {
+          "when": "channel_inactive",
+          "tag": "channel-elements",
+          "weight": 40
+        },
+        {
+          "when": "clustered_enemies",
+          "tag": "area",
+          "weight": 15
+        },
+        {
+          "when": "enemy_weakness_known",
+          "tag": "weakness",
+          "weight": 16
+        }
+      ],
+      "nodes": [
+        {
+          "id": "kineticist-enter",
+          "label": "Enter Kineticist flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "kineticist-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Channel Elements before impulses and choose an aura position matching the gate and impulse suite."
+        },
+        {
+          "id": "kineticist-opening",
+          "label": "Channel Elements before impulses and choose an aura position matching the gate and impulse suite.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "kineticist-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Keep the kinetic aura active and account for overflow before planning the next impulse."
+        },
+        {
+          "id": "kineticist-maintenance",
+          "label": "Keep the kinetic aura active and account for overflow before planning the next impulse.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "kineticist-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Midline at the safest range that still places aura and impulses correctly."
+        },
+        {
+          "id": "kineticist-position",
+          "label": "Reposition: Midline at the safest range that still places aura and impulses correctly.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "kineticist-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use the impulse that best matches enemy weakness, area shape, control need, or ally support."
+        },
+        {
+          "id": "kineticist-core",
+          "label": "Use the impulse that best matches enemy weakness, area shape, control need, or ally support.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "kineticist-fallback",
+          "label": "Elemental Blast, Base Kinesis, Extract Element, sustain an impulse, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "kineticist-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "kineticist-enter",
+          "to": "kineticist-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "kineticist-opening-check",
+          "to": "kineticist-opening",
+          "condition": "No"
+        },
+        {
+          "from": "kineticist-opening-check",
+          "to": "kineticist-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "kineticist-opening",
+          "to": "kineticist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "kineticist-maintenance-check",
+          "to": "kineticist-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "kineticist-maintenance-check",
+          "to": "kineticist-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "kineticist-maintenance",
+          "to": "kineticist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "kineticist-position-check",
+          "to": "kineticist-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "kineticist-position-check",
+          "to": "kineticist-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "kineticist-position",
+          "to": "kineticist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "kineticist-core-check",
+          "to": "kineticist-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "kineticist-core-check",
+          "to": "kineticist-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "kineticist-core",
+          "to": "kineticist-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "kineticist-fallback",
+          "to": "kineticist-return",
+          "condition": ""
+        }
+      ]
+    },
+    "magus": {
+      "id": "class-magus",
+      "class_slug": "magus",
+      "class_name": "Magus",
+      "role": "spell-and-strike burst martial",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Magus.",
+      "positioning": "Melee or ranged hybrid-study distance with a clear Spellstrike line.",
+      "weights": {
+        "spellstrike": 34,
+        "recharge-spellstrike": 26,
+        "arcane-cascade": 10,
+        "strike": 5,
+        "spell": 5
+      },
+      "conditional_rules": [
+        {
+          "when": "spellstrike_ready",
+          "tag": "spellstrike",
+          "weight": 34
+        },
+        {
+          "when": "spellstrike_empty",
+          "tag": "recharge-spellstrike",
+          "weight": 30
+        },
+        {
+          "when": "poor_attack_odds",
+          "tag": "spellstrike",
+          "weight": -18
+        }
+      ],
+      "nodes": [
+        {
+          "id": "magus-enter",
+          "label": "Enter Magus flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "magus-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Enter the hybrid-study position and set up Arcane Cascade when its benefit outweighs the action."
+        },
+        {
+          "id": "magus-opening",
+          "label": "Enter the hybrid-study position and set up Arcane Cascade when its benefit outweighs the action.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "magus-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Track Spellstrike charge, MAP, spell resources, and recharge options."
+        },
+        {
+          "id": "magus-maintenance",
+          "label": "Track Spellstrike charge, MAP, spell resources, and recharge options.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "magus-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Melee or ranged hybrid-study distance with a clear Spellstrike line."
+        },
+        {
+          "id": "magus-position",
+          "label": "Reposition: Melee or ranged hybrid-study distance with a clear Spellstrike line.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "magus-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use Spellstrike on a high-value target when charged and accurate; then recharge efficiently."
+        },
+        {
+          "id": "magus-core",
+          "label": "Use Spellstrike on a high-value target when charged and accurate; then recharge efficiently.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "magus-fallback",
+          "label": "Strike, cast a spell normally, use a conflux spell to recharge, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "magus-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "magus-enter",
+          "to": "magus-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "magus-opening-check",
+          "to": "magus-opening",
+          "condition": "No"
+        },
+        {
+          "from": "magus-opening-check",
+          "to": "magus-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "magus-opening",
+          "to": "magus-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "magus-maintenance-check",
+          "to": "magus-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "magus-maintenance-check",
+          "to": "magus-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "magus-maintenance",
+          "to": "magus-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "magus-position-check",
+          "to": "magus-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "magus-position-check",
+          "to": "magus-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "magus-position",
+          "to": "magus-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "magus-core-check",
+          "to": "magus-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "magus-core-check",
+          "to": "magus-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "magus-core",
+          "to": "magus-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "magus-fallback",
+          "to": "magus-return",
+          "condition": ""
+        }
+      ]
+    },
+    "monk": {
+      "id": "class-monk",
+      "class_slug": "monk",
+      "class_name": "Monk",
+      "role": "mobile stance martial",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Monk.",
+      "positioning": "Mobile frontline, engaging priority targets without accepting avoidable surrounds.",
+      "weights": {
+        "stance": 24,
+        "flurry-of-blows": 30,
+        "mobility": 13,
+        "athletics": 8,
+        "third-attack": -20
+      },
+      "conditional_rules": [
+        {
+          "when": "missing_stance",
+          "tag": "stance",
+          "weight": 26
+        },
+        {
+          "when": "flourish_available",
+          "tag": "flurry-of-blows",
+          "weight": 30
+        },
+        {
+          "when": "attack_one_plus",
+          "tag": "mobility",
+          "weight": 8
+        }
+      ],
+      "nodes": [
+        {
+          "id": "monk-enter",
+          "label": "Enter Monk flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "monk-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Enter the stance that matches the current weaponless, defensive, or mobility plan."
+        },
+        {
+          "id": "monk-opening",
+          "label": "Enter the stance that matches the current weaponless, defensive, or mobility plan.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "monk-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Use superior movement to choose engagements and preserve an action after Flurry of Blows."
+        },
+        {
+          "id": "monk-maintenance",
+          "label": "Use superior movement to choose engagements and preserve an action after Flurry of Blows.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "monk-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Mobile frontline, engaging priority targets without accepting avoidable surrounds."
+        },
+        {
+          "id": "monk-position",
+          "label": "Reposition: Mobile frontline, engaging priority targets without accepting avoidable surrounds.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "monk-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Flurry once, then use movement, Athletics, defense, or ki actions instead of wasting MAP attacks."
+        },
+        {
+          "id": "monk-core",
+          "label": "Flurry once, then use movement, Athletics, defense, or ki actions instead of wasting MAP attacks.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "monk-fallback",
+          "label": "Step, Stride, Trip, Grapple, Raise Shield if equipped, or use a ki spell.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "monk-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "monk-enter",
+          "to": "monk-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "monk-opening-check",
+          "to": "monk-opening",
+          "condition": "No"
+        },
+        {
+          "from": "monk-opening-check",
+          "to": "monk-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "monk-opening",
+          "to": "monk-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "monk-maintenance-check",
+          "to": "monk-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "monk-maintenance-check",
+          "to": "monk-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "monk-maintenance",
+          "to": "monk-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "monk-position-check",
+          "to": "monk-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "monk-position-check",
+          "to": "monk-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "monk-position",
+          "to": "monk-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "monk-core-check",
+          "to": "monk-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "monk-core-check",
+          "to": "monk-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "monk-core",
+          "to": "monk-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "monk-fallback",
+          "to": "monk-return",
+          "condition": ""
+        }
+      ]
+    },
+    "necromancer": {
+      "id": "class-necromancer",
+      "class_slug": "necromancer",
+      "class_name": "Necromancer",
+      "role": "thrall-based occult controller",
+      "role_profile": {
+        "primary": "Annoyer",
+        "secondary": "DPS",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Necromancer.",
+      "positioning": "Backline behind thralls with legal lines from caster or thrall origins.",
+      "weights": {
+        "create-thrall": 25,
+        "thrall": 20,
+        "sacrifice": 14,
+        "spell": 7,
+        "control": 10,
+        "melee": -12
+      },
+      "conditional_rules": [
+        {
+          "when": "no_thralls",
+          "tag": "create-thrall",
+          "weight": 40
+        },
+        {
+          "when": "thrall_payoff_ready",
+          "tag": "thrall",
+          "weight": 24
+        },
+        {
+          "when": "threatened_in_melee",
+          "tag": "reposition",
+          "weight": 18
+        }
+      ],
+      "nodes": [
+        {
+          "id": "necromancer-enter",
+          "label": "Enter Necromancer flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "necromancer-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Create or position thralls so later grave spells and abilities have valid origins and targets."
+        },
+        {
+          "id": "necromancer-opening",
+          "label": "Create or position thralls so later grave spells and abilities have valid origins and targets.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "necromancer-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Track thrall count, placement, sacrifice value, and effects sustained through them."
+        },
+        {
+          "id": "necromancer-maintenance",
+          "label": "Track thrall count, placement, sacrifice value, and effects sustained through them.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "necromancer-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Backline behind thralls with legal lines from caster or thrall origins."
+        },
+        {
+          "id": "necromancer-position",
+          "label": "Reposition: Backline behind thralls with legal lines from caster or thrall origins.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "necromancer-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use a thrall-enabled ability when its control, damage, or defense exceeds creating another thrall."
+        },
+        {
+          "id": "necromancer-core",
+          "label": "Use a thrall-enabled ability when its control, damage, or defense exceeds creating another thrall.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "necromancer-fallback",
+          "label": "Create Thrall, cast a cantrip, command or reposition minions, or retreat.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "necromancer-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "necromancer-enter",
+          "to": "necromancer-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "necromancer-opening-check",
+          "to": "necromancer-opening",
+          "condition": "No"
+        },
+        {
+          "from": "necromancer-opening-check",
+          "to": "necromancer-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "necromancer-opening",
+          "to": "necromancer-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "necromancer-maintenance-check",
+          "to": "necromancer-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "necromancer-maintenance-check",
+          "to": "necromancer-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "necromancer-maintenance",
+          "to": "necromancer-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "necromancer-position-check",
+          "to": "necromancer-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "necromancer-position-check",
+          "to": "necromancer-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "necromancer-position",
+          "to": "necromancer-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "necromancer-core-check",
+          "to": "necromancer-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "necromancer-core-check",
+          "to": "necromancer-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "necromancer-core",
+          "to": "necromancer-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "necromancer-fallback",
+          "to": "necromancer-return",
+          "condition": ""
+        }
+      ]
+    },
+    "oracle": {
+      "id": "class-oracle",
+      "class_slug": "oracle",
+      "class_name": "Oracle",
+      "role": "curse-managed spontaneous divine caster",
+      "role_profile": {
+        "primary": "Healer",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Oracle.",
+      "positioning": "Protected midline suitable for the mystery's preferred range.",
+      "weights": {
+        "revelation": 18,
+        "cursebound": 12,
+        "healing": 14,
+        "spell": 7,
+        "support": 8
+      },
+      "conditional_rules": [
+        {
+          "when": "cursebound_max",
+          "tag": "cursebound",
+          "weight": -100
+        },
+        {
+          "when": "high_value_revelation",
+          "tag": "revelation",
+          "weight": 24
+        },
+        {
+          "when": "ally_critical",
+          "tag": "healing",
+          "weight": 34
+        }
+      ],
+      "nodes": [
+        {
+          "id": "oracle-enter",
+          "label": "Enter Oracle flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "oracle-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Choose whether the mystery benefit justifies becoming cursebound this encounter."
+        },
+        {
+          "id": "oracle-opening",
+          "label": "Choose whether the mystery benefit justifies becoming cursebound this encounter.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "oracle-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Track cursebound value and refuse cursebound actions at the maximum."
+        },
+        {
+          "id": "oracle-maintenance",
+          "label": "Track cursebound value and refuse cursebound actions at the maximum.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "oracle-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Protected midline suitable for the mystery's preferred range."
+        },
+        {
+          "id": "oracle-position",
+          "label": "Reposition: Protected midline suitable for the mystery's preferred range.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "oracle-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use a revelation spell when its value exceeds the curse cost; otherwise cast repertoire spells."
+        },
+        {
+          "id": "oracle-core",
+          "label": "Use a revelation spell when its value exceeds the curse cost; otherwise cast repertoire spells.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "oracle-fallback",
+          "label": "Heal, support, use a cantrip, Recall Knowledge, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "oracle-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "oracle-enter",
+          "to": "oracle-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "oracle-opening-check",
+          "to": "oracle-opening",
+          "condition": "No"
+        },
+        {
+          "from": "oracle-opening-check",
+          "to": "oracle-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "oracle-opening",
+          "to": "oracle-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "oracle-maintenance-check",
+          "to": "oracle-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "oracle-maintenance-check",
+          "to": "oracle-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "oracle-maintenance",
+          "to": "oracle-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "oracle-position-check",
+          "to": "oracle-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "oracle-position-check",
+          "to": "oracle-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "oracle-position",
+          "to": "oracle-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "oracle-core-check",
+          "to": "oracle-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "oracle-core-check",
+          "to": "oracle-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "oracle-core",
+          "to": "oracle-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "oracle-fallback",
+          "to": "oracle-return",
+          "condition": ""
+        }
+      ]
+    },
+    "psychic": {
+      "id": "class-psychic",
+      "class_slug": "psychic",
+      "class_name": "Psychic",
+      "role": "amped cantrip burst caster",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Psychic.",
+      "positioning": "Backline with a clear casting line and escape route.",
+      "weights": {
+        "unleash-psyche": 28,
+        "amp": 22,
+        "psi-cantrip": 13,
+        "spell": 7,
+        "melee": -12
+      },
+      "conditional_rules": [
+        {
+          "when": "unleash_legal",
+          "tag": "unleash-psyche",
+          "weight": 34
+        },
+        {
+          "when": "psyche_unleashed",
+          "tag": "damage",
+          "weight": 14
+        },
+        {
+          "when": "focus_low",
+          "tag": "amp",
+          "weight": -10
+        }
+      ],
+      "nodes": [
+        {
+          "id": "psychic-enter",
+          "label": "Enter Psychic flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "psychic-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Use a psi cantrip to establish the spellcasting turn needed before Unleash Psyche."
+        },
+        {
+          "id": "psychic-opening",
+          "label": "Use a psi cantrip to establish the spellcasting turn needed before Unleash Psyche.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "psychic-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Track focus points, amps, Unleash duration, and the post-psyche stupefied risk."
+        },
+        {
+          "id": "psychic-maintenance",
+          "label": "Track focus points, amps, Unleash duration, and the post-psyche stupefied risk.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "psychic-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Backline with a clear casting line and escape route."
+        },
+        {
+          "id": "psychic-position",
+          "label": "Reposition: Backline with a clear casting line and escape route.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "psychic-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Unleash Psyche when legal, then use the best damaging or support amp during the two-round window."
+        },
+        {
+          "id": "psychic-core",
+          "label": "Unleash Psyche when legal, then use the best damaging or support amp during the two-round window.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "psychic-fallback",
+          "label": "Use an unamped psi cantrip, support spell, Recall Knowledge, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "psychic-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "psychic-enter",
+          "to": "psychic-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "psychic-opening-check",
+          "to": "psychic-opening",
+          "condition": "No"
+        },
+        {
+          "from": "psychic-opening-check",
+          "to": "psychic-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "psychic-opening",
+          "to": "psychic-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "psychic-maintenance-check",
+          "to": "psychic-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "psychic-maintenance-check",
+          "to": "psychic-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "psychic-maintenance",
+          "to": "psychic-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "psychic-position-check",
+          "to": "psychic-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "psychic-position-check",
+          "to": "psychic-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "psychic-position",
+          "to": "psychic-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "psychic-core-check",
+          "to": "psychic-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "psychic-core-check",
+          "to": "psychic-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "psychic-core",
+          "to": "psychic-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "psychic-fallback",
+          "to": "psychic-return",
+          "condition": ""
+        }
+      ]
+    },
+    "ranger": {
+      "id": "class-ranger",
+      "class_slug": "ranger",
+      "class_name": "Ranger",
+      "role": "single-target hunter",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Ranger.",
+      "positioning": "Preferred weapon range while keeping the hunted prey and companion in useful lanes.",
+      "weights": {
+        "hunt-prey": 36,
+        "hunted": 18,
+        "companion": 10,
+        "ranged": 5,
+        "melee": 5,
+        "knowledge": 4
+      },
+      "conditional_rules": [
+        {
+          "when": "target_unmarked",
+          "tag": "hunt-prey",
+          "weight": 42
+        },
+        {
+          "when": "target_marked",
+          "tag": "hunt-prey",
+          "weight": -100
+        },
+        {
+          "when": "hunter_edge_precision",
+          "tag": "first-attack",
+          "weight": 14
+        }
+      ],
+      "nodes": [
+        {
+          "id": "ranger-enter",
+          "label": "Enter Ranger flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "ranger-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Hunt Prey on the priority enemy before investing in attacks or companion actions."
+        },
+        {
+          "id": "ranger-opening",
+          "label": "Hunt Prey on the priority enemy before investing in attacks or companion actions.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "ranger-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Keep the hunted target valid and re-mark only when the target changes or falls."
+        },
+        {
+          "id": "ranger-maintenance",
+          "label": "Keep the hunted target valid and re-mark only when the target changes or falls.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "ranger-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Preferred weapon range while keeping the hunted prey and companion in useful lanes."
+        },
+        {
+          "id": "ranger-position",
+          "label": "Reposition: Preferred weapon range while keeping the hunted prey and companion in useful lanes.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "ranger-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Apply the hunter's edge: Flurry repeats accurate attacks, Precision favors one strong hit, and Outwit favors skills and defense."
+        },
+        {
+          "id": "ranger-core",
+          "label": "Apply the hunter's edge: Flurry repeats accurate attacks, Precision favors one strong hit, and Outwit favors skills and defense.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "ranger-fallback",
+          "label": "Command an animal companion, Recall Knowledge, reposition, or attack another legal threat only when necessary.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "ranger-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "ranger-enter",
+          "to": "ranger-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "ranger-opening-check",
+          "to": "ranger-opening",
+          "condition": "No"
+        },
+        {
+          "from": "ranger-opening-check",
+          "to": "ranger-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "ranger-opening",
+          "to": "ranger-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "ranger-maintenance-check",
+          "to": "ranger-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "ranger-maintenance-check",
+          "to": "ranger-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "ranger-maintenance",
+          "to": "ranger-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "ranger-position-check",
+          "to": "ranger-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "ranger-position-check",
+          "to": "ranger-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "ranger-position",
+          "to": "ranger-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "ranger-core-check",
+          "to": "ranger-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "ranger-core-check",
+          "to": "ranger-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "ranger-core",
+          "to": "ranger-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "ranger-fallback",
+          "to": "ranger-return",
+          "condition": ""
+        }
+      ]
+    },
+    "rogue": {
+      "id": "class-rogue",
+      "class_slug": "rogue",
+      "class_name": "Rogue",
+      "role": "off-guard precision striker",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Rogue.",
+      "positioning": "Skirmish position that enables off-guard without being surrounded.",
+      "weights": {
+        "sneak-attack": 32,
+        "flank": 20,
+        "off-guard": 24,
+        "tumble": 12,
+        "feint": 12,
+        "strike": 5
+      },
+      "conditional_rules": [
+        {
+          "when": "target_off_guard",
+          "tag": "strike",
+          "weight": 24
+        },
+        {
+          "when": "target_not_off_guard",
+          "tag": "off-guard",
+          "weight": 30
+        },
+        {
+          "when": "safe_flank_available",
+          "tag": "flank",
+          "weight": 26
+        }
+      ],
+      "nodes": [
+        {
+          "id": "rogue-enter",
+          "label": "Enter Rogue flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "rogue-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Find a safe way to make the priority target off-guard before the first Strike."
+        },
+        {
+          "id": "rogue-opening",
+          "label": "Find a safe way to make the priority target off-guard before the first Strike.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "rogue-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Preserve off-guard through flanking, prone, grabbed, hidden, feint, or a class effect."
+        },
+        {
+          "id": "rogue-maintenance",
+          "label": "Preserve off-guard through flanking, prone, grabbed, hidden, feint, or a class effect.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "rogue-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Skirmish position that enables off-guard without being surrounded."
+        },
+        {
+          "id": "rogue-position",
+          "label": "Reposition: Skirmish position that enables off-guard without being surrounded.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "rogue-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Strike an off-guard target for Sneak Attack, then use mobility or a debilitation instead of poor MAP attacks."
+        },
+        {
+          "id": "rogue-core",
+          "label": "Strike an off-guard target for Sneak Attack, then use mobility or a debilitation instead of poor MAP attacks.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "rogue-fallback",
+          "label": "Tumble Through, Feint, Hide, Create a Diversion, Trip, flank safely, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "rogue-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "rogue-enter",
+          "to": "rogue-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "rogue-opening-check",
+          "to": "rogue-opening",
+          "condition": "No"
+        },
+        {
+          "from": "rogue-opening-check",
+          "to": "rogue-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "rogue-opening",
+          "to": "rogue-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "rogue-maintenance-check",
+          "to": "rogue-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "rogue-maintenance-check",
+          "to": "rogue-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "rogue-maintenance",
+          "to": "rogue-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "rogue-position-check",
+          "to": "rogue-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "rogue-position-check",
+          "to": "rogue-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "rogue-position",
+          "to": "rogue-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "rogue-core-check",
+          "to": "rogue-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "rogue-core-check",
+          "to": "rogue-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "rogue-core",
+          "to": "rogue-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "rogue-fallback",
+          "to": "rogue-return",
+          "condition": ""
+        }
+      ]
+    },
+    "runesmith": {
+      "id": "class-runesmith",
+      "class_slug": "runesmith",
+      "class_name": "Runesmith",
+      "role": "rune setup and invocation controller",
+      "role_profile": {
+        "primary": "Annoyer",
+        "secondary": "DPS",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Runesmith.",
+      "positioning": "Midline or frontline within Trace Rune range of allies, enemies, and equipment.",
+      "weights": {
+        "trace-rune": 24,
+        "invoke-rune": 30,
+        "rune": 18,
+        "setup": 12,
+        "strike": 3
+      },
+      "conditional_rules": [
+        {
+          "when": "no_runes_traced",
+          "tag": "trace-rune",
+          "weight": 34
+        },
+        {
+          "when": "multiple_runes_ready",
+          "tag": "invoke-rune",
+          "weight": 36
+        },
+        {
+          "when": "invocation_low_value",
+          "tag": "invoke-rune",
+          "weight": -10
+        }
+      ],
+      "nodes": [
+        {
+          "id": "runesmith-enter",
+          "label": "Enter Runesmith flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "runesmith-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Trace the rune whose passive effect and later invocation best match the target and formation."
+        },
+        {
+          "id": "runesmith-opening",
+          "label": "Trace the rune whose passive effect and later invocation best match the target and formation.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "runesmith-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Track every traced rune, its bearer, limits, duration, and invocation opportunity."
+        },
+        {
+          "id": "runesmith-maintenance",
+          "label": "Track every traced rune, its bearer, limits, duration, and invocation opportunity.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "runesmith-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Midline or frontline within Trace Rune range of allies, enemies, and equipment."
+        },
+        {
+          "id": "runesmith-position",
+          "label": "Reposition: Midline or frontline within Trace Rune range of allies, enemies, and equipment.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "runesmith-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Invoke when one or more runes produce a strong combined payoff; otherwise Trace another useful rune."
+        },
+        {
+          "id": "runesmith-core",
+          "label": "Invoke when one or more runes produce a strong combined payoff; otherwise Trace another useful rune.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "runesmith-fallback",
+          "label": "Strike, Raise Shield, reposition to trace, or prepare a defensive rune.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "runesmith-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "runesmith-enter",
+          "to": "runesmith-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "runesmith-opening-check",
+          "to": "runesmith-opening",
+          "condition": "No"
+        },
+        {
+          "from": "runesmith-opening-check",
+          "to": "runesmith-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "runesmith-opening",
+          "to": "runesmith-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "runesmith-maintenance-check",
+          "to": "runesmith-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "runesmith-maintenance-check",
+          "to": "runesmith-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "runesmith-maintenance",
+          "to": "runesmith-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "runesmith-position-check",
+          "to": "runesmith-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "runesmith-position-check",
+          "to": "runesmith-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "runesmith-position",
+          "to": "runesmith-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "runesmith-core-check",
+          "to": "runesmith-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "runesmith-core-check",
+          "to": "runesmith-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "runesmith-core",
+          "to": "runesmith-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "runesmith-fallback",
+          "to": "runesmith-return",
+          "condition": ""
+        }
+      ]
+    },
+    "sorcerer": {
+      "id": "class-sorcerer",
+      "class_slug": "sorcerer",
+      "class_name": "Sorcerer",
+      "role": "bloodline spontaneous caster",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Sorcerer.",
+      "positioning": "Backline with clear lines and enough allies or enemies in blood magic reach.",
+      "weights": {
+        "blood-magic": 16,
+        "spell": 10,
+        "signature-spell": 9,
+        "cantrip": 5,
+        "support": 7,
+        "melee": -12
+      },
+      "conditional_rules": [
+        {
+          "when": "blood_magic_inactive",
+          "tag": "blood-magic",
+          "weight": 14
+        },
+        {
+          "when": "resource_low",
+          "tag": "cantrip",
+          "weight": 12
+        },
+        {
+          "when": "clustered_enemies",
+          "tag": "area",
+          "weight": 12
+        }
+      ],
+      "nodes": [
+        {
+          "id": "sorcerer-enter",
+          "label": "Enter Sorcerer flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "sorcerer-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Select a spell that triggers useful blood magic while matching enemy defenses and weaknesses."
+        },
+        {
+          "id": "sorcerer-opening",
+          "label": "Select a spell that triggers useful blood magic while matching enemy defenses and weaknesses.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "sorcerer-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Track blood magic duration, spell slots, focus points, and signature spell scaling."
+        },
+        {
+          "id": "sorcerer-maintenance",
+          "label": "Track blood magic duration, spell slots, focus points, and signature spell scaling.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "sorcerer-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Backline with clear lines and enough allies or enemies in blood magic reach."
+        },
+        {
+          "id": "sorcerer-position",
+          "label": "Reposition: Backline with clear lines and enough allies or enemies in blood magic reach.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "sorcerer-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Cast the most efficient repertoire spell for damage, control, support, or healing and apply blood magic."
+        },
+        {
+          "id": "sorcerer-core",
+          "label": "Cast the most efficient repertoire spell for damage, control, support, or healing and apply blood magic.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "sorcerer-fallback",
+          "label": "Use a cantrip, bloodline focus spell, Demoralize, Recall Knowledge, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "sorcerer-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "sorcerer-enter",
+          "to": "sorcerer-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "sorcerer-opening-check",
+          "to": "sorcerer-opening",
+          "condition": "No"
+        },
+        {
+          "from": "sorcerer-opening-check",
+          "to": "sorcerer-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "sorcerer-opening",
+          "to": "sorcerer-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "sorcerer-maintenance-check",
+          "to": "sorcerer-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "sorcerer-maintenance-check",
+          "to": "sorcerer-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "sorcerer-maintenance",
+          "to": "sorcerer-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "sorcerer-position-check",
+          "to": "sorcerer-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "sorcerer-position-check",
+          "to": "sorcerer-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "sorcerer-position",
+          "to": "sorcerer-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "sorcerer-core-check",
+          "to": "sorcerer-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "sorcerer-core-check",
+          "to": "sorcerer-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "sorcerer-core",
+          "to": "sorcerer-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "sorcerer-fallback",
+          "to": "sorcerer-return",
+          "condition": ""
+        }
+      ]
+    },
+    "summoner": {
+      "id": "class-summoner",
+      "class_slug": "summoner",
+      "class_name": "Summoner",
+      "role": "shared-action caster and eidolon pair",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Tank",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Summoner.",
+      "positioning": "Summoner protected at range; eidolon placed to threaten without pulling the shared HP pair into needless danger.",
+      "weights": {
+        "act-together": 40,
+        "eidolon": 24,
+        "tandem": 18,
+        "spell": 8,
+        "subordinate-strike": 12
+      },
+      "conditional_rules": [
+        {
+          "when": "eidolon_unmanifested",
+          "tag": "manifest-eidolon",
+          "weight": 50
+        },
+        {
+          "when": "shared_actions_three",
+          "tag": "act-together",
+          "weight": 35
+        },
+        {
+          "when": "eidolon_in_melee",
+          "tag": "subordinate-strike",
+          "weight": 18
+        }
+      ],
+      "nodes": [
+        {
+          "id": "summoner-enter",
+          "label": "Enter Summoner flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "summoner-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Ensure the eidolon is manifested and choose a shared three-action plan."
+        },
+        {
+          "id": "summoner-opening",
+          "label": "Ensure the eidolon is manifested and choose a shared three-action plan.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "summoner-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "The summoner and eidolon share one turn, one MAP, and three actions; Act Together can add one subordinate single action."
+        },
+        {
+          "id": "summoner-maintenance",
+          "label": "The summoner and eidolon share one turn, one MAP, and three actions; Act Together can add one subordinate single action.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "summoner-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Summoner protected at range; eidolon placed to threaten without pulling the shared HP pair into needless danger."
+        },
+        {
+          "id": "summoner-position",
+          "label": "Reposition: Summoner protected at range; eidolon placed to threaten without pulling the shared HP pair into needless danger.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "summoner-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Combine one summoner spell or support action with eidolon movement and Strikes through Act Together."
+        },
+        {
+          "id": "summoner-core",
+          "label": "Combine one summoner spell or support action with eidolon movement and Strikes through Act Together.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "summoner-fallback",
+          "label": "Tandem movement, Boost Eidolon, Reinforce Eidolon, a cantrip, or an eidolon maneuver.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "summoner-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "summoner-enter",
+          "to": "summoner-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "summoner-opening-check",
+          "to": "summoner-opening",
+          "condition": "No"
+        },
+        {
+          "from": "summoner-opening-check",
+          "to": "summoner-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "summoner-opening",
+          "to": "summoner-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "summoner-maintenance-check",
+          "to": "summoner-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "summoner-maintenance-check",
+          "to": "summoner-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "summoner-maintenance",
+          "to": "summoner-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "summoner-position-check",
+          "to": "summoner-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "summoner-position-check",
+          "to": "summoner-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "summoner-position",
+          "to": "summoner-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "summoner-core-check",
+          "to": "summoner-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "summoner-core-check",
+          "to": "summoner-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "summoner-core",
+          "to": "summoner-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "summoner-fallback",
+          "to": "summoner-return",
+          "condition": ""
+        }
+      ]
+    },
+    "swashbuckler": {
+      "id": "class-swashbuckler",
+      "class_slug": "swashbuckler",
+      "class_name": "Swashbuckler",
+      "role": "panache-building finisher skirmisher",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Swashbuckler.",
+      "positioning": "Mobile melee flank that avoids being surrounded and leaves a route for Tumble Through.",
+      "weights": {
+        "panache": 32,
+        "finisher": 34,
+        "tumble": 20,
+        "bravado": 18,
+        "mobility": 10,
+        "strike": 4
+      },
+      "conditional_rules": [
+        {
+          "when": "missing_panache",
+          "tag": "tumble",
+          "weight": 34
+        },
+        {
+          "when": "has_panache",
+          "tag": "finisher",
+          "weight": 38
+        },
+        {
+          "when": "has_panache",
+          "tag": "tumble",
+          "weight": -24
+        }
+      ],
+      "nodes": [
+        {
+          "id": "swashbuckler-enter",
+          "label": "Enter Swashbuckler flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "swashbuckler-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Use a style-appropriate bravado action to gain panache while entering a useful position."
+        },
+        {
+          "id": "swashbuckler-opening",
+          "label": "Use a style-appropriate bravado action to gain panache while entering a useful position.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "swashbuckler-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Do not repeat panache-generating actions while panache is already held unless their independent effect is valuable."
+        },
+        {
+          "id": "swashbuckler-maintenance",
+          "label": "Do not repeat panache-generating actions while panache is already held unless their independent effect is valuable.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "swashbuckler-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Mobile melee flank that avoids being surrounded and leaves a route for Tumble Through."
+        },
+        {
+          "id": "swashbuckler-position",
+          "label": "Reposition: Mobile melee flank that avoids being surrounded and leaves a route for Tumble Through.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "swashbuckler-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "With panache, use a finisher at favorable MAP and accuracy; without panache, Tumble Through or use the style skill."
+        },
+        {
+          "id": "swashbuckler-core",
+          "label": "With panache, use a finisher at favorable MAP and accuracy; without panache, Tumble Through or use the style skill.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "swashbuckler-fallback",
+          "label": "Strike with Precise Strike, reposition, Demoralize, Feint, Bon Mot, or Raise Shield if equipped.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "swashbuckler-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "swashbuckler-enter",
+          "to": "swashbuckler-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "swashbuckler-opening-check",
+          "to": "swashbuckler-opening",
+          "condition": "No"
+        },
+        {
+          "from": "swashbuckler-opening-check",
+          "to": "swashbuckler-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "swashbuckler-opening",
+          "to": "swashbuckler-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "swashbuckler-maintenance-check",
+          "to": "swashbuckler-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "swashbuckler-maintenance-check",
+          "to": "swashbuckler-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "swashbuckler-maintenance",
+          "to": "swashbuckler-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "swashbuckler-position-check",
+          "to": "swashbuckler-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "swashbuckler-position-check",
+          "to": "swashbuckler-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "swashbuckler-position",
+          "to": "swashbuckler-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "swashbuckler-core-check",
+          "to": "swashbuckler-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "swashbuckler-core-check",
+          "to": "swashbuckler-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "swashbuckler-core",
+          "to": "swashbuckler-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "swashbuckler-fallback",
+          "to": "swashbuckler-return",
+          "condition": ""
+        }
+      ]
+    },
+    "thaumaturge": {
+      "id": "class-thaumaturge",
+      "class_slug": "thaumaturge",
+      "class_name": "Thaumaturge",
+      "role": "exploit-and-implement striker",
+      "role_profile": {
+        "primary": "DPS",
+        "secondary": "Annoyer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Thaumaturge.",
+      "positioning": "Range required by the chosen implements and weapon while preserving implement reaction coverage.",
+      "weights": {
+        "exploit-vulnerability": 40,
+        "implement": 20,
+        "antithesis": 22,
+        "strike": 7,
+        "knowledge": 7
+      },
+      "conditional_rules": [
+        {
+          "when": "target_unmarked",
+          "tag": "exploit-vulnerability",
+          "weight": 46
+        },
+        {
+          "when": "target_marked",
+          "tag": "exploit-vulnerability",
+          "weight": -100
+        },
+        {
+          "when": "target_marked",
+          "tag": "strike",
+          "weight": 18
+        }
+      ],
+      "nodes": [
+        {
+          "id": "thaumaturge-enter",
+          "label": "Enter Thaumaturge flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "thaumaturge-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Exploit Vulnerability against the priority target before committing to attacks."
+        },
+        {
+          "id": "thaumaturge-opening",
+          "label": "Exploit Vulnerability against the priority target before committing to attacks.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "thaumaturge-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Keep personal antithesis on the active target and use the implement reaction or intensification at the right trigger."
+        },
+        {
+          "id": "thaumaturge-maintenance",
+          "label": "Keep personal antithesis on the active target and use the implement reaction or intensification at the right trigger.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "thaumaturge-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Range required by the chosen implements and weapon while preserving implement reaction coverage."
+        },
+        {
+          "id": "thaumaturge-position",
+          "label": "Reposition: Range required by the chosen implements and weapon while preserving implement reaction coverage.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "thaumaturge-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Strike the exploited target with Implement's Empowerment or use the active implement's action."
+        },
+        {
+          "id": "thaumaturge-core",
+          "label": "Strike the exploited target with Implement's Empowerment or use the active implement's action.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "thaumaturge-fallback",
+          "label": "Recall Knowledge through esoterica, Intensify Vulnerability, reposition, or switch targets and exploit again.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "thaumaturge-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "thaumaturge-enter",
+          "to": "thaumaturge-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "thaumaturge-opening-check",
+          "to": "thaumaturge-opening",
+          "condition": "No"
+        },
+        {
+          "from": "thaumaturge-opening-check",
+          "to": "thaumaturge-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "thaumaturge-opening",
+          "to": "thaumaturge-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "thaumaturge-maintenance-check",
+          "to": "thaumaturge-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "thaumaturge-maintenance-check",
+          "to": "thaumaturge-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "thaumaturge-maintenance",
+          "to": "thaumaturge-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "thaumaturge-position-check",
+          "to": "thaumaturge-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "thaumaturge-position-check",
+          "to": "thaumaturge-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "thaumaturge-position",
+          "to": "thaumaturge-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "thaumaturge-core-check",
+          "to": "thaumaturge-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "thaumaturge-core-check",
+          "to": "thaumaturge-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "thaumaturge-core",
+          "to": "thaumaturge-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "thaumaturge-fallback",
+          "to": "thaumaturge-return",
+          "condition": ""
+        }
+      ]
+    },
+    "witch": {
+      "id": "class-witch",
+      "class_slug": "witch",
+      "class_name": "Witch",
+      "role": "hex and familiar support caster",
+      "role_profile": {
+        "primary": "Annoyer",
+        "secondary": "Healer",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Witch.",
+      "positioning": "Backline with hex range, familiar support access, and a safe retreat.",
+      "weights": {
+        "hex": 24,
+        "sustain": 16,
+        "familiar": 12,
+        "spell": 8,
+        "support": 8,
+        "melee": -14
+      },
+      "conditional_rules": [
+        {
+          "when": "hex_inactive",
+          "tag": "hex",
+          "weight": 28
+        },
+        {
+          "when": "effect_needs_sustain",
+          "tag": "sustain",
+          "weight": 20
+        },
+        {
+          "when": "threatened_in_melee",
+          "tag": "reposition",
+          "weight": 16
+        }
+      ],
+      "nodes": [
+        {
+          "id": "witch-enter",
+          "label": "Enter Witch flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "witch-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Apply the patron's hex or familiar ability where it creates lasting value."
+        },
+        {
+          "id": "witch-opening",
+          "label": "Apply the patron's hex or familiar ability where it creates lasting value.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "witch-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Sustain hexes that remain worth an action and keep the familiar out of unnecessary danger."
+        },
+        {
+          "id": "witch-maintenance",
+          "label": "Sustain hexes that remain worth an action and keep the familiar out of unnecessary danger.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "witch-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Backline with hex range, familiar support access, and a safe retreat."
+        },
+        {
+          "id": "witch-position",
+          "label": "Reposition: Backline with hex range, familiar support access, and a safe retreat.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "witch-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Use a hex, patron spell, prepared spell, or familiar ability matched to the target and party plan."
+        },
+        {
+          "id": "witch-core",
+          "label": "Use a hex, patron spell, prepared spell, or familiar ability matched to the target and party plan.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "witch-fallback",
+          "label": "Cast a cantrip, Recall Knowledge, command the familiar, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "witch-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "witch-enter",
+          "to": "witch-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "witch-opening-check",
+          "to": "witch-opening",
+          "condition": "No"
+        },
+        {
+          "from": "witch-opening-check",
+          "to": "witch-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "witch-opening",
+          "to": "witch-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "witch-maintenance-check",
+          "to": "witch-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "witch-maintenance-check",
+          "to": "witch-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "witch-maintenance",
+          "to": "witch-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "witch-position-check",
+          "to": "witch-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "witch-position-check",
+          "to": "witch-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "witch-position",
+          "to": "witch-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "witch-core-check",
+          "to": "witch-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "witch-core-check",
+          "to": "witch-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "witch-core",
+          "to": "witch-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "witch-fallback",
+          "to": "witch-return",
+          "condition": ""
+        }
+      ]
+    },
+    "wizard": {
+      "id": "class-wizard",
+      "class_slug": "wizard",
+      "class_name": "Wizard",
+      "role": "prepared arcane problem solver",
+      "role_profile": {
+        "primary": "Annoyer",
+        "secondary": "DPS",
+        "primary_weight": 2,
+        "secondary_weight": 1
+      },
+      "description": "Class-specific decision overlay for the Wizard.",
+      "positioning": "Backline with clear spell geometry and protection from melee pressure.",
+      "weights": {
+        "spell": 12,
+        "control": 12,
+        "area": 10,
+        "drain-bonded-item": 16,
+        "cantrip": 5,
+        "melee": -16
+      },
+      "conditional_rules": [
+        {
+          "when": "important_slot_expended",
+          "tag": "drain-bonded-item",
+          "weight": 24
+        },
+        {
+          "when": "clustered_enemies",
+          "tag": "area",
+          "weight": 16
+        },
+        {
+          "when": "threatened_in_melee",
+          "tag": "reposition",
+          "weight": 18
+        }
+      ],
+      "nodes": [
+        {
+          "id": "wizard-enter",
+          "label": "Enter Wizard flow",
+          "type": "start",
+          "detail": "The general legality and emergency checks have already run."
+        },
+        {
+          "id": "wizard-opening-check",
+          "label": "Opening setup complete?",
+          "type": "decision",
+          "detail": "Identify defenses, clusters, and expected encounter length before spending prepared slots."
+        },
+        {
+          "id": "wizard-opening",
+          "label": "Identify defenses, clusters, and expected encounter length before spending prepared slots.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "wizard-maintenance-check",
+          "label": "Class state needs maintenance?",
+          "type": "decision",
+          "detail": "Track prepared slots, curriculum spells, thesis benefits, and the bonded-item recovery."
+        },
+        {
+          "id": "wizard-maintenance",
+          "label": "Track prepared slots, curriculum spells, thesis benefits, and the bonded-item recovery.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "wizard-position-check",
+          "label": "In the class's preferred position?",
+          "type": "decision",
+          "detail": "Backline with clear spell geometry and protection from melee pressure."
+        },
+        {
+          "id": "wizard-position",
+          "label": "Reposition: Backline with clear spell geometry and protection from melee pressure.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "wizard-core-check",
+          "label": "Core class action is legal and valuable?",
+          "type": "decision",
+          "detail": "Cast the prepared spell with the best expected control, damage, or support value for the current geometry."
+        },
+        {
+          "id": "wizard-core",
+          "label": "Cast the prepared spell with the best expected control, damage, or support value for the current geometry.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "wizard-fallback",
+          "label": "Use a cantrip, Drain Bonded Item when it restores a strategically important spell, Recall Knowledge, or reposition.",
+          "type": "process",
+          "detail": ""
+        },
+        {
+          "id": "wizard-return",
+          "label": "Return to general tactical flow",
+          "type": "end",
+          "detail": "The shared flow spends the action and rechecks the remaining budget."
+        }
+      ],
+      "edges": [
+        {
+          "from": "wizard-enter",
+          "to": "wizard-opening-check",
+          "condition": ""
+        },
+        {
+          "from": "wizard-opening-check",
+          "to": "wizard-opening",
+          "condition": "No"
+        },
+        {
+          "from": "wizard-opening-check",
+          "to": "wizard-maintenance-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "wizard-opening",
+          "to": "wizard-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "wizard-maintenance-check",
+          "to": "wizard-maintenance",
+          "condition": "Yes"
+        },
+        {
+          "from": "wizard-maintenance-check",
+          "to": "wizard-position-check",
+          "condition": "No"
+        },
+        {
+          "from": "wizard-maintenance",
+          "to": "wizard-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "wizard-position-check",
+          "to": "wizard-position",
+          "condition": "No and movement is worthwhile"
+        },
+        {
+          "from": "wizard-position-check",
+          "to": "wizard-core-check",
+          "condition": "Yes"
+        },
+        {
+          "from": "wizard-position",
+          "to": "wizard-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "wizard-core-check",
+          "to": "wizard-core",
+          "condition": "Yes"
+        },
+        {
+          "from": "wizard-core-check",
+          "to": "wizard-fallback",
+          "condition": "No"
+        },
+        {
+          "from": "wizard-core",
+          "to": "wizard-return",
+          "condition": "Action spent"
+        },
+        {
+          "from": "wizard-fallback",
+          "to": "wizard-return",
+          "condition": ""
+        }
+      ]
+    }
+  },
+  "assignments": {
+    "alchemist": "class-alchemist",
+    "animist": "class-animist",
+    "barbarian": "class-barbarian",
+    "bard": "class-bard",
+    "champion": "class-champion",
+    "cleric": "class-cleric",
+    "commander": "class-commander",
+    "druid": "class-druid",
+    "exemplar": "class-exemplar",
+    "fighter": "class-fighter",
+    "guardian": "class-guardian",
+    "gunslinger": "class-gunslinger",
+    "inventor": "class-inventor",
+    "investigator": "class-investigator",
+    "kineticist": "class-kineticist",
+    "magus": "class-magus",
+    "monk": "class-monk",
+    "necromancer": "class-necromancer",
+    "oracle": "class-oracle",
+    "psychic": "class-psychic",
+    "ranger": "class-ranger",
+    "rogue": "class-rogue",
+    "runesmith": "class-runesmith",
+    "sorcerer": "class-sorcerer",
+    "summoner": "class-summoner",
+    "swashbuckler": "class-swashbuckler",
+    "thaumaturge": "class-thaumaturge",
+    "witch": "class-witch",
+    "wizard": "class-wizard"
+  }
+}

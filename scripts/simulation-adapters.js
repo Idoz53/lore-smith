@@ -1,4 +1,4 @@
-import { getTacticalProfile } from "./tactical-profiles.js";
+import { getTacticalProfile, tacticalDecisionCoverage } from "./tactical-profiles.js";
 
 const ADAPTER_LABELS = {
   "attack-check": "Attack checks",
@@ -103,6 +103,7 @@ export function buildCoverageReport(tokens, partyIds = null, enemyIds = null, bu
   const actors = selected.map((token) => {
     const options = buildCatalog(token.actor);
     const profile = getTacticalProfile(token.actor);
+    const decisionFlow = tacticalDecisionCoverage(profile, options);
     const counts = { native: 0, modeled: 0, partial: 0, unsupported: 0 };
     for (const option of options) counts[option.coverage?.status ?? "unsupported"] += 1;
     return {
@@ -111,6 +112,7 @@ export function buildCoverageReport(tokens, partyIds = null, enemyIds = null, bu
       className: token.actor.items?.find?.((item) => item.type === "class")?.name ?? token.actor.type,
       profile: profile.label,
       roles: profile.roles,
+      decisionFlow,
       counts,
       total: options.length,
       options: options.map(summarizeOption),
@@ -135,6 +137,7 @@ export function buildCoverageReport(tokens, partyIds = null, enemyIds = null, bu
       label: ADAPTER_LABELS[id] ?? id,
       count,
     })).sort((left, right) => right.count - left.count),
+    decisionFlows: actors.map((actor) => actor.decisionFlow),
   };
 }
 
@@ -723,6 +726,9 @@ export function coverageReportHtml(report, escapeHtml) {
     return `<details>
       <summary>${escapeHtml(actor.name)} · ${escapeHtml(actor.className)} · ${actor.counts.native} native / ${actor.counts.modeled} modeled / ${actor.counts.partial} partial / ${actor.counts.unsupported} unsupported</summary>
       <p><strong>Tactical profile:</strong> ${escapeHtml(actor.profile)} · ${escapeHtml(actor.roles.join(", "))}</p>
+      <p><strong>Decision flow:</strong> ${escapeHtml(actor.decisionFlow.className)}${actor.decisionFlow.positioning ? ` · ${escapeHtml(actor.decisionFlow.positioning)}` : ""}</p>
+      <p><strong>Available class priorities:</strong> ${actor.decisionFlow.matchedTags.length ? escapeHtml(actor.decisionFlow.matchedTags.join(", ")) : "No class-specific action tags were found on this actor."}</p>
+      ${actor.decisionFlow.unavailableTags.length ? `<p><strong>Priorities without a matching owned action:</strong> ${escapeHtml(actor.decisionFlow.unavailableTags.join(", "))}</p>` : ""}
       ${problemOptions.length
         ? `<ul>${problemOptions.map((option) => `<li><strong>${escapeHtml(option.name)}</strong>: ${escapeHtml(option.unsupported.join("; "))}</li>`).join("")}</ul>`
         : "<p>Every catalogued action has a supported resolution path.</p>"}

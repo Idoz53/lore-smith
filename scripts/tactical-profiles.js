@@ -1,3 +1,12 @@
+import {
+  decisionFlowCoverage,
+  decisionFlowStatus,
+  getClassDecisionFlow,
+  getGeneralDecisionFlow,
+  initializeDecisionFlows,
+  scoreDecisionFlow,
+} from "./decision-flow-runtime.js";
+
 const PROFILE_DATA = {
   alchemist: {
     roles: ["support", "controller", "damage"],
@@ -158,7 +167,14 @@ export function getTacticalProfile(actor) {
   const item = classItem(actor);
   const classSlug = slugify(item?.slug ?? item?.system?.slug ?? item?.name ?? "");
   const source = PROFILE_DATA[classSlug];
-  if (!source) return { ...DEFAULT_PROFILE, classItem: item, classSlug: classSlug || null };
+  const flow = getClassDecisionFlow(classSlug);
+  if (!source) return {
+    ...DEFAULT_PROFILE,
+    classItem: item,
+    classSlug: classSlug || null,
+    flow,
+    generalFlow: getGeneralDecisionFlow(),
+  };
   return {
     ...DEFAULT_PROFILE,
     ...source,
@@ -166,6 +182,10 @@ export function getTacticalProfile(actor) {
     label: item?.name ?? classSlug,
     classItem: item,
     classSlug,
+    flow,
+    generalFlow: getGeneralDecisionFlow(),
+    roleProfile: flow?.role_profile ?? null,
+    positioning: flow?.positioning ?? null,
   };
 }
 
@@ -209,7 +229,15 @@ export function tacticalOptionScore(profile, option, context = {}) {
     if (hasPanache && /finisher/.test(text)) score += 11;
     if (hasPanache && /tumble through/.test(text)) score -= 8;
   }
-  return score;
+  const flowDecision = scoreDecisionFlow(profile, option, context);
+  if (context.decisionTrace) context.decisionTrace.push(flowDecision);
+  return score + flowDecision.score;
+}
+
+export { initializeDecisionFlows, decisionFlowStatus };
+
+export function tacticalDecisionCoverage(profile, options) {
+  return decisionFlowCoverage(profile, options);
 }
 
 export function tacticalProfilesSummary() {

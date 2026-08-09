@@ -499,19 +499,24 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
   const profile = actor.profile ?? getTacticalProfile(actor.actor);
   if (injured && injured.hp / injured.maxHp <= (profile.healingThreshold ?? 0.6)) {
     const healing = available.filter((option) => option.healing).sort((left, right) => averageFormula(right.healing) - averageFormula(left.healing))[0];
-    if (healing) return { option: healing, target: injured, cost: Math.min(...healing.costs.filter(Number.isFinite)) };
+    if (healing) return {
+      option: healing,
+      target: injured,
+      cost: Math.min(...healing.costs.filter(Number.isFinite)),
+      decision: { stage: "general:emergency-rescue", tags: ["healing"], flags: [injured.hp <= 0 ? "ally_dying" : "ally_critical"] },
+    };
   }
   const target = combatants.filter((candidate) => candidate.team !== actor.team && !candidate.defeated)
     .sort((left, right) => left.hp - right.hp)[0];
   if (!target) return null;
-  const scored = available.map((option) => {
+  const scored = available.flatMap((option) => {
     const allies = combatants.filter((candidate) => candidate.team === actor.team && validTargetFor(option, candidate));
     const enemies = combatants.filter((candidate) => candidate.team !== actor.team && validTargetFor(option, candidate));
-    const optionTarget = option.targetMode === "self" || option.defensive ? actor
+    const optionTargets = option.targetMode === "self" || option.defensive ? [actor]
       : option.targetMode === "ally"
-        ? allies.sort((left, right) => left.hp / left.maxHp - right.hp / right.maxHp)[0]
-        : enemies.sort((left, right) => left.hp - right.hp)[0];
-    if (!optionTarget) return null;
+        ? allies
+        : enemies;
+    if (!optionTargets.length) return [];
     const validCosts = option.costs.filter((cost) => Number.isFinite(cost) && cost <= actionsRemaining);
     const cost = Math.max(...validCosts);
     const areaTargets = option.area ? Math.min(3, combatants.filter((candidate) => candidate.team !== actor.team && !candidate.defeated).length) : 1;
@@ -525,24 +530,33 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
     const remainingUses = option.limitedUses === null
       ? null
       : actor.uses.get(option.useKey ?? option.id) ?? option.limitedUses;
-    const profileValue = tacticalOptionScore(profile, option, {
-      actor,
-      target: optionTarget,
-      round,
-      remainingUses,
-      actionsRemaining,
-      mapPenalty,
+    return optionTargets.map((optionTarget) => {
+      const decisionTrace = [];
+      const profileValue = tacticalOptionScore(profile, option, {
+        actor,
+        target: optionTarget,
+        combatants,
+        available,
+        round,
+        remainingUses,
+        actionsRemaining,
+        mapPenalty,
+        decisionTrace,
+      });
+      const targetImmunityPenalty = option.targetOnce && actor.targetUses?.has(`${option.id}:${optionTarget.id}`)
+        ? 1000
+        : 0;
+      const hpRatio = optionTarget.hp / Math.max(1, optionTarget.maxHp);
+      const targetValue = option.healing ? (1 - hpRatio) * 18 : option.damage ? (1 - hpRatio) * 3 : 0;
+      return {
+        option,
+        target: optionTarget,
+        cost,
+        decision: decisionTrace[0] ?? null,
+        score: (expected + conditionValue + defensiveValue + utilityValue + spellBias) / Math.max(1, cost)
+          - mapCost - repetitionPenalty + profileValue + targetValue - targetImmunityPenalty,
+      };
     });
-    const targetImmunityPenalty = option.targetOnce && actor.targetUses?.has(`${option.id}:${optionTarget.id}`)
-      ? 1000
-      : 0;
-    return {
-      option,
-      target: optionTarget,
-      cost,
-      score: (expected + conditionValue + defensiveValue + utilityValue + spellBias) / Math.max(1, cost)
-        - mapCost - repetitionPenalty + profileValue - targetImmunityPenalty,
-    };
   }).filter(Boolean).sort((left, right) => right.score - left.score);
   return scored[0] ?? null;
 }

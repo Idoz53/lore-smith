@@ -1241,6 +1241,7 @@ function lsRunEncounterSample(sides, iterations, captureCount = 0) {
 }
 
 async function lsRunIterations() {
+  await game.loreSmith.ensureDecisionFlows?.();
   const sides = lsCombatSides();
   if (!sides || !sides.partyIds.size || !sides.enemyIds.size) {
     return ui.notifications.error("Start an encounter with at least one friendly and one hostile combatant.");
@@ -1274,6 +1275,7 @@ async function lsRunIterations() {
 }
 
 async function lsRunLiveCombat() {
+  await game.loreSmith.ensureDecisionFlows?.();
   const log = new LoreSmithLiveLog({
     id: `lore-smith-live-log-${foundry.utils.randomID(6)}`,
   });
