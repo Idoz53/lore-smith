@@ -1,18 +1,19 @@
 <section class="ls-builder">
   <header class="ls-builder-heading">
-    <div><span>PF2e native actor</span><h1>Creature Builder</h1><p>Step {{stepNumber}} of 5</p></div>
+    <div><span>PF2e native actor</span><h1>Creature Builder</h1><p>Step {{stepNumber}} of 6</p></div>
     <div class="ls-builder-actor"><img src="{{actor.img}}"><strong>{{actor.name}}</strong><small>Level {{actor.level}} NPC</small></div>
   </header>
 
-  <div class="ls-step-track">
+  <div class="ls-step-track six">
     <button type="button" data-action="goToStep" data-step="0" class="{{#if steps.source}}active{{/if}}">1. Starting point</button>
-    <button type="button" data-action="goToStep" data-step="1" class="{{#if steps.identity}}active{{/if}}">2. Identity</button>
-    <button type="button" data-action="goToStep" data-step="2" class="{{#if steps.defenses}}active{{/if}}">3. Statistics</button>
-    <button type="button" data-action="goToStep" data-step="3" class="{{#if steps.content}}active{{/if}}">4. Actions & spells</button>
-    <button type="button" data-action="goToStep" data-step="4" class="{{#if steps.review}}active{{/if}}">5. Finish</button>
+    <button type="button" data-action="goToStep" data-step="1" class="{{#if steps.concept}}active{{/if}}">2. Concept & role</button>
+    <button type="button" data-action="goToStep" data-step="2" class="{{#if steps.identity}}active{{/if}}">3. Identity</button>
+    <button type="button" data-action="goToStep" data-step="3" class="{{#if steps.defenses}}active{{/if}}">4. Statistics</button>
+    <button type="button" data-action="goToStep" data-step="4" class="{{#if steps.content}}active{{/if}}">5. Actions & spells</button>
+    <button type="button" data-action="goToStep" data-step="5" class="{{#if steps.review}}active{{/if}}">6. Finish</button>
   </div>
 
-  <main class="ls-builder-body">
+  <main class="ls-builder-body {{#unless steps.source}}with-assistant{{/unless}}">
     {{#if steps.source}}
       <section class="ls-builder-step">
         <h2>Choose a starting point</h2>
@@ -52,6 +53,30 @@
           <span>Page {{sourcePageLabel}}</span>
           <button data-action="nextSources" {{#unless hasNextSources}}disabled{{/unless}}>Next <i class="fa-solid fa-arrow-right"></i></button>
         </div>
+      </section>
+    {{/if}}
+
+    {{#if steps.concept}}
+      <section class="ls-builder-step">
+        <h2>Concept & combat role</h2>
+        <p>Start with what the creature should feel like at the table. The official GM Core road maps provide a balanced foundation; they are suggestions, not locked presets.</p>
+        <div class="ls-builder-card">
+          <div class="ls-form-grid">
+            <label class="wide">Core concept<textarea name="concept" rows="3" placeholder="An armored temple guardian that pins intruders in place...">{{concept.concept}}</textarea></label>
+            <label>Creature level<select name="conceptLevel">{{#each creatureLevels}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label>GM Core road map<select name="roadmap"><option value="">Choose a road map</option>{{#each roadmapOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label>Intended use<select name="intendedUse">{{#each intendedUseOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label>Encounter complexity<select name="complexity">{{#each complexityOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label>Combat feel<input name="combatFeel" value="{{concept.combatFeel}}" placeholder="Mobile controller, immovable defender..."></label>
+            <label>Signature strengths<textarea name="strengths" rows="3" placeholder="What should players notice immediately?">{{concept.strengths}}</textarea></label>
+            <label>Deliberate weaknesses<textarea name="weaknesses" rows="3" placeholder="What can clever players exploit?">{{concept.weaknesses}}</textarea></label>
+          </div>
+        </div>
+        <div class="ls-roadmap-list">
+          {{#each roadmapOptions}}<article class="{{#if selected}}selected{{/if}}"><strong>{{label}}</strong><span>{{description}}</span></article>{{/each}}
+        </div>
+        <button type="button" data-action="applyRoadmap"><i class="fa-solid fa-wand-magic-sparkles"></i> Apply this road map's level-based suggestions</button>
+        <div class="ls-builder-tip"><i class="fa-solid fa-scale-balanced"></i><span>Applying a road map updates AC, HP, Perception, saves, and Speed. It never locks the actor or replaces its existing abilities.</span></div>
       </section>
     {{/if}}
 
@@ -133,6 +158,17 @@
         <button data-action="finish"><i class="fa-solid fa-check"></i> Finish creature</button>
       </section>
     {{/if}}
+
+    {{#unless steps.source}}
+      <aside class="ls-balance-assistant">
+        <header><span>GM Core balance assistant</span><strong>Level {{actor.level}}</strong></header>
+        {{#if balance.roadmap}}<div class="ls-assistant-roadmap"><b>{{balance.roadmap.label}}</b><span>{{balance.roadmap.description}}</span></div>{{/if}}
+        <div class="ls-assistant-stats">{{#each balance.core}}<span><b>{{name}}</b><em>{{label}}</em><small>{{value}}</small></span>{{/each}}</div>
+        <div class="ls-assistant-issues">{{#each balance.issues}}<p class="{{severity}}"><i class="fa-solid {{icon}}"></i>{{text}}</p>{{/each}}</div>
+        <details><summary>All level {{actor.level}} tables</summary><dl>{{#each balance.reference}}<div><dt>{{name}}</dt><dd>{{values}}</dd></div>{{/each}}</dl></details>
+        <a href="https://2e.aonprd.com/Rules.aspx?ID=2874" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square"></i> Building Creatures on Archives of Nethys</a>
+      </aside>
+    {{/unless}}
   </main>
 
   <footer class="ls-builder-navigation">

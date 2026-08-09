@@ -1,4 +1,5 @@
 import { coverageReportHtml } from "./simulation-adapters.js";
+import { creatureTableRow, safeItemGuidance } from "./building-creatures-data.js";
 
 const LS_MODULE_ID = "lore-smith";
 const { ApplicationV2: LSApplicationV2, HandlebarsApplicationMixin: LSHandlebarsMixin, DialogV2: LSDialogV2 } = foundry.applications.api;
@@ -20,46 +21,100 @@ function lsSplitTraits(value) {
   return [...new Set(String(value ?? "").split(",").map((trait) => trait.trim().toLowerCase()).filter(Boolean))];
 }
 
-const LS_AC_ROWS = [
-  [18, 15, 14, 12], [19, 16, 15, 13], [19, 16, 15, 13], [21, 18, 17, 15],
-  [22, 19, 18, 16], [24, 21, 20, 18], [25, 22, 21, 19], [27, 24, 23, 21],
-  [28, 25, 24, 22], [30, 27, 26, 24], [31, 28, 27, 25], [33, 30, 29, 27],
-  [34, 31, 30, 28], [36, 33, 32, 30], [37, 34, 33, 31], [39, 36, 35, 33],
-  [40, 37, 36, 34], [42, 39, 38, 36], [43, 40, 39, 37], [45, 42, 41, 39],
-  [46, 43, 42, 40], [48, 45, 44, 42], [49, 46, 45, 43], [51, 48, 47, 45],
-  [52, 49, 48, 46], [54, 51, 50, 48],
-];
-
-const LS_PERCEPTION_ROWS = [
-  [9, 8, 5, 2, 0], [10, 9, 6, 3, 1], [11, 10, 7, 4, 2], [12, 11, 8, 5, 3],
-  [14, 12, 9, 6, 4], [15, 14, 11, 8, 6], [17, 15, 12, 9, 7], [18, 17, 14, 11, 8],
-  [20, 18, 15, 12, 10], [21, 19, 16, 13, 11], [23, 21, 18, 15, 12],
-  [24, 22, 19, 16, 14], [26, 24, 21, 18, 15], [27, 25, 22, 19, 16],
-  [29, 26, 23, 20, 18], [30, 28, 25, 22, 19], [32, 29, 26, 23, 20],
-  [33, 30, 28, 25, 22], [35, 32, 29, 26, 23], [36, 33, 30, 27, 24],
-  [38, 35, 32, 29, 26], [39, 36, 33, 30, 27], [41, 38, 35, 32, 28],
-  [43, 39, 36, 33, 30], [44, 40, 37, 34, 31], [46, 42, 38, 36, 32],
-];
-
-const LS_HP_ROWS = [
-  [9, 7, 5], [18, 15, 12], [25, 20, 15], [38, 30, 23], [56, 45, 34], [75, 60, 45],
-  [94, 75, 56], [119, 95, 71], [144, 115, 86], [169, 135, 101], [194, 155, 116],
-  [219, 175, 131], [244, 195, 146], [269, 215, 161], [294, 235, 176], [319, 255, 191],
-  [344, 275, 206], [369, 295, 221], [394, 315, 236], [419, 335, 251], [444, 355, 266],
-  [469, 375, 281], [500, 400, 300], [538, 430, 323], [575, 460, 345], [625, 500, 375],
-];
-
-function lsLevelRow(rows, level) {
-  return rows[Math.max(0, Math.min(rows.length - 1, Number(level) + 1))];
-}
-
 function lsBenchmarks(level) {
   const named = (names, values) => names.map((label, index) => ({ label, value: values[index] }));
+  const hp = creatureTableRow("hitPoints", level);
   return {
-    ac: named(["Extreme", "High", "Moderate", "Low"], lsLevelRow(LS_AC_ROWS, level)),
-    hp: named(["High", "Moderate", "Low"], lsLevelRow(LS_HP_ROWS, level)),
-    perception: named(["Extreme", "High", "Moderate", "Low", "Terrible"], lsLevelRow(LS_PERCEPTION_ROWS, level)),
-    saves: named(["Extreme", "High", "Moderate", "Low", "Terrible"], lsLevelRow(LS_PERCEPTION_ROWS, level)),
+    ac: named(["Extreme", "High", "Moderate", "Low"], creatureTableRow("armorClass", level)),
+    hp: ["High", "Moderate", "Low"].map((label, index) => ({ label: `${label} ${hp[index][0]}–${hp[index][1]}`, value: Math.round((hp[index][0] + hp[index][1]) / 2), range: hp[index] })),
+    perception: named(["Extreme", "High", "Moderate", "Low", "Terrible"], creatureTableRow("perception", level)),
+    saves: named(["Extreme", "High", "Moderate", "Low", "Terrible"], creatureTableRow("saves", level)),
+  };
+}
+
+const LS_CREATURE_ROADMAPS = {
+  brute: { label: "Brute", description: "Tough and forceful: high HP and Fortitude, but weaker AC, Reflex, Will, and Perception.", stats: { ac: "moderate", hp: "high", perception: "low", fortitude: "high", reflex: "low", will: "low", speed: 25 } },
+  magicalStriker: { label: "Magical Striker", description: "A weapon threat backed by a smaller magical toolkit and a moderate-to-high spell DC.", stats: { ac: "moderate", hp: "moderate", perception: "moderate", fortitude: "moderate", reflex: "moderate", will: "high", speed: 25 } },
+  skillParagon: { label: "Skill Paragon", description: "Excels at several skills, with one or two signature extreme skills and a skill-driven combat trick.", stats: { ac: "moderate", hp: "moderate", perception: "high", fortitude: "low", reflex: "high", will: "moderate", speed: 25 } },
+  skirmisher: { label: "Skirmisher", description: "A mobile combatant with high Reflex, a faster Speed, and weaker Fortitude.", stats: { ac: "moderate", hp: "moderate", perception: "moderate", fortitude: "low", reflex: "high", will: "moderate", speed: 35 } },
+  sniper: { label: "Sniper", description: "A perceptive ranged threat with strong accuracy, low HP, and a deliberately weaker melee option.", stats: { ac: "moderate", hp: "low", perception: "high", fortitude: "low", reflex: "high", will: "moderate", speed: 25 } },
+  soldier: { label: "Soldier", description: "A durable frontliner with high AC, Fortitude, attack accuracy, and tactical reactions.", stats: { ac: "high", hp: "moderate", perception: "moderate", fortitude: "high", reflex: "moderate", will: "low", speed: 25 } },
+  spellcaster: { label: "Spellcaster", description: "A fragile magical specialist with high Will and spell DCs, but low HP, Fortitude, and weapon offense.", stats: { ac: "low", hp: "low", perception: "moderate", fortitude: "low", reflex: "moderate", will: "high", speed: 25 } },
+};
+
+function lsCreatureConcept(actor) {
+  return foundry.utils.mergeObject({
+    concept: "", roadmap: "", intendedUse: "combatant", complexity: "standard", combatFeel: "", strengths: "", weaknesses: "",
+  }, actor.getFlag(LS_MODULE_ID, "creatureConcept") ?? {}, { inplace: false });
+}
+
+function lsClosestTier(value, values, labels) {
+  let best = 0;
+  values.forEach((candidate, index) => {
+    if (Math.abs(Number(value) - Number(candidate)) < Math.abs(Number(value) - Number(values[best]))) best = index;
+  });
+  return { label: labels[best], rank: best, value: values[best] };
+}
+
+function lsHpTier(value, level) {
+  const ranges = creatureTableRow("hitPoints", level);
+  const labels = ["High", "Moderate", "Low"];
+  const distance = ([minimum, maximum]) => value < minimum ? minimum - value : value > maximum ? value - maximum : 0;
+  let best = 0;
+  ranges.forEach((range, index) => { if (distance(range) < distance(ranges[best])) best = index; });
+  return { label: labels[best], rank: best, range: ranges[best] };
+}
+
+function lsBenchmarkReference(level) {
+  const format = (labels, values, prefix = "+") => labels.map((label, index) => `${label} ${values[index] == null ? "—" : `${prefix}${values[index]}`}`).join(" · ");
+  const hp = creatureTableRow("hitPoints", level);
+  const resistance = creatureTableRow("resistance", level);
+  const spell = creatureTableRow("spell", level);
+  const safe = safeItemGuidance(level);
+  return [
+    { name: "Attribute modifiers", values: format(["Extreme", "High", "Moderate", "Low"], creatureTableRow("attributes", level)) },
+    { name: "Perception", values: format(["Extreme", "High", "Moderate", "Low", "Terrible"], creatureTableRow("perception", level)) },
+    { name: "Skills", values: `${format(["Extreme", "High", "Moderate"], creatureTableRow("skills", level).slice(0, 3))} · Low +${creatureTableRow("skills", level)[3][0]} to +${creatureTableRow("skills", level)[3][1]}` },
+    { name: "Armor Class", values: format(["Extreme", "High", "Moderate", "Low"], creatureTableRow("armorClass", level), "") },
+    { name: "Saving throws", values: format(["Extreme", "High", "Moderate", "Low", "Terrible"], creatureTableRow("saves", level)) },
+    { name: "Hit Points", values: ["High", "Moderate", "Low"].map((label, index) => `${label} ${hp[index][0]}–${hp[index][1]}`).join(" · ") },
+    { name: "Resistances / weaknesses", values: `Maximum ${resistance[0]} · Minimum ${resistance[1]}` },
+    { name: "Strike attack", values: format(["Extreme", "High", "Moderate", "Low"], creatureTableRow("strikeAttack", level)) },
+    { name: "Strike damage", values: format(["Extreme", "High", "Moderate", "Low"], creatureTableRow("strikeDamage", level), "") },
+    { name: "Spell DC / attack", values: `Extreme DC ${spell[0]}, +${spell[1]} · High DC ${spell[2]}, +${spell[3]} · Moderate DC ${spell[4]}, +${spell[5]}` },
+    { name: "Area damage", values: `Unlimited ${creatureTableRow("areaDamage", level)[0]} · Limited ${creatureTableRow("areaDamage", level)[1]}` },
+    { name: "Safe item", values: `Item level ${safe.level}${safe.note ? ` · ${safe.note}` : ""}` },
+  ];
+}
+
+function lsBalanceReport(actor, concept) {
+  const level = lsNumber(actor.system.details?.level, 0);
+  const system = actor.system;
+  const core = [
+    { name: "AC", ...lsClosestTier(lsNumber(system.attributes?.ac, 10), creatureTableRow("armorClass", level), ["Extreme", "High", "Moderate", "Low"]) },
+    { name: "Perception", ...lsClosestTier(lsNumber(system.perception, 0), creatureTableRow("perception", level), ["Extreme", "High", "Moderate", "Low", "Terrible"]) },
+    { name: "Fortitude", ...lsClosestTier(lsNumber(system.saves?.fortitude, 0), creatureTableRow("saves", level), ["Extreme", "High", "Moderate", "Low", "Terrible"]) },
+    { name: "Reflex", ...lsClosestTier(lsNumber(system.saves?.reflex, 0), creatureTableRow("saves", level), ["Extreme", "High", "Moderate", "Low", "Terrible"]) },
+    { name: "Will", ...lsClosestTier(lsNumber(system.saves?.will, 0), creatureTableRow("saves", level), ["Extreme", "High", "Moderate", "Low", "Terrible"]) },
+  ];
+  const hp = lsHpTier(lsNumber(system.attributes?.hp?.max, 1), level);
+  const issues = [];
+  const extremeCount = core.filter((stat) => stat.label === "Extreme").length;
+  const allowedExtreme = level >= 20 ? 4 : level >= 15 ? 2 : 1;
+  if (extremeCount > allowedExtreme) issues.push({ severity: "warning", text: `${extremeCount} extreme core statistics is unusual at level ${level}; GM Core guidance suggests about ${allowedExtreme}.` });
+  if (core[0].label === "Extreme" && hp.label === "High") issues.push({ severity: "warning", text: "Extreme AC paired with high HP can make the creature frustratingly durable. Pull one of them down." });
+  if (core.slice(2).filter((stat) => stat.label === "Extreme").length > 1) issues.push({ severity: "warning", text: "A creature should normally have only one extreme saving throw." });
+  if (![...core, hp].some((stat) => ["Low", "Terrible"].includes(stat.label))) issues.push({ severity: "warning", text: "No low statistic is visible. Most creatures need a clear weakness to pay for their strengths." });
+  const size = system.traits?.size?.value ?? "med";
+  const minimumSizeLevel = { lg: 1, huge: 5, grg: 10 }[size];
+  if (minimumSizeLevel != null && level < minimumSizeLevel) issues.push({ severity: "info", text: "This size is uncommon at the selected level. It can work, but review reach, space, and encounter impact." });
+  const roadmap = LS_CREATURE_ROADMAPS[concept.roadmap];
+  if (roadmap && ["spellcaster", "magicalStriker"].includes(concept.roadmap) && !actor.items.some((item) => item.type === "spell")) issues.push({ severity: "info", text: `${roadmap.label} expects a magical toolkit, but no spells are attached yet.` });
+  if (!issues.some((issue) => issue.severity === "warning")) issues.unshift({ severity: "good", text: "The visible core statistics follow the GM Core push-and-pull guidance." });
+  return {
+    core: [...core, { name: "HP", label: hp.label, value: lsNumber(system.attributes?.hp?.max, 1) }],
+    issues: issues.map((issue) => ({ ...issue, icon: issue.severity === "warning" ? "fa-triangle-exclamation" : issue.severity === "good" ? "fa-circle-check" : "fa-circle-info" })),
+    reference: lsBenchmarkReference(level), roadmap,
   };
 }
 
@@ -317,7 +372,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: "lore-smith-creature-builder-{id}",
     classes: ["lore-smith-builder"],
-    position: { width: 940, height: 760 },
+    position: { width: 1180, height: 800 },
     window: { title: "Lore Smith Creature Builder", icon: "fa-solid fa-dragon", resizable: true },
     actions: {
       previous: LoreSmithCreatureBuilder.previous,
@@ -328,6 +383,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       previewSource: LoreSmithCreatureBuilder.previewSource,
       useSource: LoreSmithCreatureBuilder.useSource,
       useCurrent: LoreSmithCreatureBuilder.useCurrent,
+      applyRoadmap: LoreSmithCreatureBuilder.applyRoadmap,
       addTrait: LoreSmithCreatureBuilder.addTrait,
       removeTrait: LoreSmithCreatureBuilder.removeTrait,
       goToStep: LoreSmithCreatureBuilder.goToStep,
@@ -367,7 +423,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   async _prepareContext(options) {
     if (this.step === 0 && !this.sourcesLoaded) await this.loadSources();
-    if (this.step === 3 && !this.contentResults.length) {
+    if (this.step === 4 && !this.contentResults.length) {
       this.contentResults = await lsSearchCreatureContent({
         types: ["action", "feat", "melee", "spell", "effect"],
         limit: 250,
@@ -378,6 +434,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     const system = actor.system;
     const level = lsNumber(system.details?.level, 0);
     const actorSize = system.traits?.size?.value ?? "med";
+    const concept = lsCreatureConcept(actor);
     const benchmarkRows = lsBenchmarks(level);
     const markSelected = (rows, value) => rows.map((row) => ({ ...row, selected: Number(row.value) === Number(value) }));
     return {
@@ -411,8 +468,8 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       sourceCount: this.sourceAllResults.length,
       hasPreviousSources: this.sourcePage > 0,
       hasNextSources: (this.sourcePage + 1) * this.sourcePageSize < this.sourceAllResults.length,
-      levelFilters: Array.from({ length: 27 }, (_value, index) => ({ value: index - 1, label: index - 1, selected: String(index - 1) === String(this.sourceLevel) })),
-      creatureLevels: Array.from({ length: 27 }, (_value, index) => ({
+      levelFilters: Array.from({ length: 26 }, (_value, index) => ({ value: index - 1, label: index - 1, selected: String(index - 1) === String(this.sourceLevel) })),
+      creatureLevels: Array.from({ length: 26 }, (_value, index) => ({
         value: index - 1,
         label: index - 1,
         selected: index - 1 === level,
@@ -431,6 +488,11 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         selected: entry.uuid === this.contentPreview?.uuid,
       })),
       contentPreview: this.contentPreview,
+      concept,
+      roadmapOptions: Object.entries(LS_CREATURE_ROADMAPS).map(([value, roadmap]) => ({ value, label: roadmap.label, description: roadmap.description, selected: value === concept.roadmap })),
+      intendedUseOptions: [["combatant", "Combatant"], ["social", "Social creature"], ["ally", "Trusted ally"]].map(([value, label]) => ({ value, label, selected: value === concept.intendedUse })),
+      complexityOptions: [["simple", "Simple / group creature"], ["standard", "Standard"], ["solo", "Solo / complex"]].map(([value, label]) => ({ value, label, selected: value === concept.complexity })),
+      balance: lsBalanceReport(actor, concept),
       benchmarks: {
         ac: markSelected(benchmarkRows.ac, lsNumber(system.attributes?.ac, 10)),
         hp: markSelected(benchmarkRows.hp, lsNumber(system.attributes?.hp?.max, 1)),
@@ -453,13 +515,14 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       stepNumber: this.step + 1,
       steps: {
         source: this.step === 0,
-        identity: this.step === 1,
-        defenses: this.step === 2,
-        content: this.step === 3,
-        review: this.step === 4,
+        concept: this.step === 1,
+        identity: this.step === 2,
+        defenses: this.step === 3,
+        content: this.step === 4,
+        review: this.step === 5,
       },
       canBack: this.step > 0,
-      canNext: this.step > 0 && this.step < 4,
+      canNext: this.step > 0 && this.step < 5,
     };
   }
 
@@ -492,13 +555,29 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     const root = this.element;
     if (!root) return;
     if (this.step === 1) {
+      const conceptData = {
+        concept: root.querySelector('[name="concept"]')?.value.trim() ?? "",
+        roadmap: root.querySelector('[name="roadmap"]')?.value ?? "",
+        intendedUse: root.querySelector('[name="intendedUse"]')?.value ?? "combatant",
+        complexity: root.querySelector('[name="complexity"]')?.value ?? "standard",
+        combatFeel: root.querySelector('[name="combatFeel"]')?.value.trim() ?? "",
+        strengths: root.querySelector('[name="strengths"]')?.value.trim() ?? "",
+        weaknesses: root.querySelector('[name="weaknesses"]')?.value.trim() ?? "",
+      };
+      const conceptLevel = Math.max(-1, Math.min(24, lsNumber(root.querySelector('[name="conceptLevel"]')?.value, 0)));
+      await this.actor.update({
+        "system.details.level.value": conceptLevel,
+      });
+      await this.actor.setFlag(LS_MODULE_ID, "creatureConcept", conceptData);
+    }
+    if (this.step === 2) {
       await this.actor.update({
         name: root.querySelector('[name="name"]')?.value.trim() || this.actor.name,
-        "system.details.level.value": Math.max(-1, Math.min(25, lsNumber(root.querySelector('[name="level"]')?.value, 0))),
+        "system.details.level.value": Math.max(-1, Math.min(24, lsNumber(root.querySelector('[name="level"]')?.value, 0))),
         "system.traits.size.value": root.querySelector('[name="size"]')?.value || "med",
       });
     }
-    if (this.step === 2) {
+    if (this.step === 3) {
       await this.actor.update({
         "system.attributes.ac.value": lsNumber(root.querySelector('[name="ac"]')?.value, 10),
         "system.attributes.hp.max": Math.max(1, lsNumber(root.querySelector('[name="hp"]')?.value, 1)),
@@ -520,13 +599,13 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   static async next() {
     await this.saveStep();
-    this.step = Math.min(4, this.step + 1);
+    this.step = Math.min(5, this.step + 1);
     await this.render();
   }
 
   static async goToStep(_event, target) {
     await this.saveStep();
-    this.step = Math.max(0, Math.min(4, Number(target.dataset.step) || 0));
+    this.step = Math.max(0, Math.min(5, Number(target.dataset.step) || 0));
     await this.render();
   }
 
@@ -588,6 +667,30 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   static async useCurrent() {
     this.step = 1;
+    await this.render();
+  }
+
+  static async applyRoadmap() {
+    await this.saveStep();
+    const concept = lsCreatureConcept(this.actor);
+    const roadmap = LS_CREATURE_ROADMAPS[concept.roadmap];
+    if (!roadmap) return ui.notifications.warn("Choose a GM Core road map first.");
+    const level = lsNumber(this.actor.system.details?.level, 0);
+    const benchmarks = lsBenchmarks(level);
+    const find = (group, tier) => benchmarks[group].find((entry) => entry.label.toLowerCase().startsWith(tier))?.value;
+    const stats = roadmap.stats;
+    const hp = find("hp", stats.hp);
+    await this.actor.update({
+      "system.attributes.ac.value": find("ac", stats.ac),
+      "system.attributes.hp.max": hp,
+      "system.attributes.hp.value": hp,
+      "system.perception.mod": find("perception", stats.perception),
+      "system.saves.fortitude.value": find("saves", stats.fortitude),
+      "system.saves.reflex.value": find("saves", stats.reflex),
+      "system.saves.will.value": find("saves", stats.will),
+      "system.attributes.speed.value": stats.speed,
+    });
+    ui.notifications.info(`${roadmap.label} suggestions applied for level ${level}. Every value remains editable.`);
     await this.render();
   }
 

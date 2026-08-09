@@ -148,6 +148,11 @@ Enable Lore Smith in a world using the PF2e system. A new Lore Smith button is
 added to the Scene controls for GMs.
 
 The Creature Builder icon appears in the title bar of native PF2e NPC sheets.
+Its guided workflow includes the seven GM Core base road maps, a dedicated
+concept-and-role step, editable level-scaled suggestions, and a persistent
+balance assistant. The assistant checks push-and-pull, extreme-stat density,
+size guidance, durability combinations, and displays all eleven Building
+Creatures tables for the actor's current level (levels -1 through 24).
 The Item Builder icon appears in native PF2e Item sheets. The Combat Tracker
 adds **Simulate Logs** and **Live Combat** controls when an encounter is active.
 Use the slider in the Live Combat window to change the delay from 0.25 to 10
