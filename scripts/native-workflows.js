@@ -274,6 +274,45 @@ async function lsBuildSourcePreview(uuid) {
   };
 }
 
+function lsActionCostLabel(item) {
+  const actionType = item.system?.actionType?.value ?? item.system?.actionType ?? "";
+  const actions = lsNumber(item.system?.actions, 0);
+  const time = item.system?.time?.value ?? item.system?.time ?? "";
+  if (actionType === "reaction") return "Reaction";
+  if (actionType === "free") return "Free action";
+  if (actionType === "passive") return "Passive";
+  if (actions > 0) return `${actions} action${actions === 1 ? "" : "s"}`;
+  return String(time || "As described");
+}
+
+async function lsBuildContentPreview(uuid) {
+  const source = await fromUuid(uuid);
+  if (!source || source.documentName !== "Item") return null;
+  const description = await TextEditor.enrichHTML(source.system?.description?.value ?? "", {
+    async: true,
+    secrets: game.user.isGM,
+    relativeTo: source,
+  });
+  const traitConfig = lsItemTraitConfig();
+  const traits = lsTraits(source).map((value) => ({
+    value,
+    label: game.i18n.localize(traitConfig[value] ?? value),
+  }));
+  const parent = source.parent?.documentName === "Actor" ? source.parent : null;
+  return {
+    uuid,
+    name: source.name,
+    img: source.img,
+    type: source.type,
+    level: lsNumber(source.system?.level, lsNumber(parent?.system?.details?.level, 0)),
+    traits,
+    actionCost: lsActionCostLabel(source),
+    sourceCreature: parent?.name ?? "",
+    sourcePack: source.compendium?.title ?? parent?.compendium?.title ?? "PF2e content",
+    description,
+  };
+}
+
 class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: "lore-smith-creature-builder-{id}",
@@ -293,6 +332,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       removeTrait: LoreSmithCreatureBuilder.removeTrait,
       goToStep: LoreSmithCreatureBuilder.goToStep,
       searchContent: LoreSmithCreatureBuilder.searchContent,
+      previewContent: LoreSmithCreatureBuilder.previewContent,
       addContent: LoreSmithCreatureBuilder.addContent,
       removeContent: LoreSmithCreatureBuilder.removeContent,
       finish: LoreSmithCreatureBuilder.finish,
@@ -319,8 +359,10 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   contentQuery = "";
   contentType = "";
   contentGlossaryOnly = false;
+  contentScrollTop = 0;
   sourceResults = [];
   sourcePreview = null;
+  contentPreview = null;
   contentResults = [];
 
   async _prepareContext(options) {
@@ -330,6 +372,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         types: ["action", "feat", "melee", "spell", "effect"],
         limit: 250,
       });
+      if (this.contentResults[0]) this.contentPreview = await lsBuildContentPreview(this.contentResults[0].uuid);
     }
     const actor = this.actor;
     const system = actor.system;
@@ -383,7 +426,11 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         label: game.i18n.localize(label),
         selected: value === this.sourceTrait,
       })).sort((left, right) => left.label.localeCompare(right.label)),
-      contentResults: this.contentResults,
+      contentResults: this.contentResults.map((entry) => ({
+        ...entry,
+        selected: entry.uuid === this.contentPreview?.uuid,
+      })),
+      contentPreview: this.contentPreview,
       benchmarks: {
         ac: markSelected(benchmarkRows.ac, lsNumber(system.attributes?.ac, 10)),
         hp: markSelected(benchmarkRows.hp, lsNumber(system.attributes?.hp?.max, 1)),
@@ -418,6 +465,8 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   _onRender(context, options) {
     super._onRender(context, options);
+    const contentList = this.element?.querySelector(".ls-content-columns .ls-builder-results");
+    if (contentList) contentList.scrollTop = this.contentScrollTop;
     for (const select of this.element?.querySelectorAll("[data-benchmark-target]") ?? []) {
       select.addEventListener("change", () => {
         const input = this.element.querySelector(`[name="${select.dataset.benchmarkTarget}"]`);
@@ -568,6 +617,18 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       limit: 250,
       bestiaryGlossaryOnly: this.contentGlossaryOnly,
     });
+    const selectedStillVisible = this.contentResults.some((entry) => entry.uuid === this.contentPreview?.uuid);
+    if (!selectedStillVisible) {
+      this.contentPreview = this.contentResults[0]
+        ? await lsBuildContentPreview(this.contentResults[0].uuid)
+        : null;
+    }
+    await this.render();
+  }
+
+  static async previewContent(_event, target) {
+    this.contentScrollTop = this.element.querySelector(".ls-content-columns .ls-builder-results")?.scrollTop ?? 0;
+    this.contentPreview = await lsBuildContentPreview(target.dataset.uuid);
     await this.render();
   }
 

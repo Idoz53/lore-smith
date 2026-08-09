@@ -68,6 +68,9 @@ The module provides:
   abilities, strikes, and spells embedded in every installed PF2e NPC Actor
   compendium. Results show their source creature and exact name matches are
   ranked first;
+- selecting a creature ability search result opens a rules preview beside the
+  list, including its enriched PF2e description, traits, action cost, source
+  pack, and source creature before it is added;
 - GM Core level benchmark menus for creature statistics;
 - native Foundry Journal documents, page permissions, sharing, Show Players,
   images, tables, document links, and rendered read view; no Obsidian install,

@@ -101,15 +101,26 @@
         <div class="ls-content-columns">
           <section><h3>Available PF2e entries</h3><div class="ls-builder-results compact tall">
             {{#each contentResults}}
-              <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}} &middot; Level {{level}} &middot; {{pack}}{{#if sourceCreature}} &middot; {{sourceCreature}}{{/if}}</small></div><button data-action="addContent" data-uuid="{{uuid}}"><i class="fa-solid fa-plus"></i></button></article>
+              <article class="{{#if selected}}selected{{/if}}" data-action="previewContent" data-uuid="{{uuid}}"><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}} &middot; Level {{level}} &middot; {{pack}}{{#if sourceCreature}} &middot; {{sourceCreature}}{{/if}}</small></div><button data-action="addContent" data-uuid="{{uuid}}" data-tooltip="Add to creature"><i class="fa-solid fa-plus"></i></button></article>
             {{else}}<div class="ls-builder-empty">No installed entry matches these filters.</div>{{/each}}
           </div></section>
-          <section><h3>On this creature</h3><div class="ls-builder-results compact tall">
-            {{#each actor.items}}
-              <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}}</small></div><button class="danger" data-action="removeContent" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></article>
-            {{else}}<div class="ls-builder-empty">No embedded actions or items yet.</div>{{/each}}
-          </div></section>
+          <aside class="ls-source-preview ls-content-preview">
+            {{#if contentPreview}}
+              <header><img src="{{contentPreview.img}}"><div><h3>{{contentPreview.name}}</h3><span>{{contentPreview.type}} &middot; Level {{contentPreview.level}}</span></div></header>
+              <div class="ls-preview-traits">{{#each contentPreview.traits}}<span>{{label}}</span>{{/each}}</div>
+              <dl><div><dt>Action cost</dt><dd>{{contentPreview.actionCost}}</dd></div><div><dt>Source</dt><dd>{{contentPreview.sourcePack}}</dd></div>{{#if contentPreview.sourceCreature}}<div class="wide"><dt>Found on</dt><dd>{{contentPreview.sourceCreature}}</dd></div>{{/if}}</dl>
+              <div class="ls-preview-description">{{{contentPreview.description}}}</div>
+              <button data-action="addContent" data-uuid="{{contentPreview.uuid}}"><i class="fa-solid fa-plus"></i> Add to creature</button>
+            {{else}}
+              <div class="ls-preview-empty"><i class="fa-solid fa-eye"></i><strong>Select an entry</strong><span>Click an ability, strike, or spell to read its complete PF2e mechanics before adding it.</span></div>
+            {{/if}}
+          </aside>
         </div>
+        <section class="ls-attached-content"><h3>On this creature</h3><div class="ls-builder-results compact">
+          {{#each actor.items}}
+            <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}}</small></div><button class="danger" data-action="removeContent" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></article>
+          {{else}}<div class="ls-builder-empty">No embedded actions or items yet.</div>{{/each}}
+        </div></section>
       </section>
     {{/if}}
 
