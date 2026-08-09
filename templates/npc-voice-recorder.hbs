@@ -1,0 +1,36 @@
+<div class="ls-voice-recorder">
+  <header class="ls-voice-heading">
+    <img src="{{actor.img}}" alt="{{actor.name}}">
+    <div><span>NPC voice reference</span><h1>{{actor.name}}</h1><p>Record reusable examples so this character always sounds consistent.</p></div>
+  </header>
+  <main>
+    {{#if microphoneError}}<div class="ls-voice-error"><i class="fa-solid fa-triangle-exclamation"></i> {{microphoneError}}</div>{{/if}}
+    <section class="ls-voice-studio">
+      <div class="ls-voice-section-heading"><div><span>Recording studio</span><h2>New voice sample</h2></div><button type="button" class="secondary" data-action="requestMicrophone"><i class="fa-solid fa-shield-halved"></i> Check microphone</button></div>
+      <label class="ls-voice-device">Microphone<select name="microphone">{{#each devices}}<option value="{{id}}">{{label}}</option>{{else}}<option value="">Default microphone</option>{{/each}}</select></label>
+      <div class="ls-voice-meter" data-role="recording-status"><i class="fa-solid fa-circle"></i><strong data-role="recording-status-text">{{#if isRecording}}Recording{{else}}{{#if isPaused}}Paused{{else}}{{#if hasDraft}}Take ready{{else}}Ready{{/if}}{{/if}}{{/if}}</strong><span data-role="recording-time">{{elapsedLabel}}</span></div>
+      <div class="ls-voice-controls">
+        <button type="button" data-action="startRecording" {{#unless isIdle}}disabled{{/unless}}><i class="fa-solid fa-microphone"></i> Record</button>
+        <button type="button" data-action="pauseRecording" {{#unless isRecording}}disabled{{/unless}}><i class="fa-solid fa-pause"></i> Pause</button>
+        <button type="button" data-action="resumeRecording" {{#unless isPaused}}disabled{{/unless}}><i class="fa-solid fa-play"></i> Resume</button>
+        <button type="button" class="stop" data-action="stopRecording" {{#unless isRecording}}{{#unless isPaused}}disabled{{/unless}}{{/unless}}><i class="fa-solid fa-stop"></i> Stop</button>
+      </div>
+      {{#if hasDraft}}<div class="ls-voice-draft">
+        <audio controls src="{{draftUrl}}"></audio>
+        <div class="ls-voice-fields"><label>Sample name<input name="draftName" value="{{suggestedName}}" placeholder="Greeting, angry threat, nervous voice…"></label><label>Voice notes<textarea name="draftNote" rows="3" placeholder="Pitch, rhythm, accent, mannerisms, catchphrases…"></textarea></label></div>
+        <div class="ls-voice-draft-actions"><button type="button" class="secondary" data-action="discardDraft"><i class="fa-solid fa-trash"></i> Discard take</button><button type="button" data-action="saveRecording"><i class="fa-solid fa-floppy-disk"></i> Save recording</button></div>
+      </div>{{/if}}
+    </section>
+    <section class="ls-voice-library">
+      <div class="ls-voice-section-heading"><div><span>Saved on this Actor</span><h2>Voice library</h2></div><small>{{samples.length}} sample(s)</small></div>
+      <div class="ls-voice-list">{{#each samples}}
+        <article data-sample-id="{{id}}" class="{{#if isPrimary}}primary{{/if}}">
+          <div class="ls-voice-sample-top"><span class="ls-voice-number">{{number}}</span><input name="sampleName" value="{{name}}" aria-label="Voice sample name">{{#if isPrimary}}<span class="ls-voice-primary"><i class="fa-solid fa-star"></i> Primary voice</span>{{else}}<button type="button" class="secondary compact" data-action="makePrimary"><i class="fa-regular fa-star"></i> Make primary</button>{{/if}}</div>
+          <audio controls preload="metadata" src="{{path}}"></audio>
+          <textarea name="sampleNote" rows="2" placeholder="Pitch, accent, rhythm, mannerisms, catchphrases…">{{note}}</textarea>
+          <footer><small>{{durationLabel}}</small><div><button type="button" class="secondary compact" data-action="downloadSample" data-tooltip="Download audio"><i class="fa-solid fa-download"></i></button><button type="button" class="secondary compact" data-action="saveSample"><i class="fa-solid fa-floppy-disk"></i> Save notes</button><button type="button" class="danger compact" data-action="deleteSample" data-tooltip="Remove reference"><i class="fa-solid fa-trash"></i></button></div></footer>
+        </article>
+      {{else}}<div class="ls-voice-empty"><i class="fa-solid fa-waveform-lines"></i><strong>No voice samples yet</strong><span>Record a greeting, a combat line, or a short example of the NPC's normal speaking voice.</span></div>{{/each}}</div>
+    </section>
+  </main>
+</div>

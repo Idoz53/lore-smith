@@ -12,6 +12,10 @@ The module provides:
   saved draft that survives navigation and reopening the dashboard;
 - image-backed NPC prep cards with roles, motivations, and secrets, generated as
   linked portrait pages inside the finished session Journal;
+- a native NPC voice-reference studio available from every PF2e NPC sheet, with
+  microphone selection, record, pause, resume, stop, preview-before-upload,
+  multiple named samples, a primary voice, playback, downloads, and notes for
+  pitch, accent, rhythm, mannerisms, and catchphrases;
 - a dedicated music-and-atmosphere prep step with reusable cues, specific song
   selection inside a Foundry Playlist, direct audio files, mood, timing, and playback notes; audio cues are
   added as native Playlist tracks, with a session Playlist created automatically
@@ -158,6 +162,10 @@ Enable Lore Smith in a world using the PF2e system. A new Lore Smith button is
 added to the Scene controls for GMs.
 
 The Creature Builder icon appears in the title bar of native PF2e NPC sheets.
+The microphone icon beside it opens that NPC's Voice Reference studio. Audio is
+saved under `Data/lore-smith/npc-voices/<actor-id>` and the organized sample
+library is stored on the Actor, so it remains available between Foundry sessions.
+Foundry or the browser asks for microphone permission the first time it records.
 Its guided workflow includes the seven GM Core base road maps, a dedicated
 concept-and-role step, editable level-scaled suggestions, and a persistent
 balance assistant. The assistant checks push-and-pull, extreme-stat density,
