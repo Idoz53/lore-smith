@@ -30,6 +30,23 @@ function lsParseTagify(value) {
   }
 }
 
+function lsTraitChoices(...records) {
+  const choices = new Map();
+  for (const record of records) {
+    for (const [value, data] of Object.entries(record ?? {})) {
+      const label = game.i18n.localize(data?.label ?? data ?? value);
+      choices.set(value, { value, label });
+    }
+  }
+  return [...choices.values()].sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function lsMeaningfulNpcSkill(skill) {
+  return lsNumber(skill?.base, 0) !== 0
+    || Boolean(String(skill?.note ?? "").trim())
+    || (Array.isArray(skill?.special) && skill.special.length > 0);
+}
+
 function lsBenchmarks(level) {
   const named = (names, values) => names.map((label, index) => ({ label, value: values[index] })).filter((entry) => entry.value != null);
   const hp = creatureTableRow("hitPoints", level);
@@ -602,15 +619,25 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     const benchmarkRows = lsBenchmarks(level);
     const damageWorkshop = lsStrikeWorkshop(level);
     const markSelected = (rows, value) => rows.map((row) => ({ ...row, selected: Number(row.value) === Number(value) }));
-    const traitChoices = Object.entries(CONFIG.PF2E.creatureTraits ?? {}).map(([value, label]) => ({ value, label: game.i18n.localize(label) })).sort((a, b) => a.label.localeCompare(b.label));
+    const traitChoices = lsTraitChoices(CONFIG.PF2E.creatureTraits);
+    const attackTraitChoices = lsTraitChoices(CONFIG.PF2E.npcAttackTraits, CONFIG.PF2E.weaponTraits, CONFIG.PF2E.actionTraits);
+    const actionTraitChoices = lsTraitChoices(CONFIG.PF2E.actionTraits, CONFIG.PF2E.featTraits, CONFIG.PF2E.spellTraits);
+    const storedSkills = actor._source?.system?.skills ?? {};
+    const builderSkillSlugs = new Set(actor.getFlag(LS_MODULE_ID, "builderSkills") ?? []);
+    const visibleSkillSlugs = new Set(Object.entries(storedSkills)
+      .filter(([slug, skill]) => builderSkillSlugs.has(slug) || lsMeaningfulNpcSkill(skill))
+      .map(([slug]) => slug));
     const existingSkills = system.skills ?? {};
     const skillConfig = CONFIG.PF2E.skills ?? {};
-    const skillRows = Object.entries(existingSkills).map(([slug, skill]) => ({
+    const skillRows = [...visibleSkillSlugs].map((slug) => {
+      const skill = existingSkills[slug] ?? storedSkills[slug] ?? {};
+      return {
       slug,
       label: game.i18n.localize(skillConfig[slug]?.label ?? skillConfig[slug] ?? slug),
       value: lsNumber(skill.base, 0),
       benchmarks: markSelected(benchmarkRows.skills, lsNumber(skill.base, 0)),
-    })).sort((a, b) => a.label.localeCompare(b.label));
+      };
+    }).sort((a, b) => a.label.localeCompare(b.label));
     const speedRows = [
       { type: "land", label: "Land / walk", value: lsNumber(system.attributes?.speed, 25) },
       ...(system.attributes?.speed?.otherSpeeds ?? []).map((speed) => ({ type: speed.type, label: LS_SPEED_TYPES.find(([value]) => value === speed.type)?.[1] ?? speed.type, value: lsNumber(speed.value, 0) })),
@@ -678,9 +705,11 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         value, label,
         selected: value === this.sourceTrait,
       })),
-      traitWhitelist: traitChoices,
-      traitTagifyValue: lsTraits(actor).map((value) => ({ id: value, value, label: game.i18n.localize(CONFIG.PF2E.creatureTraits?.[value] ?? value) })),
-      skillOptions: Object.entries(skillConfig).filter(([slug]) => !(slug in existingSkills)).map(([value, data]) => ({ value, label: game.i18n.localize(data?.label ?? data ?? value) })).sort((a, b) => a.label.localeCompare(b.label)),
+      creatureTraitValue: lsTraits(actor).join(","),
+      creatureTraitChoices: traitChoices,
+      attackTraitChoices,
+      actionTraitChoices,
+      skillOptions: Object.entries(skillConfig).filter(([slug]) => !visibleSkillSlugs.has(slug)).map(([value, data]) => ({ value, label: game.i18n.localize(data?.label ?? data ?? value) })).sort((a, b) => a.label.localeCompare(b.label)),
       speedTypeOptions: LS_SPEED_TYPES.filter(([value]) => value !== "land" && !speedRows.some((speed) => speed.type === value)).map(([value, label]) => ({ value, label })),
       senseTypeOptions,
       senseAcuityOptions: [["precise", "Precise"], ["imprecise", "Imprecise"], ["vague", "Vague"]].map(([value, label]) => ({ value, label })),
@@ -755,17 +784,53 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       });
     }
     const root = this.element;
-    const traitTags = root?.querySelector('tagify-tags[name="creatureTraits"]');
-    if (traitTags) {
-      const whitelist = context.traitWhitelist.map((trait) => ({ id: trait.value, value: trait.value, label: trait.label }));
-      traitTags.whitelist = whitelist;
-      traitTags.enforceWhitelist = true;
-      const nativeTagify = traitTags.tagify ?? traitTags._tagify;
-      if (nativeTagify?.settings) {
-        nativeTagify.settings.whitelist = whitelist;
-        nativeTagify.settings.enforceWhitelist = true;
-        nativeTagify.settings.dropdown = { ...(nativeTagify.settings.dropdown ?? {}), enabled: 0, maxItems: 100, searchKeys: ["label", "value"] };
-      }
+    for (const picker of root?.querySelectorAll("[data-ls-trait-picker]") ?? []) {
+      const search = picker.querySelector("[data-ls-trait-search]");
+      const hidden = picker.querySelector("[data-ls-trait-value]");
+      const chips = picker.querySelector("[data-ls-trait-chips]");
+      const options = [...picker.querySelectorAll("datalist option")].map((option) => ({
+        value: option.dataset.value,
+        label: option.value,
+      }));
+      let selected = lsSplitTraits(hidden?.value);
+      const redraw = () => {
+        if (hidden) hidden.value = selected.join(",");
+        if (!chips) return;
+        chips.replaceChildren(...selected.map((value) => {
+          const option = options.find((choice) => choice.value === value);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "ls-trait-chip";
+          button.dataset.value = value;
+          button.innerHTML = `${option?.label ?? value} <i class="fa-solid fa-xmark"></i>`;
+          button.addEventListener("click", () => {
+            selected = selected.filter((trait) => trait !== value);
+            redraw();
+          });
+          return button;
+        }));
+        if (!selected.length) {
+          const empty = document.createElement("small");
+          empty.textContent = "No traits selected.";
+          chips.append(empty);
+        }
+      };
+      const add = () => {
+        const query = search?.value.trim() ?? "";
+        if (!query) return;
+        const option = options.find((choice) => choice.value === query || choice.label.localeCompare(query, undefined, { sensitivity: "accent" }) === 0);
+        if (!option) return ui.notifications.warn("Choose a trait from the PF2e suggestions.");
+        if (!selected.includes(option.value)) selected.push(option.value);
+        if (search) search.value = "";
+        redraw();
+      };
+      picker.querySelector("[data-ls-trait-add]")?.addEventListener("click", add);
+      search?.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        add();
+      });
+      redraw();
     }
     const field = (name) => root?.querySelector(`[name="${name}"]`);
     const setEnabled = (name, enabled) => {
@@ -816,6 +881,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     const root = this.element;
     if (!root) return;
     if (this.step === 1) {
+      const previousConcept = lsCreatureConcept(this.actor);
       const conceptData = {
         concept: root.querySelector('[name="concept"]')?.value.trim() ?? "",
         roadmap: root.querySelector('[name="roadmap"]')?.value ?? "",
@@ -830,6 +896,9 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         "system.details.level.value": conceptLevel,
       });
       await this.actor.setFlag(LS_MODULE_ID, "creatureConcept", conceptData);
+      if (conceptData.roadmap && conceptData.roadmap !== previousConcept.roadmap) {
+        await this.applyRoadmapDefaults(conceptData.roadmap, { notify: false, render: false });
+      }
     }
     if (this.step === 2) {
       const traitField = root.querySelector('[name="creatureTraits"]');
@@ -850,7 +919,12 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         acuity: row.querySelector('[data-sense-acuity]')?.value || "imprecise",
         range: row.querySelector('[data-sense-range]')?.value === "" ? null : Math.max(0, lsNumber(row.querySelector('[data-sense-range]')?.value, 0)),
       }));
-      const skillUpdates = Object.fromEntries([...root.querySelectorAll("[data-skill-slug]")].map((input) => [`system.skills.${input.dataset.skillSlug}.base`, lsNumber(input.value, 0)]));
+      const skillInputs = [...root.querySelectorAll("[data-skill-slug]")];
+      const selectedSkillSlugs = new Set(skillInputs.map((input) => input.dataset.skillSlug));
+      const skillUpdates = Object.fromEntries(skillInputs.map((input) => [`system.skills.${input.dataset.skillSlug}.base`, lsNumber(input.value, 0)]));
+      for (const [slug, skill] of Object.entries(this.actor._source?.system?.skills ?? {})) {
+        if (!selectedSkillSlugs.has(slug) && !lsMeaningfulNpcSkill(skill)) skillUpdates[`system.skills.-=${slug}`] = null;
+      }
       await this.actor.update({
         ...Object.fromEntries(["str", "dex", "con", "int", "wis", "cha"].map((ability) => [`system.abilities.${ability}.mod`, lsNumber(root.querySelector(`[name="${ability}"]`)?.value, 0)])),
         "system.attributes.ac.value": lsNumber(root.querySelector('[name="ac"]')?.value, 10),
@@ -953,7 +1027,11 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static async applyRoadmap() {
     await this.saveStep();
     const concept = lsCreatureConcept(this.actor);
-    const roadmap = LS_CREATURE_ROADMAPS[concept.roadmap];
+    await this.applyRoadmapDefaults(concept.roadmap, { notify: true, render: true });
+  }
+
+  async applyRoadmapDefaults(roadmapKey, { notify = true, render = true } = {}) {
+    const roadmap = LS_CREATURE_ROADMAPS[roadmapKey];
     if (!roadmap) return ui.notifications.warn("Choose a GM Core road map first.");
     const level = lsNumber(this.actor.system.details?.level, 0);
     const benchmarks = lsBenchmarks(level);
@@ -971,8 +1049,8 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       "system.attributes.speed.value": stats.speed,
       ...Object.fromEntries(["str", "dex", "con", "int", "wis", "cha"].map((ability) => [`system.abilities.${ability}.mod`, find("attributes", stats[ability] ?? "moderate")])),
     });
-    ui.notifications.info(`${roadmap.label} suggestions applied for level ${level}. Every value remains editable.`);
-    await this.render();
+    if (notify) ui.notifications.info(`${roadmap.label} suggestions applied for level ${level}. Every value remains editable.`);
+    if (render) await this.render();
   }
 
   static async addTrait() {
@@ -997,12 +1075,18 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     if (!slug) return;
     const moderate = lsBenchmarks(lsNumber(this.actor.system.details?.level, 0)).skills.find((entry) => entry.label === "Moderate")?.value ?? 0;
     await this.actor.update({ [`system.skills.${slug}`]: { base: moderate, note: "", special: [] } });
+    const selected = new Set(this.actor.getFlag(LS_MODULE_ID, "builderSkills") ?? []);
+    selected.add(slug);
+    await this.actor.setFlag(LS_MODULE_ID, "builderSkills", [...selected]);
     await this.render();
   }
 
   static async removeSkill(_event, target) {
     await this.saveStep();
     await this.actor.update({ [`system.skills.-=${target.dataset.skill}`]: null });
+    const selected = new Set(this.actor.getFlag(LS_MODULE_ID, "builderSkills") ?? []);
+    selected.delete(target.dataset.skill);
+    await this.actor.setFlag(LS_MODULE_ID, "builderSkills", [...selected]);
     await this.render();
   }
 
@@ -1081,7 +1165,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     if (!primaryFormula) return ui.notifications.warn("Enter a valid custom damage formula.");
     const name = root.querySelector('[name="strikeName"]')?.value.trim() || "New Strike";
     const damageType = root.querySelector('[name="strikeDamageType"]')?.value || "slashing";
-    const traits = lsSplitTraits(root.querySelector('[name="strikeTraits"]')?.value);
+    const traits = lsParseTagify(root.querySelector('[name="strikeTraits"]')?.value);
     const attackEffects = String(root.querySelector('[name="strikeAttackEffects"]')?.value ?? "").split(",").map((effect) => effect.trim()).filter(Boolean);
     const rangeValue = root.querySelector('[name="strikeRange"]')?.value ?? "";
     const primaryDamageId = foundry.utils.randomID();
@@ -1140,7 +1224,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       conditionValue: Math.max(0, lsNumber(root.querySelector('[name="abilityConditionValue"]')?.value, 0)),
       autoScale: Boolean(root.querySelector('[name="abilityAutoScale"]')?.checked), levelApplied: level,
     };
-    const traits = lsSplitTraits(root.querySelector('[name="abilityTraits"]')?.value);
+    const traits = lsParseTagify(root.querySelector('[name="abilityTraits"]')?.value);
     if (damageTier !== "none" && !traits.includes(damageType) && damageType !== "untyped") traits.push(damageType);
     const system = {
       description: { value: lsAbilityDescription(link, level), gm: "" }, rules: [], slug: null,
@@ -1183,7 +1267,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       conditionValue: Math.max(0, lsNumber(root.querySelector('[name="passiveConditionValue"]')?.value, 0)),
       autoScale: Boolean(root.querySelector('[name="passiveAutoScale"]')?.checked), levelApplied: level,
     };
-    const traits = lsSplitTraits(root.querySelector('[name="passiveTraits"]')?.value);
+    const traits = lsParseTagify(root.querySelector('[name="passiveTraits"]')?.value);
     if (damageTier !== "none" && damageType !== "untyped" && !traits.includes(damageType)) traits.push(damageType);
     await this.actor.createEmbeddedDocuments("Item", [{
       name: root.querySelector('[name="passiveName"]')?.value.trim() || "New Passive",

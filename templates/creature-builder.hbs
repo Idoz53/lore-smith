@@ -89,10 +89,16 @@
           <label class="wide">Creature name<input name="name" value="{{actor.name}}"></label>
           <label>Level<select name="level">{{#each creatureLevels}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
           <label>Size<select name="size">{{#each sizeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-          <label class="wide">Creature traits
-            <tagify-tags class="tags paizo-style ls-native-traits" name="creatureTraits" value="{{json traitTagifyValue}}" placeholder="Search PF2e creature traits" />
-            <small>Foundry's native searchable trait control. Type to filter; press Enter to add.</small>
-          </label>
+          <div class="wide ls-trait-field">
+            <strong>Creature traits</strong>
+            <div class="ls-trait-picker" data-ls-trait-picker>
+              <div class="ls-inline-control"><input type="search" data-ls-trait-search list="ls-creature-traits-{{actor.id}}" placeholder="Search PF2e creature traits" autocomplete="off"><button type="button" data-ls-trait-add><i class="fa-solid fa-plus"></i> Add trait</button></div>
+              <datalist id="ls-creature-traits-{{actor.id}}">{{#each creatureTraitChoices}}<option value="{{label}}" data-value="{{value}}"></option>{{/each}}</datalist>
+              <input type="hidden" name="creatureTraits" data-ls-trait-value value="{{creatureTraitValue}}">
+              <div class="ls-trait-chips" data-ls-trait-chips></div>
+            </div>
+            <small>Searches Foundry PF2e's creature-trait list. Pick a suggestion, then press Enter or Add trait.</small>
+          </div>
         </div>
       </section>
     {{/if}}
@@ -155,7 +161,7 @@
               <label>Custom damage formula<input name="strikeCustomDamage" placeholder="e.g. 2d8+7"></label>
               <label>Primary damage type<select name="strikeDamageType">{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
               <label>Range increment<input name="strikeRange" type="number" min="5" step="5" placeholder="Blank for melee"></label>
-              <label class="wide">Strike traits<input name="strikeTraits" placeholder="agile, finesse, reach-10, magical"></label>
+              <div class="wide ls-trait-field"><strong>Strike traits</strong><div class="ls-trait-picker" data-ls-trait-picker><div class="ls-inline-control"><input type="search" data-ls-trait-search list="ls-attack-traits-{{actor.id}}" placeholder="Search PF2e attack traits" autocomplete="off"><button type="button" data-ls-trait-add><i class="fa-solid fa-plus"></i> Add trait</button></div><datalist id="ls-attack-traits-{{actor.id}}">{{#each attackTraitChoices}}<option value="{{label}}" data-value="{{value}}"></option>{{/each}}</datalist><input type="hidden" name="strikeTraits" data-ls-trait-value value=""><div class="ls-trait-chips" data-ls-trait-chips></div></div></div>
               <label class="wide">Attack effects<input name="strikeAttackEffects" placeholder="Grab, Knockdown, poison name (comma separated)"></label>
               <div class="ls-module-subsection wide"><strong>Optional secondary damage module</strong><label>Formula<input name="strikeSecondaryDamage" placeholder="e.g. 1d6"></label><label>Damage type<select name="strikeSecondaryType">{{#each damageTypes}}<option value="{{value}}">{{label}}</option>{{/each}}</select></label></div>
               <label class="ls-check-label wide"><input name="strikeAutoScale" type="checkbox" checked> Automatically scale linked attack and damage benchmarks with creature level</label>
@@ -180,7 +186,7 @@
               <label>Area size (feet)<input name="abilityAreaDistance" type="number" min="5" step="5" value="15"></label>
               <label>Uses<input name="abilityFrequencyMax" type="number" min="0" placeholder="Blank for unlimited"></label>
               <label>Recharge period<select name="abilityFrequencyPer"><option value="round">Round</option><option value="minute">Minute</option><option value="hour">Hour</option><option value="day" selected>Day</option></select></label>
-              <label class="wide">Ability traits<input name="abilityTraits" placeholder="arcane, concentrate, manipulate"></label>
+              <div class="wide ls-trait-field"><strong>Ability traits</strong><div class="ls-trait-picker" data-ls-trait-picker><div class="ls-inline-control"><input type="search" data-ls-trait-search list="ls-action-traits-{{actor.id}}" placeholder="Search PF2e action traits" autocomplete="off"><button type="button" data-ls-trait-add><i class="fa-solid fa-plus"></i> Add trait</button></div><datalist id="ls-action-traits-{{actor.id}}">{{#each actionTraitChoices}}<option value="{{label}}" data-value="{{value}}"></option>{{/each}}</datalist><input type="hidden" name="abilityTraits" data-ls-trait-value value=""><div class="ls-trait-chips" data-ls-trait-chips></div></div></div>
               <label>Requirements<input name="abilityRequirements" placeholder="What must already be true?"></label>
               <label>Trigger<input name="abilityTrigger" placeholder="Leave blank unless reactive"></label>
               <label>Duration<input name="abilityDuration" placeholder="e.g. 1 round"></label>
@@ -205,7 +211,7 @@
               <label>Custom DC<input name="passiveCustomDc" type="number"></label>
               <label>Area shape<select name="passiveAreaShape"><option value="emanation">Emanation</option><option value="burst">Burst</option><option value="cone">Cone</option><option value="line">Line</option></select></label>
               <label>Area size (feet)<input name="passiveAreaDistance" type="number" min="5" step="5" value="10"></label>
-              <label class="wide">Traits<input name="passiveTraits" placeholder="aura, fire, mental"></label>
+              <div class="wide ls-trait-field"><strong>Passive traits</strong><div class="ls-trait-picker" data-ls-trait-picker><div class="ls-inline-control"><input type="search" data-ls-trait-search list="ls-passive-traits-{{actor.id}}" placeholder="Search PF2e passive traits" autocomplete="off"><button type="button" data-ls-trait-add><i class="fa-solid fa-plus"></i> Add trait</button></div><datalist id="ls-passive-traits-{{actor.id}}">{{#each actionTraitChoices}}<option value="{{label}}" data-value="{{value}}"></option>{{/each}}</datalist><input type="hidden" name="passiveTraits" data-ls-trait-value value=""><div class="ls-trait-chips" data-ls-trait-chips></div></div></div>
               <label>Requirements<input name="passiveRequirements"></label>
               <label>Duration<input name="passiveDuration"></label>
               <label>Condition<select name="passiveCondition"><option value="">No condition</option>{{#each conditionOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select></label>

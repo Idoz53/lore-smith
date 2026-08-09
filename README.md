@@ -25,7 +25,10 @@ The module provides:
   a focused writing window;
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
 - a seven-step creature builder with editable GM Core attribute, perception,
-  defense, save, and skill benchmarks; native searchable creature traits;
+  defense, save, and skill benchmarks; searchable PF2e trait pickers for
+  creatures, attacks, actions/reactions, and passives; road-map attributes
+  applied as editable starting defaults; an empty skill list with the complete
+  PF2e skill catalog available from Add Skill;
   land, fly, swim, climb, and burrow Speeds; special senses; separate native
   spellcasting; and scroll position preserved while filtering or editing;
 - modular creature entries separated into native PF2e Attacks,
