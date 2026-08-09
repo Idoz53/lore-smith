@@ -1211,6 +1211,11 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     this.applyBattlefieldTransform();
   }
 
+  async showMovementFrame(snapshot, captionText = "") {
+    if (!this.followingLatest || !this.element) return;
+    this.renderBattlefield(snapshot, captionText);
+  }
+
   async add(entry) {
     entry.index = this.entries.length;
     this.entries.push(entry);
@@ -1283,31 +1288,42 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     grid.style.backgroundSize = `${Math.max(1, scene.gridSize)}px ${Math.max(1, scene.gridSize)}px`;
     grid.hidden = Number(scene.gridType) === Number(CONST.GRID_TYPES.GRIDLESS);
     if (caption) caption.textContent = captionText || "Isolated combat state";
-    layer.replaceChildren();
+    const existingTokens = new Map([...layer.children].map((node) => [node.dataset.tokenId, node]));
+    const visibleTokenIds = new Set();
     for (const token of snapshot.tokens ?? []) {
-      const node = document.createElement("article");
+      const tokenId = String(token.tokenId ?? token.actorId ?? token.name);
+      visibleTokenIds.add(tokenId);
+      let node = existingTokens.get(tokenId);
+      if (!node) {
+        node = document.createElement("article");
+        node.dataset.tokenId = tokenId;
+        const portrait = document.createElement("img");
+        portrait.alt = "";
+        const label = document.createElement("strong");
+        const hp = document.createElement("span");
+        hp.className = "ls-live-token-hp";
+        hp.append(document.createElement("i"));
+        const details = document.createElement("small");
+        node.append(portrait, label, hp, details);
+        layer.append(node);
+      }
       node.className = `ls-live-token ${token.team}${token.defeated ? " defeated" : ""}`;
       node.style.left = `${token.x - scene.x}px`;
       node.style.top = `${token.y - scene.y}px`;
       node.style.width = `${token.width}px`;
       node.style.height = `${token.height}px`;
       node.title = `${token.name} — ${token.hp}/${token.maxHp} HP`;
-      const portrait = document.createElement("img");
+      const portrait = node.querySelector("img");
       portrait.src = token.image;
-      portrait.alt = "";
-      const label = document.createElement("strong");
+      const label = node.querySelector("strong");
       label.textContent = token.name;
-      const hp = document.createElement("span");
-      hp.className = "ls-live-token-hp";
-      const hpFill = document.createElement("i");
+      const hpFill = node.querySelector(".ls-live-token-hp i");
       hpFill.style.width = `${Math.max(0, Math.min(100, token.hp / Math.max(1, token.maxHp) * 100))}%`;
-      hp.append(hpFill);
-      const details = document.createElement("small");
+      const details = node.querySelector("small");
       const conditions = (token.conditions ?? []).map((condition) => `${condition.slug}${condition.value > 1 ? ` ${condition.value}` : ""}${condition.reason ? ` — ${condition.reason}` : ""}`);
       details.textContent = `${token.hp}/${token.maxHp} HP${conditions.length ? ` · ${conditions.join(", ")}` : ""}`;
-      node.append(portrait, label, hp, details);
-      layer.append(node);
     }
+    for (const [tokenId, node] of existingTokens) if (!visibleTokenIds.has(tokenId)) node.remove();
     const namespace = "http://www.w3.org/2000/svg";
     wallLayer.replaceChildren();
     wallLayer.setAttribute("viewBox", `0 0 ${scene.width} ${scene.height}`);

@@ -862,7 +862,12 @@ async function lsMoveTokenAlong(attacker, path) {
   if (!path?.length) return false;
   const destination = path.at(-1);
   if (lsOccupiedAt(attacker.token.object, destination)) return false;
-  await attacker.token.update(destination, { animate: true, animation: { duration: 650 } });
+  const world = attacker.token.object?._loreSmithWorld;
+  for (const [index, square] of path.entries()) {
+    if (lsOccupiedAt(attacker.token.object, square)) return false;
+    await attacker.token.update(square);
+    if (index < path.length - 1) await pause(world?.movementDelay?.() ?? 140);
+  }
   return true;
 }
 
@@ -894,7 +899,7 @@ function createIsolatedToken(document, world) {
         : canvas.grid.getTopLeftPoint(canvas.grid.getOffset({ x: requested.x + 1, y: requested.y + 1 }));
       state.x = Number(position.x);
       state.y = Number(position.y);
-      world.onChange?.();
+      await world.onChange?.(state);
       return state;
     },
   };
@@ -1157,6 +1162,15 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
     .map((token) => virtualCombatant(token, partyIds.has(token.id) ? "party" : "enemy"));
   await separateOverlappingCombatants(combatants);
   let activeOverlay = null;
+  if (isolatedWorld) {
+    isolatedWorld.movementDelay = () => Math.max(90, Math.min(320, actionDelay() / 4));
+    isolatedWorld.onChange = async (movingToken) => {
+      await control?.showMovementFrame?.(
+        liveStateSnapshot(combatants, activeOverlay),
+        `${movingToken?.name ?? "Combatant"} moves one grid square along the collision-checked path.`,
+      );
+    };
+  }
   const order = [];
   for (const combatant of combatants) {
     const tracked = combat?.combatants?.find((entry) => entry.tokenId === combatant.id);

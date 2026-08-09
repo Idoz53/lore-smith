@@ -51,6 +51,9 @@ The module provides:
   grid, supports wheel zoom and drag panning, and displays the real Scene walls;
 - replay pathfinding uses Foundry's native wall collision for movement and
   requires an unobstructed sight line before resolving a targeted action;
+- the replay window is freely resizable while keeping one uniform map/grid
+  scale, and Strides visibly traverse every collision-checked grid square in
+  their selected route instead of teleporting to the final destination;
 - native PF2e spellcasting-entry casts for prepared, flexible, spontaneous,
   innate, focus, at-will, and cantrip spells, using the same slot and use
   validation as the PF2e Cast control;
