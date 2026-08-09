@@ -521,11 +521,15 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
     const cost = Math.max(...validCosts);
     const areaTargets = option.area ? Math.min(3, combatants.filter((candidate) => candidate.team !== actor.team && !candidate.defeated).length) : 1;
     const expected = averageFormula(option.damage) * areaTargets;
-    const conditionValue = (option.conditions.length + (option.selfEffect ? 1 : 0) + (option.conditionOperations?.length ?? 0)) * 6;
+    const conditionValue = (option.conditions.length + (option.selfEffect ? 1 : 0) + (option.conditionOperations?.length ?? 0)) * 4;
     const defensiveValue = option.defensive && actor.hp / actor.maxHp < 0.55 ? 7 : 0;
-    const utilityValue = option.utility ? 3 : 0;
+    const utilityValue = option.utility ? 1 : 0;
     const mapCost = option.attackTrait ? mapPenalty / 2 : 0;
-    const spellBias = option.kind === "spell" ? 8 : option.kind === "ability" ? 4 : option.kind === "item" ? 2 : 0;
+    const hasConcreteOutcome = Boolean(option.damage || option.healing || option.conditions?.length
+      || option.selfEffect || option.conditionOperations?.length);
+    const spellBias = option.kind === "spell" ? hasConcreteOutcome ? 6 : 1
+      : option.kind === "ability" ? hasConcreteOutcome ? 3 : 0
+        : option.kind === "item" ? hasConcreteOutcome ? 2 : 0 : 0;
     const repetitionPenalty = (actor.actionHistory?.get(option.id) ?? 0) * (option.kind === "strike" ? 0.25 : 2.5);
     const remainingUses = option.limitedUses === null
       ? null
@@ -546,6 +550,10 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
       const targetImmunityPenalty = option.targetOnce && actor.targetUses?.has(`${option.id}:${optionTarget.id}`)
         ? 1000
         : 0;
+      const redundantConditionPenalty = option.conditions?.length
+        && option.conditions.every((condition) => optionTarget.conditions?.has?.(condition.slug))
+        ? 80
+        : 0;
       const hpRatio = optionTarget.hp / Math.max(1, optionTarget.maxHp);
       const targetValue = option.healing ? (1 - hpRatio) * 18 : option.damage ? (1 - hpRatio) * 3 : 0;
       return {
@@ -554,7 +562,7 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
         cost,
         decision: decisionTrace[0] ?? null,
         score: (expected + conditionValue + defensiveValue + utilityValue + spellBias) / Math.max(1, cost)
-          - mapCost - repetitionPenalty + profileValue + targetValue - targetImmunityPenalty,
+          - mapCost - repetitionPenalty + profileValue + targetValue - targetImmunityPenalty - redundantConditionPenalty,
       };
     });
   }).filter(Boolean).sort((left, right) => right.score - left.score);

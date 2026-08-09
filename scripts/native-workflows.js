@@ -1061,6 +1061,8 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     actions: {
       togglePause: LoreSmithLiveLog.togglePause,
       stop: LoreSmithLiveLog.stop,
+      previousEntry: LoreSmithLiveLog.previousEntry,
+      nextEntry: LoreSmithLiveLog.nextEntry,
     },
   };
 
@@ -1075,6 +1077,8 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
   status = "Preparing encounter";
   summary = null;
   coverageHtml = "";
+  timelineIndex = -1;
+  followingLatest = true;
 
   async _prepareContext(options) {
     return {
@@ -1090,6 +1094,13 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
       coverageHtml: this.coverageHtml
         ? new Handlebars.SafeString(this.coverageHtml)
         : null,
+      timelineIndex: Math.max(0, this.timelineIndex),
+      timelinePosition: this.entries.length ? this.timelineIndex + 1 : 0,
+      timelineMax: Math.max(0, this.entries.length - 1),
+      timelineTotal: this.entries.length,
+      timelineAtStart: this.timelineIndex <= 0,
+      timelineAtEnd: this.timelineIndex >= this.entries.length - 1,
+      hasTimelineEntries: this.entries.length > 0,
     };
   }
 
@@ -1103,21 +1114,85 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
       await game.settings.set(LS_MODULE_ID, "liveActionDelay", value);
     });
     const log = this.element?.querySelector(".ls-live-entries");
-    if (log) log.scrollTop = log.scrollHeight;
+    const timeline = this.element?.querySelector('[name="timelineIndex"]');
+    timeline?.addEventListener("input", () => this.seekTimeline(Number(timeline.value)));
+    if (log && this.followingLatest) log.scrollTop = log.scrollHeight;
+    this.syncTimelineControls();
     this.bringToTop?.();
   }
 
   async add(entry) {
+    entry.index = this.entries.length;
     this.entries.push(entry);
-    if (this.entries.length > 500) this.entries.shift();
+    if (this.entries.length > 500) {
+      this.entries.shift();
+      this.entries.forEach((candidate, index) => { candidate.index = index; });
+    }
+    if (this.followingLatest || this.timelineIndex < 0) this.timelineIndex = this.entries.length - 1;
     const list = this.element?.querySelector(".ls-live-entries");
     if (!list) return this.render({ force: true });
     list.querySelector(".empty")?.remove();
     const row = document.createElement("p");
     row.className = entry.kind ?? "action";
+    row.dataset.entryIndex = String(entry.index);
     row.textContent = entry.text;
     list.append(row);
-    list.scrollTop = list.scrollHeight;
+    if (this.followingLatest) list.scrollTop = list.scrollHeight;
+    this.syncTimelineControls();
+  }
+
+  syncTimelineControls() {
+    const root = this.element;
+    if (!root) return;
+    const slider = root.querySelector('[name="timelineIndex"]');
+    const label = root.querySelector('[data-role="timelineLabel"]');
+    const previous = root.querySelector('[data-action="previousEntry"]');
+    const next = root.querySelector('[data-action="nextEntry"]');
+    if (slider) {
+      slider.max = String(Math.max(0, this.entries.length - 1));
+      slider.value = String(Math.max(0, this.timelineIndex));
+      slider.disabled = this.entries.length < 2;
+    }
+    if (label) label.textContent = this.entries.length
+      ? `Action ${this.timelineIndex + 1} of ${this.entries.length}`
+      : "No actions yet";
+    if (previous) previous.disabled = this.timelineIndex <= 0;
+    if (next) next.disabled = this.timelineIndex >= this.entries.length - 1;
+    for (const row of root.querySelectorAll("[data-entry-index]")) {
+      row.classList.toggle("timeline-selected", Number(row.dataset.entryIndex) === this.timelineIndex);
+    }
+  }
+
+  async applyTimelineSnapshot(snapshot) {
+    if (!Array.isArray(snapshot)) return;
+    const tokenUpdates = [];
+    const actorUpdates = [];
+    for (const state of snapshot) {
+      const token = canvas.scene?.tokens?.get(state.tokenId);
+      if (token && (token.x !== state.x || token.y !== state.y)) {
+        tokenUpdates.push({ _id: token.id, x: state.x, y: state.y });
+      }
+      const actor = token?.actor ?? game.actors?.get(state.actorId);
+      const currentHp = Number(actor?.system?.attributes?.hp?.value);
+      if (actor && Number.isFinite(state.hp) && currentHp !== Number(state.hp)) {
+        actorUpdates.push(actor.update({ "system.attributes.hp.value": Number(state.hp) }));
+      }
+    }
+    if (tokenUpdates.length) await canvas.scene.updateEmbeddedDocuments("Token", tokenUpdates, { animate: false });
+    if (actorUpdates.length) await Promise.allSettled(actorUpdates);
+  }
+
+  async seekTimeline(index) {
+    if (!this.entries.length) return;
+    this.timelineIndex = Math.max(0, Math.min(this.entries.length - 1, Number(index) || 0));
+    this.followingLatest = this.timelineIndex === this.entries.length - 1;
+    if (this.running && !this.followingLatest) {
+      this.paused = true;
+      this.status = "Paused for timeline review";
+    }
+    await this.applyTimelineSnapshot(this.entries[this.timelineIndex]?.snapshot);
+    this.syncTimelineControls();
+    this.element?.querySelector(`[data-entry-index="${this.timelineIndex}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
   async complete() {
@@ -1137,6 +1212,9 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
 
   static async togglePause() {
     if (!this.running || this.stopped) return;
+    if (this.paused && !this.followingLatest && this.entries.length) {
+      await this.seekTimeline(this.entries.length - 1);
+    }
     this.paused = !this.paused;
     this.status = this.paused ? "Paused" : "Running";
     await this.render({ force: true });
@@ -1148,6 +1226,14 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     this.paused = false;
     this.status = "Stopping";
     await this.render({ force: true });
+  }
+
+  static async previousEntry() {
+    await this.seekTimeline(this.timelineIndex - 1);
+  }
+
+  static async nextEntry() {
+    await this.seekTimeline(this.timelineIndex + 1);
   }
 }
 
@@ -1374,6 +1460,7 @@ function lsRefreshJournalWikiHighlights() {
     brackets.push(...hostRanges.brackets);
     active.push(...hostRanges.active);
   }
+
   for (const [name, ranges] of [
     ["lore-smith-wiki-links", links],
     ["lore-smith-wiki-brackets", brackets],

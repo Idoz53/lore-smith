@@ -341,6 +341,8 @@ function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = 
       const attacker = turn.combatant;
       if (attacker.defeated) continue;
       attacker.turnUses.clear();
+      attacker.damageActionsThisTurn = 0;
+      attacker.utilityActionsThisTurn = 0;
       attacker.conditions.delete("defended");
       for (const [key, roundsLeft] of attacker.cooldowns) {
         attacker.cooldowns.set(key, Math.max(0, roundsLeft - 1));
@@ -353,6 +355,8 @@ function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = 
         const { option, target, cost } = choice;
         actionsRemaining -= cost;
         consumeUse(attacker, option, target);
+        if (option.damage) attacker.damageActionsThisTurn += 1;
+        else if (!option.healing) attacker.utilityActionsThisTurn += 1;
         if (option.healing) {
           const amount = Math.max(1, rollFormulaValue(option.healing));
           const before = target.hp;
@@ -574,6 +578,15 @@ async function applyLiveHealing(target, formula) {
 async function applyNativeDamageOrHealing(target, roll, degree, option) {
   const nativeRoll = roll?.roll ?? roll?.rolls?.[0] ?? roll;
   if (!nativeRoll || typeof target.actor?.applyDamage !== "function") return null;
+  // PF2e's IWR application expects every DamageRoll to carry a complete
+  // bypass structure. Some chat-card controls return a deserialized native
+  // roll without that optional object, so normalize it before handing the roll
+  // back to PF2e instead of letting applyDamage fail while reading `bypass`.
+  nativeRoll.options ??= {};
+  nativeRoll.options.bypass ??= {
+    immunity: { ignore: [], downgrade: [], redirect: [] },
+    resistance: { ignore: [], redirect: [] },
+  };
   const before = actorHp(target.actor);
   const outcome = option.healing
     ? null
@@ -601,11 +614,104 @@ async function applyNativeDamageOrHealing(target, roll, degree, option) {
   };
 }
 
-async function sceneDistance(left, right) {
+function sceneDistance(left, right) {
   const grid = canvas.grid;
   const leftCenter = left.center ?? { x: left.x + left.w / 2, y: left.y + left.h / 2 };
   const rightCenter = right.center ?? { x: right.x + right.w / 2, y: right.y + right.h / 2 };
-  return grid.measurePath([leftCenter, rightCenter]).distance;
+  const centerDistance = grid.measurePath([leftCenter, rightCenter]).distance;
+  const occupiedRadius = Math.max(0, ((Math.max(left.w, left.h) + Math.max(right.w, right.h)) / 2 - grid.size)
+    * grid.distance / grid.size);
+  return Math.max(0, centerDistance - occupiedRadius);
+}
+
+function lsBoundsAt(token, topLeft) {
+  return { x: topLeft.x, y: topLeft.y, width: token.w, height: token.h };
+}
+
+function lsBoundsOverlap(left, right) {
+  return left.x < right.x + right.width && left.x + left.width > right.x
+    && left.y < right.y + right.height && left.y + left.height > right.y;
+}
+
+function lsTopLeftForOffset(offset) {
+  return canvas.grid.getTopLeftPoint({ i: offset.i, j: offset.j });
+}
+
+function lsCenterFor(token, topLeft) {
+  return { x: topLeft.x + token.w / 2, y: topLeft.y + token.h / 2 };
+}
+
+function lsOffsetKey(offset) {
+  return `${offset.i},${offset.j}`;
+}
+
+function lsOccupiedAt(token, topLeft) {
+  const candidate = lsBoundsAt(token, topLeft);
+  return (canvas.tokens?.placeables ?? []).some((other) => {
+    if (other === token || other.document?.id === token.document?.id) return false;
+    if (!other.document?.actorId || other.document?.hidden && !game.user.isGM) return false;
+    return lsBoundsOverlap(candidate, { x: other.x, y: other.y, width: other.w, height: other.h });
+  });
+}
+
+function lsInsideScene(token, topLeft) {
+  const dimensions = canvas.dimensions;
+  return topLeft.x >= dimensions.sceneX && topLeft.y >= dimensions.sceneY
+    && topLeft.x + token.w <= dimensions.sceneX + dimensions.sceneWidth
+    && topLeft.y + token.h <= dimensions.sceneY + dimensions.sceneHeight;
+}
+
+function lsStepBlocked(token, fromTopLeft, toTopLeft) {
+  const origin = lsCenterFor(token, fromTopLeft);
+  const destination = lsCenterFor(token, toTopLeft);
+  return Boolean(token.checkCollision?.(destination, { origin, type: "move", mode: "any" }));
+}
+
+function lsGridPath(token, {
+  maxSteps,
+  isGoal,
+  score = () => 0,
+  allowBest = false,
+} = {}) {
+  if (canvas.grid.type === CONST.GRID_TYPES.GRIDLESS) return null;
+  const start = canvas.grid.getOffset({ x: token.x + 1, y: token.y + 1 });
+  const queue = [{ offset: start, path: [], topLeft: { x: token.x, y: token.y } }];
+  const visited = new Set([lsOffsetKey(start)]);
+  let best = null;
+  const directions = [
+    { i: -1, j: 0 }, { i: 1, j: 0 }, { i: 0, j: -1 }, { i: 0, j: 1 },
+    { i: -1, j: -1 }, { i: -1, j: 1 }, { i: 1, j: -1 }, { i: 1, j: 1 },
+  ];
+  while (queue.length) {
+    const node = queue.shift();
+    const value = score(node.topLeft, node.path);
+    if (!best || value > best.score) best = { ...node, score: value };
+    if (node.path.length > 0 && isGoal(node.topLeft, node.path)) return node.path;
+    if (node.path.length >= maxSteps) continue;
+    const sortedDirections = [...directions].sort((left, right) => {
+      const leftTop = lsTopLeftForOffset({ i: node.offset.i + left.i, j: node.offset.j + left.j });
+      const rightTop = lsTopLeftForOffset({ i: node.offset.i + right.i, j: node.offset.j + right.j });
+      return score(rightTop, node.path) - score(leftTop, node.path);
+    });
+    for (const direction of sortedDirections) {
+      const offset = { i: node.offset.i + direction.i, j: node.offset.j + direction.j };
+      const key = lsOffsetKey(offset);
+      if (visited.has(key)) continue;
+      visited.add(key);
+      const topLeft = lsTopLeftForOffset(offset);
+      if (!lsInsideScene(token, topLeft) || lsOccupiedAt(token, topLeft) || lsStepBlocked(token, node.topLeft, topLeft)) continue;
+      queue.push({ offset, topLeft, path: [...node.path, topLeft] });
+    }
+  }
+  return allowBest ? best?.path ?? null : null;
+}
+
+async function lsMoveTokenAlong(attacker, path) {
+  if (!path?.length) return false;
+  const destination = path.at(-1);
+  if (lsOccupiedAt(attacker.token.object, destination)) return false;
+  await attacker.token.update(destination, { animate: true, animation: { duration: 650 } });
+  return true;
 }
 
 function combatantInsideTemplate(templateDocument, combatant) {
@@ -632,30 +738,107 @@ async function waitForTemplateShape(templateDocument) {
   return false;
 }
 
-async function moveToward(attacker, target) {
+async function moveToward(attacker, target, desiredRange = 5) {
   const token = attacker.token.object;
   const targetToken = target.token.object;
-  if (!token || !targetToken) return false;
+  if (!token || !targetToken) return { moved: false, reason: "missing token" };
   const distance = await sceneDistance(token, targetToken);
-  if (distance <= 5) return false;
+  if (distance <= desiredRange) return { moved: false, reason: "already in range" };
   const speed = numeric(attacker.actor.system?.attributes?.speed, 25);
-  const pixelsPerFoot = canvas.grid.size / canvas.grid.distance;
-  const start = token.center;
-  const end = targetToken.center;
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const length = Math.hypot(dx, dy) || 1;
-  const travel = Math.min(speed * pixelsPerFoot, Math.max(0, length - canvas.grid.size));
-  const destination = {
-    x: start.x + (dx / length) * travel,
-    y: start.y + (dy / length) * travel,
+  const maxSteps = Math.max(1, Math.floor(speed / Math.max(5, canvas.grid.distance)));
+  const targetCenter = targetToken.center;
+  const distanceAt = (topLeft) => {
+    const center = lsCenterFor(token, topLeft);
+    const centerDistance = canvas.grid.measurePath([center, targetCenter]).distance;
+    const radius = Math.max(0, ((Math.max(token.w, token.h) + Math.max(targetToken.w, targetToken.h)) / 2 - canvas.grid.size)
+      * canvas.grid.distance / canvas.grid.size);
+    return Math.max(0, centerDistance - radius);
   };
-  const snapped = canvas.grid.getSnappedPoint(destination, { mode: CONST.GRID_SNAPPING_MODES.CENTER });
-  const topLeft = { x: snapped.x - token.w / 2, y: snapped.y - token.h / 2 };
-  const collision = token.checkCollision?.(snapped, { origin: start, type: "move", mode: "any" });
-  if (collision) return false;
-  await attacker.token.update(topLeft, { animate: true, animation: { duration: 650 } });
-  return true;
+  const path = lsGridPath(token, {
+    maxSteps,
+    isGoal: (topLeft) => distanceAt(topLeft) <= desiredRange,
+    score: (topLeft) => -distanceAt(topLeft),
+    allowBest: true,
+  });
+  const startingDistance = distanceAt({ x: token.x, y: token.y });
+  if (!path?.length || distanceAt(path.at(-1)) >= startingDistance) {
+    return { moved: false, reason: "no unoccupied grid square makes legal progress" };
+  }
+  return await lsMoveTokenAlong(attacker, path)
+    ? { moved: true, distance: distanceAt(path.at(-1)), path }
+    : { moved: false, reason: "destination became occupied" };
+}
+
+async function moveAwayFromThreats(attacker, target, combatants, desiredRange = 30) {
+  const token = attacker.token.object;
+  if (!token) return false;
+  const speed = numeric(attacker.actor.system?.attributes?.speed, 25);
+  const maxSteps = Math.max(1, Math.floor(speed / Math.max(5, canvas.grid.distance)));
+  const enemies = combatants.filter((candidate) => candidate.team !== attacker.team && !candidate.defeated && candidate.token?.object);
+  const distanceScore = (topLeft) => {
+    const center = lsCenterFor(token, topLeft);
+    const nearest = Math.min(...enemies.map((enemy) => canvas.grid.measurePath([center, enemy.token.object.center]).distance));
+    const targetDistance = canvas.grid.measurePath([center, target.token.object.center]).distance;
+    return nearest - Math.max(0, targetDistance - 0.9 * Math.max(30, desiredRange));
+  };
+  const startingScore = distanceScore({ x: token.x, y: token.y });
+  const path = lsGridPath(token, {
+    maxSteps,
+    isGoal: () => false,
+    score: distanceScore,
+    allowBest: true,
+  });
+  if (!path?.length || distanceScore(path.at(-1)) < startingScore + canvas.grid.distance) return false;
+  return lsMoveTokenAlong(attacker, path);
+}
+
+async function moveToSafeFlank(attacker, target, combatants) {
+  const token = attacker.token.object;
+  const targetToken = target.token.object;
+  if (!token || !targetToken || canvas.grid.type !== CONST.GRID_TYPES.SQUARE) return false;
+  const targetOffset = canvas.grid.getOffset(targetToken.center);
+  const allies = combatants.filter((candidate) => candidate.team === attacker.team && candidate !== attacker && !candidate.defeated && candidate.token?.object);
+  const ally = allies.find((candidate) => sceneDistance(candidate.token.object, targetToken) <= 5);
+  if (!ally) return false;
+  const allyOffset = canvas.grid.getOffset(ally.token.object.center);
+  const deltaI = Math.sign(targetOffset.i - allyOffset.i);
+  const deltaJ = Math.sign(targetOffset.j - allyOffset.j);
+  if (!deltaI && !deltaJ) return false;
+  const destinationOffset = { i: targetOffset.i + deltaI, j: targetOffset.j + deltaJ };
+  const destination = lsTopLeftForOffset(destinationOffset);
+  if (lsOccupiedAt(token, destination)) return false;
+  const speed = numeric(attacker.actor.system?.attributes?.speed, 25);
+  const maxSteps = Math.max(1, Math.floor(speed / Math.max(5, canvas.grid.distance)));
+  const path = lsGridPath(token, {
+    maxSteps,
+    isGoal: (topLeft) => Math.abs(topLeft.x - destination.x) < 1 && Math.abs(topLeft.y - destination.y) < 1,
+    score: (topLeft) => -Math.hypot(topLeft.x - destination.x, topLeft.y - destination.y),
+  });
+  return lsMoveTokenAlong(attacker, path);
+}
+
+async function separateOverlappingCombatants(combatants) {
+  for (const combatant of combatants) {
+    const token = combatant.token?.object;
+    if (!token || !lsOccupiedAt(token, { x: token.x, y: token.y })) continue;
+    const path = lsGridPath(token, {
+      maxSteps: 4,
+      isGoal: (topLeft) => !lsOccupiedAt(token, topLeft),
+      score: (_topLeft, pathSteps) => -pathSteps.length,
+    });
+    if (path?.length) await lsMoveTokenAlong(combatant, path);
+  }
+}
+
+function liveStateSnapshot(combatants) {
+  return combatants.map((combatant) => ({
+    actorId: combatant.actor?.id ?? null,
+    tokenId: combatant.token?.id ?? null,
+    x: combatant.token?.x ?? combatant.token?.object?.x ?? 0,
+    y: combatant.token?.y ?? combatant.token?.object?.y ?? 0,
+    hp: actorHp(combatant.actor).value,
+    defeated: Boolean(combatant.defeated),
+  }));
 }
 
 async function runLiveReplay(tokens, partyIds, enemyIds, {
@@ -676,6 +859,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
   const combatants = tokens
     .filter((token) => partyIds.has(token.id) || enemyIds.has(token.id))
     .map((token) => virtualCombatant(token, partyIds.has(token.id) ? "party" : "enemy"));
+  await separateOverlappingCombatants(combatants);
   const order = [];
   for (const combatant of combatants) {
     const tracked = combat?.combatants?.find((entry) => entry.tokenId === combatant.id);
@@ -703,7 +887,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
   }
   order.sort((left, right) => right.score - left.score);
   const emit = async (text, kind = "action") => {
-    await onLog?.({ text, kind, timestamp: Date.now() });
+    await onLog?.({ text, kind, timestamp: Date.now(), snapshot: liveStateSnapshot(combatants) });
     if (game.settings.settings.has(`${MODULE_ID}.mirrorLiveToChat`) && game.settings.get(MODULE_ID, "mirrorLiveToChat")) {
       await ChatMessage.create({ speaker: { alias: "Lore Smith" }, content: `<p>${escapeHtml(text)}</p>` });
     }
@@ -726,6 +910,9 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
       const attacker = entry.combatant;
       if (attacker.defeated) continue;
       attacker.turnUses.clear();
+      attacker.damageActionsThisTurn = 0;
+      attacker.utilityActionsThisTurn = 0;
+      attacker.tacticalRepositioned = false;
       attacker.conditions.delete("defended");
       for (const [key, roundsLeft] of attacker.cooldowns) {
         attacker.cooldowns.set(key, Math.max(0, roundsLeft - 1));
@@ -748,22 +935,58 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         const choice = chooseCatalogAction(attacker, combatants, actionsRemaining, map, round);
         if (!choice) break;
         let temporaryTemplate = null;
+        let selectedOption = choice.option;
+        let selectedTarget = choice.target;
+        let resolutionStage = "tactical selection";
         try {
         const { option, target, cost } = choice;
+        selectedOption = option;
+        selectedTarget = target;
         if (!option.defensive && target !== attacker) {
-          const currentDistance = await sceneDistance(attacker.token.object, target.token.object);
+          resolutionStage = "range and movement validation";
+          const currentDistance = sceneDistance(attacker.token.object, target.token.object);
+          const positioning = String(attacker.profile.positioning ?? "").toLowerCase();
+          const prefersRange = option.range > 10 && (
+            attacker.profile.roles.includes("caster") || attacker.profile.roles.includes("ranged")
+            || /backline|midline|at range|protected/.test(positioning)
+          );
+          if (prefersRange && currentDistance <= 10 && actionsRemaining > cost && !attacker.tacticalRepositioned) {
+            const movedAway = await moveAwayFromThreats(attacker, target, combatants, option.range);
+            if (movedAway) {
+              actionsRemaining -= 1;
+              attacker.tacticalRepositioned = true;
+              await emit(`${attacker.name} Strides away from melee pressure to preserve a clear ${option.name} firing lane; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "move");
+              await pause(actionDelay());
+              continue;
+            }
+          }
+          const frontline = attacker.profile.roles.includes("frontline") || /frontline|melee flank|anchor/.test(positioning);
+          const targetOffGuard = target.conditions?.has?.("off-guard") || target.conditions?.has?.("prone") || target.conditions?.has?.("grabbed");
+          if (frontline && option.damage && option.range <= 10 && currentDistance <= 10
+            && !targetOffGuard && actionsRemaining > cost && !attacker.tacticalRepositioned) {
+            const flanked = await moveToSafeFlank(attacker, target, combatants);
+            if (flanked) {
+              actionsRemaining -= 1;
+              attacker.tacticalRepositioned = true;
+              await emit(`${attacker.name} Strides to the opposite side of ${target.name} for a rules-legal flank; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "move");
+              await pause(actionDelay());
+              continue;
+            }
+          }
           if (currentDistance > option.range) {
-            const moved = await moveToward(attacker, target);
-            if (!moved) {
-              await emit(`${attacker.name} cannot find a legal path or line of movement toward ${target.name}.`, "action");
+            const movement = await moveToward(attacker, target, Math.max(5, option.range));
+            if (!movement.moved) {
+              await emit(`${attacker.name} cannot reach ${option.name}'s ${option.range}-foot range from an unoccupied square with one Stride (${movement.reason}).`, "action");
               break;
             }
             actionsRemaining -= 1;
-            await emit(`${attacker.name} Strides toward ${target.name}; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "move");
+            attacker.tacticalRepositioned = true;
+            await emit(`${attacker.name} Strides along an unoccupied grid path toward ${target.name}; now ${movement.distance} feet away, with ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "move");
             await pause(actionDelay());
             continue;
           }
         }
+        resolutionStage = "PF2e resource and Cast/use control";
         const nativeUse = await consumeNativeResource(option, attacker.actor);
         if (!nativeUse.available) {
           const key = option.useKey ?? option.id;
@@ -773,9 +996,14 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         }
         actionsRemaining -= cost;
         consumeUse(attacker, option, target);
+        if (option.damage) attacker.damageActionsThisTurn += 1;
+        else if (!option.healing) attacker.utilityActionsThisTurn += 1;
+        resolutionStage = "PF2e action card";
         const nativeActionCard = nativeUse.message ?? await postNativeActionCard(option);
         if (option.healing) {
+          resolutionStage = "PF2e healing roll button";
           const healingRoll = await rollNativeDamage(option, attacker, target, 2, map, nativeActionCard);
+          resolutionStage = "PF2e healing application";
           const healing = await applyNativeDamageOrHealing(target, healingRoll, 2, option);
           if (!healing) {
             await emit(`${attacker.name} uses ${option.name}, but PF2e exposed no native healing button for this entry. Lore Smith did not invent a healing formula.`, "error");
@@ -787,12 +1015,14 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           continue;
         }
         if (option.defensive && !option.damage) {
+          resolutionStage = "PF2e defensive effect";
           const nativeDefense = await applyNativeDefense(option, attacker.actor);
           const applied = await applyConditions(attacker, option.conditions);
           await emit(`${attacker.name} uses ${option.name}${applied.length ? ` and gains ${applied.join(", ")}` : ""} [${nativeDefense.source}]; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "action");
           await pause(actionDelay());
           continue;
         }
+        resolutionStage = "measured-template placement";
         const templateSource = templateData(option, attacker.token.object, target.token.object);
         if (templateSource && canvas.scene) {
           const cleanTemplate = Object.fromEntries(Object.entries(templateSource).filter(([, value]) => value !== undefined));
@@ -808,6 +1038,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         const outcomes = [];
         const nativeRolls = new Map();
         for (const affected of targetList) {
+          resolutionStage = `PF2e check/save button for ${affected.name}`;
           const nativeCheck = option.automatic ? null : await resolveNativeCheck({
             option,
             attacker,
@@ -834,12 +1065,20 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             const rollKey = option.save ? "save" : degree === 3 ? "critical" : "success";
             let damageRoll = nativeRolls.get(rollKey);
             if (!damageRoll) {
+              resolutionStage = `PF2e damage roll button for ${affected.name}`;
               damageRoll = await rollNativeDamage(option, attacker, affected, degree, map, nativeActionCard);
               if (damageRoll) nativeRolls.set(rollKey, damageRoll);
             }
+            resolutionStage = `PF2e damage application to ${affected.name}`;
             damage = await applyNativeDamageOrHealing(affected, damageRoll, degree, option);
           }
+          resolutionStage = `PF2e conditions and effects for ${affected.name}`;
           const conditions = effectApplies ? await applyConditions(affected, option.conditions) : [];
+          if (effectApplies) {
+            for (const condition of option.conditions) {
+              affected.conditions.set(condition.slug, Math.max(affected.conditions.get(condition.slug) ?? 0, condition.value));
+            }
+          }
           const clickedCardEffect = effectApplies && nativeActionCard
             ? await clickNativeCardEffect(nativeActionCard)
             : false;
@@ -864,8 +1103,10 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         if (option.attackTrait) map += 5;
         } catch (error) {
           if (temporaryTemplate) await temporaryTemplate.delete().catch(() => {});
-          console.error(`${MODULE_ID} | Could not resolve ${attacker.name}'s selected action.`, error);
-          await emit(`${attacker.name}'s selected action could not be resolved safely and was skipped: ${error.message ?? error}.`, "error");
+          const actionName = selectedOption?.name ?? "unknown action";
+          const targetName = selectedTarget?.name ? ` against ${selectedTarget.name}` : "";
+          console.error(`${MODULE_ID} | Could not resolve ${attacker.name}'s ${actionName} during ${resolutionStage}.`, error);
+          await emit(`${attacker.name}'s ${actionName}${targetName} failed during ${resolutionStage}: ${error.message ?? error}.`, "error");
           break;
         }
       }

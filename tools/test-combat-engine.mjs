@@ -32,7 +32,7 @@ globalThis.ChatMessage = {
 globalThis.CONFIG = { PF2E: { damageTypes: {} } };
 globalThis.game = { pf2e: { actions: new Map(), ConditionManager: { getCondition: () => null } } };
 
-const { actionTargets, buildActionCatalog, checkDegree } = await import("../scripts/combat-engine.js");
+const { actionTargets, buildActionCatalog, checkDegree, chooseAction } = await import("../scripts/combat-engine.js");
 const { consumeNativeResource, resolveModeledCheckWithRoll } = await import("../scripts/simulation-adapters.js");
 
 function item(overrides = {}) {
@@ -189,5 +189,39 @@ assert.equal(modeledCheck.natural, 10);
 assert.equal(modeledCheck.degree, 2);
 assert.equal(rollMessages.at(-1).options.rollMode, "gmroll");
 assert.deepEqual(rollMessages.at(-1).data.whisper, ["gm"]);
+
+const strikeChoice = {
+  id: "strike", name: "Longsword", kind: "strike", costs: [1], damage: "1d8+4",
+  healing: null, conditions: [], conditionOperations: [], traits: [], range: 5,
+  attackTrait: true, supportedResolution: true, utility: false, defensive: false,
+  targetMode: "enemy", limitedUses: null,
+};
+const demoralizeChoice = {
+  id: "demoralize", name: "Demoralize", kind: "skill", costs: [1], damage: null,
+  healing: null, conditions: [{ slug: "frightened", value: 1 }], conditionOperations: [], traits: [], range: 30,
+  attackTrait: false, supportedResolution: true, utility: true, defensive: false,
+  targetMode: "enemy", limitedUses: null,
+};
+const raiseShieldChoice = {
+  id: "raise-shield", name: "Raise a Shield", kind: "action", costs: [1], damage: null,
+  healing: null, conditions: [], conditionOperations: [], selfEffect: { name: "Effect: Raise a Shield" }, traits: [], range: 0,
+  attackTrait: false, supportedResolution: true, utility: true, defensive: true,
+  targetMode: "self", limitedUses: null,
+};
+const tacticalActor = {
+  id: "fighter", name: "Fighter", team: "party", hp: 30, maxHp: 30, defeated: false,
+  actor: { items: [], system: { attributes: { ac: { value: 18 } } } },
+  options: [strikeChoice, demoralizeChoice, raiseShieldChoice],
+  uses: new Map(), cooldowns: new Map(), turnUses: new Set(), targetUses: new Set(), actionHistory: new Map(),
+  conditions: new Map(), damageActionsThisTurn: 0, utilityActionsThisTurn: 0,
+  profile: { roles: ["damage", "frontline"], prefer: ["strike"], avoid: [], healingThreshold: 0.6 },
+};
+const tacticalTarget = {
+  id: "enemy", name: "Enemy", team: "enemy", hp: 30, maxHp: 30, ac: 18, defeated: false,
+  actor: { items: [], system: { attributes: { ac: { value: 18 } } } }, conditions: new Map(),
+};
+assert.equal(chooseAction(tacticalActor, [tacticalActor, tacticalTarget], 3, 0, 1)?.option.id, "strike");
+tacticalActor.utilityActionsThisTurn = 1;
+assert.notEqual(chooseAction(tacticalActor, [tacticalActor, tacticalTarget], 2, 0, 1)?.option.id, "demoralize");
 
 console.log("Lore Smith combat-engine regression tests passed.");

@@ -167,11 +167,16 @@ function normalizeNativeResult(result, fallbackDc, checkDegree) {
   };
 }
 
-function privateGmEvent() {
+function privateGmEvent(type = "check") {
+  const setting = type === "damage" ? "showDamageDialogs" : "showCheckDialogs";
+  // PF2e treats Shift as "invert my dialog preference". Match Shift to the
+  // current preference so the resulting native action always bypasses the
+  // modifier dialog while Ctrl/Cmd keeps the roll private to the GM.
+  const shiftKey = Boolean(game.user?.settings?.[setting]);
   if (typeof MouseEvent === "function") {
-    return new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true });
+    return new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true, shiftKey });
   }
-  return { type: "click", ctrlKey: true, metaKey: true, shiftKey: false };
+  return { type: "click", ctrlKey: true, metaKey: true, shiftKey };
 }
 
 export async function setNativeTarget(target) {
@@ -227,7 +232,7 @@ export async function resolveNativeCheck({
         : null;
       const result = cardRoll
         ? { roll: cardRoll.rolls?.[0], outcome: cardRoll.flags?.pf2e?.context?.outcome }
-        : await option.item.rollAttack(privateGmEvent(), attackNumber);
+        : await option.item.rollAttack(privateGmEvent("check"), attackNumber);
       const normalized = normalizeNativeResult(result, dc, checkDegree);
       if (normalized.total !== null) return { ...normalized, dc, source: cardRoll ? "PF2e spell attack card button" : "PF2e spell attack button" };
     }
@@ -259,7 +264,7 @@ export async function resolveNativeCheck({
       const result = await option.nativeSystemAction.use({
         actors: [attacker.actor],
         target: target.token?.object ?? null,
-        event: privateGmEvent(),
+        event: privateGmEvent("check"),
         multipleAttackPenalty: option.attackTrait ? Math.round(mapPenalty / 5) : 0,
         message: { create: true },
       });
@@ -287,7 +292,9 @@ export async function resolveNativeCheck({
       if (normalized.total !== null) return { ...normalized, dc: Number(statisticDc), source: "PF2e statistic" };
     }
   } catch (error) {
+    error.message = `${option.name}: PF2e native check control failed: ${error.message}`;
     console.warn("Lore Smith | Native PF2e check could not be executed.", error);
+    throw error;
   }
   return null;
 }
@@ -346,7 +353,8 @@ async function pressNativeCardRoll(message, action, target, {
   // makes sequential area saves behave like deliberate GM clicks rather than
   // losing every roll after the first one.
   await new Promise((resolve) => setTimeout(resolve, 525));
-  control.dispatchEvent(privateGmEvent());
+  const rollType = action.includes("damage") ? "damage" : "check";
+  control.dispatchEvent(privateGmEvent(rollType));
   const actorId = rollerActorId ?? target?.actor?.id ?? target?.document?.actor?.id ?? null;
   const result = await waitForNewRollMessage(beforeIds, actorId);
   if (controlTarget) {
@@ -358,7 +366,7 @@ async function pressNativeCardRoll(message, action, target, {
 
 export async function rollNativeDamage(option, attacker, target, degree, mapPenalty = 0, nativeMessage = null) {
   await setNativeTarget(target);
-  const event = privateGmEvent();
+  const event = privateGmEvent("damage");
   try {
     if (option.kind === "strike" && option.nativeAction) {
       const context = {
@@ -379,7 +387,8 @@ export async function rollNativeDamage(option, attacker, target, degree, mapPena
     }
     if (option.item?.rollDamage) return option.item.rollDamage(event);
   } catch (error) {
-    console.warn("Lore Smith | Native PF2e damage/healing button could not be executed.", error);
+    error.message = `${option.name}: PF2e native damage/healing control failed: ${error.message}`;
+    throw error;
   }
   return null;
 }

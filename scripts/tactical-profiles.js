@@ -160,21 +160,49 @@ function slugify(value = "") {
 }
 
 function classItem(actor) {
-  return actor?.items?.find?.((item) => item.type === "class") ?? null;
+  return actor?.class
+    ?? actor?.items?.find?.((item) => item.type === "class")
+    ?? null;
 }
 
-export function getTacticalProfile(actor) {
-  const item = classItem(actor);
-  const classSlug = slugify(item?.slug ?? item?.system?.slug ?? item?.name ?? "");
-  const source = PROFILE_DATA[classSlug];
-  const flow = getClassDecisionFlow(classSlug);
-  if (!source) return {
+function independentProfile(actor, item, classSlug, flow) {
+  const items = actor?.items ? [...actor.items] : [];
+  const hasSpells = items.some((owned) => owned.type === "spell") || Number(actor?.spellcasting?.size ?? 0) > 0;
+  const hasRangedAttack = items.some((owned) => {
+    const range = Number.parseInt(owned.system?.range?.value ?? owned.system?.range ?? "", 10);
+    return Number.isFinite(range) && range > 10;
+  });
+  const roles = [...DEFAULT_PROFILE.roles];
+  if (hasSpells) roles.push("caster", "controller");
+  if (hasRangedAttack) roles.push("ranged");
+  if (!hasSpells && !hasRangedAttack) roles.push("frontline");
+  return {
     ...DEFAULT_PROFILE,
+    roles: [...new Set(roles)],
     classItem: item,
     classSlug: classSlug || null,
     flow,
     generalFlow: getGeneralDecisionFlow(),
+    positioning: hasSpells || hasRangedAttack ? "backline; preserve range and clear firing lanes" : "frontline; seek legal flanks",
   };
+}
+
+export function getTacticalProfile(actor) {
+  const item = classItem(actor);
+  const detailsClass = actor?.system?.details?.class;
+  const classSlug = slugify(
+    item?.slug
+    ?? item?.system?.slug
+    ?? item?.name
+    ?? detailsClass?.slug
+    ?? detailsClass?.value
+    ?? detailsClass?.name
+    ?? detailsClass
+    ?? "",
+  );
+  const source = PROFILE_DATA[classSlug];
+  const flow = getClassDecisionFlow(classSlug);
+  if (!source) return independentProfile(actor, item, classSlug, flow);
   return {
     ...DEFAULT_PROFILE,
     ...source,

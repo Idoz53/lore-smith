@@ -29,6 +29,12 @@
   {{/if}}
   <div class="ls-live-notice"><i class="fa-solid fa-comment-slash"></i> This log stays in Lore Smith. Chat mirroring is optional in Module Settings.</div>
   <div class="ls-live-entries">
-    {{#each entries}}<p class="{{kind}}">{{text}}</p>{{else}}<p class="empty">Waiting for the first action...</p>{{/each}}
+    {{#each entries}}<p class="{{kind}}" data-entry-index="{{index}}">{{text}}</p>{{else}}<p class="empty">Waiting for the first action...</p>{{/each}}
   </div>
+  <footer class="ls-live-timeline">
+    <button type="button" data-action="previousEntry" {{#if timelineAtStart}}disabled{{/if}} title="Previous logged action"><i class="fa-solid fa-chevron-left"></i></button>
+    <input name="timelineIndex" type="range" min="0" max="{{timelineMax}}" step="1" value="{{timelineIndex}}" {{#unless hasTimelineEntries}}disabled{{/unless}}>
+    <span data-role="timelineLabel">Action {{timelinePosition}} of {{timelineTotal}}</span>
+    <button type="button" data-action="nextEntry" {{#if timelineAtEnd}}disabled{{/if}} title="Next logged action"><i class="fa-solid fa-chevron-right"></i></button>
+  </footer>
 </section>

@@ -37,8 +37,9 @@ The module provides:
 - Combat Tracker buttons for randomized iteration logs and live Scene combat;
 - spell-, ability-, item-, strike-, save-, condition-, and area-template-aware combat choices;
 - detailed iteration logs and a separate live-combat log window;
-- pause, resume, stop, and adjustable pacing controls for live combat without
-  Chat spam by default;
+- pause, resume, stop, adjustable pacing, and a previous/next action timeline
+  that reviews logged actions together with their token positions and Hit Points,
+  without Chat spam by default;
 - native PF2e spellcasting-entry casts for prepared, flexible, spontaneous,
   innate, focus, at-will, and cantrip spells, using the same slot and use
   validation as the PF2e Cast control;
@@ -69,6 +70,12 @@ The module provides:
 - live measured-template hit testing against the grid spaces actually occupied by
   each token, plus GM-private Foundry roll cards for initiative, checks, saves,
   damage, and healing;
+- automatic native PF2e roll execution uses the GM-private, skip-dialog behavior,
+  so checks, saves, damage, and healing resolve without stopping for modifier dialogs;
+- live grid movement uses occupied-square pathfinding, respects walls and token
+  footprints, accepts legal progress when a target is farther than one Stride,
+  keeps melee combatants from walking closer when already in reach, and prevents
+  two tokens from ending in the same space;
 - explicit adapters for attacks, saves, damage, healing, IWR, conditions, area
   templates, spell slots, frequencies, recharge timers, and common skill actions;
 - the complete old-app tactical flowchart library: one shared legality,
@@ -76,6 +83,9 @@ The module provides:
   and resolution loop plus data-driven overlays for all 29 PF2e classes;
 - class overlays are selected from the actor's actual Class item and score only
   actions, spells, strikes, items, and trained system actions the actor owns;
+- unclassed NPCs infer frontline, ranged, or spellcaster positioning from their
+  own native entries; class and NPC profiles seek safe range or legal flanks and
+  deliberately avoid repeating utility actions instead of dealing damage;
 - both Monte Carlo and live combat use the same decision policy. The fast model
   resolves it through explicit adapters, while live combat executes the chosen
   option through native PF2e targets, checks, Cast controls, resources, effects,

@@ -211,15 +211,19 @@ export function scoreDecisionFlow(profile, option, context = {}) {
   const matched = [];
   for (const [tag, weight] of Object.entries(flow?.weights ?? {})) {
     if (!tagSet.has(tag)) continue;
-    const value = Number(weight) * 0.35;
+    const value = Number(weight) * 0.15;
     score += value;
     matched.push({ source: "class", tag, value });
   }
   for (const rule of flow?.conditional_rules ?? []) {
     if (!decision.flags.has(rule.when) || !tagSet.has(rule.tag)) continue;
-    const value = Number(rule.weight) * 0.5;
+    const value = Number(rule.weight) * 0.25;
     score += value;
     matched.push({ source: rule.when, tag: rule.tag, value });
+  }
+  if (decision.flags.has("missing_panache") && tagSet.has("finisher")) {
+    score -= 40;
+    matched.push({ source: "class:finisher-requires-panache", tag: "finisher", value: -40 });
   }
 
   if (option?.attackTrait && context.mapPenalty >= 10) {
@@ -234,6 +238,20 @@ export function scoreDecisionFlow(profile, option, context = {}) {
   if (option?.kind === "skill" && context.mapPenalty < 10) {
     score += 3;
     matched.push({ source: "general:trained-skill", tag: "skill", value: 3 });
+  }
+  const damageActions = Number(context.actor?.damageActionsThisTurn ?? 0);
+  const utilityActions = Number(context.actor?.utilityActionsThisTurn ?? 0);
+  if (option?.damage && damageActions === 0) {
+    score += 9;
+    matched.push({ source: "general:deal-damage", tag: "damage", value: 9 });
+  }
+  if (!option?.damage && !option?.healing && utilityActions >= 1) {
+    score -= 18;
+    matched.push({ source: "general:avoid-utility-spam", tag: "utility", value: -18 });
+  }
+  if (option?.defensive && context.actionsRemaining > 1 && damageActions === 0) {
+    score -= 9;
+    matched.push({ source: "general:defend-after-offense", tag: "protection", value: -9 });
   }
   if (context.target && /off.guard|prone|grabbed|restrained/.test(stateText(context.target)) && option?.damage) {
     score += 5;
