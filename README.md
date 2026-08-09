@@ -64,6 +64,10 @@ The module provides:
   system-defined action cost, target, range, area, and damage or healing data;
 - browse-all compendium source libraries with keyword, level, trait, and type filters;
 - an optional Bestiary Ability Glossary-only filter for creature abilities;
+- creature ability search also indexes actions, reactions, free actions, passive
+  abilities, strikes, and spells embedded in every installed PF2e NPC Actor
+  compendium. Results show their source creature and exact name matches are
+  ranked first;
 - GM Core level benchmark menus for creature statistics;
 - native Foundry Journal documents, page permissions, sharing, Show Players,
   images, tables, document links, and rendered read view; no Obsidian install,

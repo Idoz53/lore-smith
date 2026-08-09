@@ -80,6 +80,119 @@ function lsIsBestiaryAbilityGlossary(pack) {
     || identity.includes("bestiary ability glossary");
 }
 
+const LS_CREATURE_CONTENT_TYPES = new Set(["action", "feat", "melee", "spell", "effect"]);
+let lsEmbeddedCreatureContentPromise = null;
+
+function lsPlainSearchText(value) {
+  return String(value ?? "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(?:nbsp|#160);/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function lsEmbeddedItemResult(pack, actor, item) {
+  const actorLevel = lsNumber(actor.system?.details?.level, 0);
+  const traits = item.system?.traits?.value ?? [];
+  const itemId = item._id ?? item.id;
+  const actorId = actor._id ?? actor.id;
+  return {
+    name: item.name,
+    img: item.img,
+    type: item.type,
+    level: lsNumber(item.system?.level, actorLevel),
+    traits,
+    pack: pack.metadata?.label ?? pack.collection,
+    sourceCreature: actor.name,
+    description: lsPlainSearchText(item.system?.description?.value),
+    uuid: `Compendium.${pack.collection}.Actor.${actorId}.Item.${itemId}`,
+  };
+}
+
+async function lsBuildEmbeddedCreatureContentIndex() {
+  if (lsEmbeddedCreatureContentPromise) return lsEmbeddedCreatureContentPromise;
+  lsEmbeddedCreatureContentPromise = (async () => {
+    const results = [];
+    for (const pack of game.packs.filter((candidate) => candidate.documentName === "Actor")) {
+      try {
+        // Use the lightweight compendium index where possible. Foundry versions that
+        // do not expose embedded arrays here fall back to loading that pack once.
+        let actors = [];
+        try {
+          const index = await pack.getIndex({
+            fields: ["name", "type", "system.details.level.value", "items"],
+          });
+          actors = [...index];
+        } catch (indexError) {
+          console.debug(`${LS_MODULE_ID} | ${pack.collection} requires full-document ability indexing.`, indexError);
+        }
+        const npcEntries = actors.filter((actor) => actor.type === "npc");
+        if (!actors.length || (npcEntries.length && !npcEntries.some((actor) => Array.isArray(actor.items) && actor.items.length))) {
+          actors = await pack.getDocuments();
+        }
+        for (const actor of actors) {
+          if (actor.type !== "npc") continue;
+          const items = Array.isArray(actor.items) ? actor.items : [...(actor.items ?? [])];
+          for (const item of items) {
+            if (!LS_CREATURE_CONTENT_TYPES.has(item.type)) continue;
+            results.push(lsEmbeddedItemResult(pack, actor, item));
+          }
+        }
+      } catch (error) {
+        console.warn(`${LS_MODULE_ID} | Could not index embedded NPC abilities from ${pack.collection}`, error);
+      }
+    }
+    return results;
+  })();
+  return lsEmbeddedCreatureContentPromise;
+}
+
+function lsContentSearchScore(entry, normalized) {
+  if (!normalized) return 0;
+  const name = String(entry.name ?? "").toLowerCase();
+  if (name === normalized) return 100;
+  if (name.startsWith(normalized)) return 80;
+  if (name.split(/[^a-z0-9]+/).some((word) => word.startsWith(normalized))) return 60;
+  if (name.includes(normalized)) return 50;
+  return 10;
+}
+
+async function lsSearchCreatureContent({ query = "", types = [], limit = 250, bestiaryGlossaryOnly = false }) {
+  if (bestiaryGlossaryOnly) {
+    return lsSearchPacks({ documentName: "Item", query, types, limit, bestiaryGlossaryOnly: true });
+  }
+  const normalized = String(query ?? "").trim().toLowerCase();
+  const [standalone, embedded] = await Promise.all([
+    lsSearchPacks({ documentName: "Item", query, types, limit: Number.POSITIVE_INFINITY }),
+    lsBuildEmbeddedCreatureContentIndex(),
+  ]);
+  const matchingEmbedded = embedded.filter((entry) => {
+    if (types.length && !types.includes(entry.type)) return false;
+    if (!normalized) return true;
+    const haystack = `${entry.name} ${entry.traits.join(" ")} ${entry.description} ${entry.sourceCreature}`.toLowerCase();
+    return haystack.includes(normalized);
+  });
+  const seen = new Set();
+  return [...standalone, ...matchingEmbedded]
+    .sort((left, right) => {
+      const score = lsContentSearchScore(right, normalized) - lsContentSearchScore(left, normalized);
+      return score || left.name.localeCompare(right.name)
+        || String(left.sourceCreature ?? "").localeCompare(String(right.sourceCreature ?? ""));
+    })
+    .filter((entry) => {
+      // Collapse exact copies repeated on multiple creatures while retaining variants
+      // with different text, traits, or action mechanics.
+      const key = `${entry.type}|${entry.name}|${entry.description ?? ""}|${entry.traits.join(" ")}`.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
 async function lsSearchPacks({
   documentName,
   query = "",
@@ -213,8 +326,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   async _prepareContext(options) {
     if (this.step === 0 && !this.sourcesLoaded) await this.loadSources();
     if (this.step === 3 && !this.contentResults.length) {
-      this.contentResults = await lsSearchPacks({
-        documentName: "Item",
+      this.contentResults = await lsSearchCreatureContent({
         types: ["action", "feat", "melee", "spell", "effect"],
         limit: 250,
       });
@@ -450,8 +562,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     this.contentQuery = this.element.querySelector('[name="contentQuery"]')?.value ?? "";
     this.contentType = this.element.querySelector('[name="contentType"]')?.value ?? "";
     this.contentGlossaryOnly = Boolean(this.element.querySelector('[name="contentGlossaryOnly"]')?.checked);
-    this.contentResults = await lsSearchPacks({
-      documentName: "Item",
+    this.contentResults = await lsSearchCreatureContent({
       query: this.contentQuery,
       types: this.contentType ? [this.contentType] : ["action", "feat", "melee", "spell", "effect"],
       limit: 250,

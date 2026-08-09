@@ -91,7 +91,7 @@
     {{#if steps.content}}
       <section class="ls-builder-step">
         <h2>Actions, abilities, strikes, and spells</h2>
-        <p>Browse native PF2e content or search by keyword. Added entries keep their traits, action costs, inline rolls, spell data, and system automation.</p>
+        <p>Search standalone PF2e entries and every action embedded in installed bestiary and NPC compendiums. Added entries keep their traits, action costs, inline rolls, spell data, and system automation.</p>
         <div class="ls-builder-filters content">
           <input name="contentQuery" value="{{contentQuery}}" placeholder="Name, trait, or keyword">
           <select name="contentType">{{#each contentTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
@@ -101,7 +101,7 @@
         <div class="ls-content-columns">
           <section><h3>Available PF2e entries</h3><div class="ls-builder-results compact tall">
             {{#each contentResults}}
-              <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}} &middot; Level {{level}} &middot; {{pack}}</small></div><button data-action="addContent" data-uuid="{{uuid}}"><i class="fa-solid fa-plus"></i></button></article>
+              <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}} &middot; Level {{level}} &middot; {{pack}}{{#if sourceCreature}} &middot; {{sourceCreature}}{{/if}}</small></div><button data-action="addContent" data-uuid="{{uuid}}"><i class="fa-solid fa-plus"></i></button></article>
             {{else}}<div class="ls-builder-empty">No installed entry matches these filters.</div>{{/each}}
           </div></section>
           <section><h3>On this creature</h3><div class="ls-builder-results compact tall">
