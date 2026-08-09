@@ -1263,7 +1263,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     position: { width: 1120, height: 760 },
     window: { title: "Lore Smith", icon: "fa-solid fa-book-sparkles", resizable: true },
     actions: {
-      tab: LoreSmithDashboard.changeTab,
+      dashboardTab: LoreSmithDashboard.changeTab,
       newSessionPrep: LoreSmithDashboard.newSessionPrep,
       previousSessionStep: LoreSmithDashboard.previousSessionStep,
       nextSessionStep: LoreSmithDashboard.nextSessionStep,
@@ -1694,9 +1694,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   static async changeTab(event, target) {
-    this.captureEncounterSelection();
+    const tab = target?.dataset?.tab || event?.currentTarget?.dataset?.tab;
+    if (!tab) return;
     await this.syncSessionPrepForm();
-    this.activeTab = target.dataset.tab;
+    this.activeTab = tab;
     await this.render();
   }
 
