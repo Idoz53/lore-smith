@@ -207,9 +207,10 @@ export async function resolveNativeCheck({
   mapPenalty = 0,
   dc,
   checkDegree,
+  isolated = false,
 }) {
   try {
-    await setNativeTarget(target);
+    if (!isolated) await setNativeTarget(target);
     if (option.kind === "strike" && option.nativeAction?.variants?.length) {
       const variantIndex = mapPenalty >= 10 ? 2 : mapPenalty >= 5 ? 1 : 0;
       const variant = option.nativeAction.variants[Math.min(variantIndex, option.nativeAction.variants.length - 1)];
@@ -227,7 +228,7 @@ export async function resolveNativeCheck({
     if (option.kind === "spell" && option.attackTrait && option.item?.rollAttack) {
       const attackNumber = mapPenalty >= 10 ? 3 : mapPenalty >= 5 ? 2 : 1;
       const action = attackNumber === 3 ? "spell-attack-3" : attackNumber === 2 ? "spell-attack-2" : "spell-attack";
-      const cardRoll = nativeMessage
+      const cardRoll = nativeMessage && !isolated
         ? await pressNativeCardRoll(nativeMessage, action, target, { rollerActorId: attacker.actor?.id })
         : null;
       const result = cardRoll
@@ -238,7 +239,7 @@ export async function resolveNativeCheck({
     }
 
     if (option.save) {
-      const cardRoll = nativeMessage
+      const cardRoll = nativeMessage && !isolated
         ? await pressNativeCardRoll(nativeMessage, "spell-save", target, {
           rollerActorId: target.actor?.id,
           controlTarget: true,
@@ -260,7 +261,7 @@ export async function resolveNativeCheck({
     }
 
 
-    if (option.kind === "skill" && option.nativeSystemAction?.use) {
+    if (!isolated && option.kind === "skill" && option.nativeSystemAction?.use) {
       const result = await option.nativeSystemAction.use({
         actors: [attacker.actor],
         target: target.token?.object ?? null,
@@ -364,8 +365,8 @@ async function pressNativeCardRoll(message, action, target, {
   return result;
 }
 
-export async function rollNativeDamage(option, attacker, target, degree, mapPenalty = 0, nativeMessage = null) {
-  await setNativeTarget(target);
+export async function rollNativeDamage(option, attacker, target, degree, mapPenalty = 0, nativeMessage = null, { isolated = false } = {}) {
+  if (!isolated) await setNativeTarget(target);
   const event = privateGmEvent("damage");
   try {
     if (option.kind === "strike" && option.nativeAction) {
@@ -379,7 +380,7 @@ export async function rollNativeDamage(option, attacker, target, degree, mapPena
         : await option.nativeAction.damage?.(context);
     }
     if (option.kind === "spell" && option.item?.rollDamage) {
-      const cardRoll = nativeMessage
+      const cardRoll = nativeMessage && !isolated
         ? await pressNativeCardRoll(nativeMessage, "spell-damage", target, { rollerActorId: attacker.actor?.id })
         : null;
       if (cardRoll?.rolls?.[0]) return cardRoll.rolls[0];
@@ -618,13 +619,17 @@ function spellCastContext(option, actor) {
   return { available: false, source: "PF2e reports no castable slot or use" };
 }
 
-export async function consumeNativeResource(option, actor) {
+export async function consumeNativeResource(option, actor, { isolated = false } = {}) {
   if (!option.item) return { available: true, consumed: false, source: "Unlimited" };
   const item = option.item;
   try {
     if (item.type === "spell") {
       const cast = spellCastContext(option, actor);
       if (!cast.available) return { available: false, consumed: false, source: cast.source };
+      if (isolated) {
+        const unlimited = option.traits?.includes("cantrip") || item.isCantrip || item.atWill;
+        return { available: true, consumed: !unlimited, source: `${cast.source} (isolated copy)`, message: null };
+      }
       const beforeIds = new Set(game.messages?.keys?.() ?? []);
       await cast.entry.cast(item, {
         rank: cast.rank,
@@ -644,6 +649,7 @@ export async function consumeNativeResource(option, actor) {
 
     const frequency = item.system?.frequency;
     if (Number(frequency?.value) > 0) {
+      if (isolated) return { available: true, consumed: true, source: "PF2e frequency (isolated copy)" };
       await item.update({ "system.frequency.value": Number(frequency.value) - 1 });
       return { available: true, consumed: true, source: "PF2e frequency" };
     }
@@ -651,6 +657,7 @@ export async function consumeNativeResource(option, actor) {
       return { available: false, consumed: false, source: "No PF2e frequency uses remaining" };
     }
     if (item.type === "consumable" && Number(item.system?.quantity) > 0) {
+      if (isolated) return { available: true, consumed: true, source: "PF2e consumable quantity (isolated copy)" };
       await item.update({ "system.quantity": Number(item.system.quantity) - 1 });
       return { available: true, consumed: true, source: "PF2e consumable quantity" };
     }

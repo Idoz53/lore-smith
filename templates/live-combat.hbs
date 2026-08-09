@@ -27,9 +27,16 @@
       {{{coverageHtml}}}
     </details>
   {{/if}}
-  <div class="ls-live-notice"><i class="fa-solid fa-comment-slash"></i> This log stays in Lore Smith. Chat mirroring is optional in Module Settings.</div>
-  <div class="ls-live-entries">
-    {{#each entries}}<p class="{{kind}}" data-entry-index="{{index}}">{{text}}</p>{{else}}<p class="empty">Waiting for the first action...</p>{{/each}}
+  <div class="ls-live-notice"><i class="fa-solid fa-shield-halved"></i> Isolated replay: the real Scene, actors, HP, conditions, inventory, spell slots, targets, templates, and Combat Tracker are never changed.</div>
+  <div class="ls-live-workspace">
+    <section class="ls-live-stage" data-role="battlefield" aria-label="Isolated combat battlefield">
+      <div class="ls-live-stage-caption" data-role="battlefieldCaption">Preparing isolated combat...</div>
+      <svg class="ls-live-stage-overlays" data-role="battlefieldOverlay" aria-hidden="true"></svg>
+      <div class="ls-live-stage-tokens" data-role="battlefieldTokens"></div>
+    </section>
+    <div class="ls-live-entries">
+      {{#each entries}}<p class="{{kind}}" data-entry-index="{{index}}">{{text}}</p>{{else}}<p class="empty">Waiting for the first action...</p>{{/each}}
+    </div>
   </div>
   <footer class="ls-live-timeline">
     <button type="button" data-action="previousEntry" {{#if timelineAtStart}}disabled{{/if}} title="Previous logged action"><i class="fa-solid fa-chevron-left"></i></button>

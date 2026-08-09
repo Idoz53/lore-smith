@@ -614,6 +614,31 @@ async function applyNativeDamageOrHealing(target, roll, degree, option) {
   };
 }
 
+function applyIsolatedDamageOrHealing(target, roll, degree, option) {
+  const nativeRoll = roll?.roll ?? roll?.rolls?.[0] ?? roll;
+  if (!nativeRoll || !Number.isFinite(Number(nativeRoll.total))) return null;
+  const rolled = Math.max(0, Math.abs(Number(nativeRoll.total)));
+  if (option.healing) {
+    const before = target.hp;
+    target.hp = Math.min(target.maxHp, target.hp + Math.max(1, rolled));
+    target.defeated = false;
+    return { amount: target.hp - before, roll: nativeRoll, summary: liveRollSummary(nativeRoll) };
+  }
+  const multiplier = option.save ? [2, 1, 0.5, 0][degree] ?? 0
+    : option.kind === "strike" ? 1
+      : degree === 3 ? 2 : degree >= 2 ? 1 : 0;
+  const scaled = multiplier > 0 ? Math.max(1, Math.floor(rolled * multiplier)) : 0;
+  const adjusted = adjustDamageForIwr(scaled, option.damageType, target);
+  const before = target.hp;
+  target.hp = Math.max(0, target.hp - adjusted.amount);
+  target.defeated = target.hp <= 0;
+  return {
+    amount: before - target.hp,
+    roll: nativeRoll,
+    summary: `${liveRollSummary(nativeRoll)}${adjusted.notes.length ? ` (${adjusted.notes.join(", ")})` : ""}`,
+  };
+}
+
 function sceneDistance(left, right) {
   const grid = canvas.grid;
   const leftCenter = left.center ?? { x: left.x + left.w / 2, y: left.y + left.h / 2 };
@@ -647,9 +672,12 @@ function lsOffsetKey(offset) {
 
 function lsOccupiedAt(token, topLeft) {
   const candidate = lsBoundsAt(token, topLeft);
-  return (canvas.tokens?.placeables ?? []).some((other) => {
+  const occupants = token._loreSmithWorld?.tokens?.map((document) => document.object)
+    ?? (canvas.tokens?.placeables ?? []);
+  return occupants.some((other) => {
     if (other === token || other.document?.id === token.document?.id) return false;
-    if (!other.document?.actorId || other.document?.hidden && !game.user.isGM) return false;
+    if (!other.document?.actor && !other.document?.actorId) return false;
+    if (other.document?.hidden && !game.user.isGM) return false;
     return lsBoundsOverlap(candidate, { x: other.x, y: other.y, width: other.w, height: other.h });
   });
 }
@@ -714,6 +742,51 @@ async function lsMoveTokenAlong(attacker, path) {
   return true;
 }
 
+function createIsolatedToken(document, world) {
+  const original = document.object;
+  const state = {
+    id: document.id,
+    actor: document.actor,
+    actorId: document.actorId ?? document.actor?.id,
+    name: document.name ?? document.actor?.name ?? "Combatant",
+    hidden: false,
+    texture: { src: document.texture?.src ?? document.actor?.img ?? "icons/svg/mystery-man.svg" },
+    x: Number(document.x ?? original?.x ?? 0),
+    y: Number(document.y ?? original?.y ?? 0),
+    width: Number(document.width ?? 1),
+    height: Number(document.height ?? 1),
+    _loreSmithIsolated: true,
+    async update(changes = {}) {
+      if (Number.isFinite(Number(changes.x))) state.x = Number(changes.x);
+      if (Number.isFinite(Number(changes.y))) state.y = Number(changes.y);
+      world.onChange?.();
+      return state;
+    },
+  };
+  const object = {
+    document: state,
+    _loreSmithWorld: world,
+    original,
+    get x() { return state.x; },
+    get y() { return state.y; },
+    get w() { return Number(original?.w ?? state.width * canvas.grid.size); },
+    get h() { return Number(original?.h ?? state.height * canvas.grid.size); },
+    get center() { return { x: state.x + this.w / 2, y: state.y + this.h / 2 }; },
+    get bounds() { return { x: state.x, y: state.y, width: this.w, height: this.h }; },
+    checkCollision(destination, options = {}) {
+      return original?.checkCollision?.(destination, options) ?? false;
+    },
+  };
+  state.object = object;
+  return state;
+}
+
+function createIsolatedWorld(tokens) {
+  const world = { tokens: [], onChange: null };
+  world.tokens = tokens.map((token) => createIsolatedToken(token, world));
+  return world;
+}
+
 function combatantInsideTemplate(templateDocument, combatant) {
   const template = templateDocument?.object ?? canvas.templates?.get?.(templateDocument?.id);
   const token = combatant.token?.object;
@@ -727,6 +800,48 @@ function combatantInsideTemplate(templateDocument, combatant) {
     }
   }
   return false;
+}
+
+function pointDistanceFeet(left, right) {
+  return canvas.grid.measurePath([left, right]).distance;
+}
+
+function angularDifference(left, right) {
+  return Math.abs(((left - right + 540) % 360) - 180);
+}
+
+function combatantInsideVirtualArea(template, combatant) {
+  const token = combatant.token?.object;
+  if (!template || !token) return false;
+  const point = token.center;
+  const origin = { x: template.x, y: template.y };
+  const distance = pointDistanceFeet(origin, point);
+  if (template.t === "circle") return distance <= Number(template.distance);
+  const angle = Math.atan2(point.y - origin.y, point.x - origin.x) * 180 / Math.PI;
+  if (template.t === "cone") {
+    return distance <= Number(template.distance)
+      && angularDifference(angle, Number(template.direction)) <= Number(template.angle ?? 90) / 2;
+  }
+  if (template.t === "ray") {
+    const radians = Number(template.direction) * Math.PI / 180;
+    const dxFeet = (point.x - origin.x) * canvas.grid.distance / canvas.grid.size;
+    const dyFeet = (point.y - origin.y) * canvas.grid.distance / canvas.grid.size;
+    const along = dxFeet * Math.cos(radians) + dyFeet * Math.sin(radians);
+    const across = Math.abs(-dxFeet * Math.sin(radians) + dyFeet * Math.cos(radians));
+    return along >= 0 && along <= Number(template.distance)
+      && across <= Number(template.width ?? 5) / 2;
+  }
+  if (template.t === "rect") return distance <= Number(template.distance);
+  return false;
+}
+
+function applyVirtualConditions(target, conditions) {
+  const applied = [];
+  for (const condition of conditions ?? []) {
+    target.conditions.set(condition.slug, Math.max(target.conditions.get(condition.slug) ?? 0, condition.value ?? 1));
+    applied.push(`${condition.slug}${Number(condition.value) > 1 ? ` ${condition.value}` : ""}`);
+  }
+  return applied;
 }
 
 async function waitForTemplateShape(templateDocument) {
@@ -830,15 +945,35 @@ async function separateOverlappingCombatants(combatants) {
   }
 }
 
-function liveStateSnapshot(combatants) {
-  return combatants.map((combatant) => ({
-    actorId: combatant.actor?.id ?? null,
-    tokenId: combatant.token?.id ?? null,
-    x: combatant.token?.x ?? combatant.token?.object?.x ?? 0,
-    y: combatant.token?.y ?? combatant.token?.object?.y ?? 0,
-    hp: actorHp(combatant.actor).value,
-    defeated: Boolean(combatant.defeated),
-  }));
+function liveStateSnapshot(combatants, overlay = null) {
+  const dimensions = canvas.dimensions;
+  return {
+    scene: {
+      x: dimensions.sceneX,
+      y: dimensions.sceneY,
+      width: dimensions.sceneWidth,
+      height: dimensions.sceneHeight,
+      background: canvas.scene?.background?.src ?? canvas.scene?.img ?? "",
+      gridSize: canvas.grid.size,
+      gridDistance: canvas.grid.distance,
+    },
+    overlay,
+    tokens: combatants.map((combatant) => ({
+      actorId: combatant.actor?.id ?? null,
+      tokenId: combatant.token?.id ?? null,
+      name: combatant.name,
+      image: combatant.token?.texture?.src ?? combatant.actor?.img ?? "icons/svg/mystery-man.svg",
+      team: combatant.team,
+      x: combatant.token?.x ?? combatant.token?.object?.x ?? 0,
+      y: combatant.token?.y ?? combatant.token?.object?.y ?? 0,
+      width: combatant.token?.object?.w ?? canvas.grid.size,
+      height: combatant.token?.object?.h ?? canvas.grid.size,
+      hp: combatant.hp,
+      maxHp: combatant.maxHp,
+      defeated: Boolean(combatant.defeated),
+      conditions: [...(combatant.conditions?.entries?.() ?? [])].map(([slug, value]) => ({ slug, value })),
+    })),
+  };
 }
 
 async function runLiveReplay(tokens, partyIds, enemyIds, {
@@ -846,6 +981,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
   onLog = null,
   delay = game.settings.settings.has(`${MODULE_ID}.liveActionDelay`) ? game.settings.get(MODULE_ID, "liveActionDelay") : 1500,
   control = null,
+  isolated = true,
 } = {}) {
   const actionDelay = () => Math.max(100, Number(typeof delay === "function" ? delay() : delay) || 1500);
   const waitForControl = async () => {
@@ -853,18 +989,22 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
     return Boolean(control?.isStopped?.());
   };
   const activeCombat = () => {
+    if (isolated) return null;
     const candidate = (combat?.id && game.combats?.get(combat.id)) ?? game.combat;
     return candidate?.id && game.combats?.get(candidate.id) ? candidate : null;
   };
-  const combatants = tokens
+  const isolatedWorld = isolated ? createIsolatedWorld(tokens) : null;
+  const replayTokens = isolatedWorld?.tokens ?? tokens;
+  const combatants = replayTokens
     .filter((token) => partyIds.has(token.id) || enemyIds.has(token.id))
     .map((token) => virtualCombatant(token, partyIds.has(token.id) ? "party" : "enemy"));
   await separateOverlappingCombatants(combatants);
+  let activeOverlay = null;
   const order = [];
   for (const combatant of combatants) {
     const tracked = combat?.combatants?.find((entry) => entry.tokenId === combatant.id);
     let score = Number(tracked?.initiative);
-    if (!Number.isFinite(score) && tracked && typeof combat?.rollInitiative === "function") {
+    if (!isolated && !Number.isFinite(score) && tracked && typeof combat?.rollInitiative === "function") {
       await combat.rollInitiative([tracked.id], {
         updateTurn: false,
         messageOptions: { rollMode: "gmroll" },
@@ -887,7 +1027,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
   }
   order.sort((left, right) => right.score - left.score);
   const emit = async (text, kind = "action") => {
-    await onLog?.({ text, kind, timestamp: Date.now(), snapshot: liveStateSnapshot(combatants) });
+    await onLog?.({ text, kind, timestamp: Date.now(), snapshot: liveStateSnapshot(combatants, activeOverlay) });
     if (game.settings.settings.has(`${MODULE_ID}.mirrorLiveToChat`) && game.settings.get(MODULE_ID, "mirrorLiveToChat")) {
       await ChatMessage.create({ speaker: { alias: "Lore Smith" }, content: `<p>${escapeHtml(text)}</p>` });
     }
@@ -917,7 +1057,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
       for (const [key, roundsLeft] of attacker.cooldowns) {
         attacker.cooldowns.set(key, Math.max(0, roundsLeft - 1));
       }
-      if (attacker.actor.system?.attributes?.shield?.raised) {
+      if (!isolated && attacker.actor.system?.attributes?.shield?.raised) {
         await attacker.actor.update({ "system.attributes.shield.raised": false });
       }
       const turnCombat = activeCombat();
@@ -987,7 +1127,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           }
         }
         resolutionStage = "PF2e resource and Cast/use control";
-        const nativeUse = await consumeNativeResource(option, attacker.actor);
+        const nativeUse = await consumeNativeResource(option, attacker.actor, { isolated });
         if (!nativeUse.available) {
           const key = option.useKey ?? option.id;
           attacker.uses.set(key, 0);
@@ -999,12 +1139,14 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         if (option.damage) attacker.damageActionsThisTurn += 1;
         else if (!option.healing) attacker.utilityActionsThisTurn += 1;
         resolutionStage = "PF2e action card";
-        const nativeActionCard = nativeUse.message ?? await postNativeActionCard(option);
+        const nativeActionCard = isolated ? null : nativeUse.message ?? await postNativeActionCard(option);
         if (option.healing) {
           resolutionStage = "PF2e healing roll button";
-          const healingRoll = await rollNativeDamage(option, attacker, target, 2, map, nativeActionCard);
+          const healingRoll = await rollNativeDamage(option, attacker, target, 2, map, nativeActionCard, { isolated });
           resolutionStage = "PF2e healing application";
-          const healing = await applyNativeDamageOrHealing(target, healingRoll, 2, option);
+          const healing = isolated
+            ? applyIsolatedDamageOrHealing(target, healingRoll, 2, option)
+            : await applyNativeDamageOrHealing(target, healingRoll, 2, option);
           if (!healing) {
             await emit(`${attacker.name} uses ${option.name}, but PF2e exposed no native healing button for this entry. Lore Smith did not invent a healing formula.`, "error");
             await pause(actionDelay());
@@ -1016,15 +1158,22 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         }
         if (option.defensive && !option.damage) {
           resolutionStage = "PF2e defensive effect";
-          const nativeDefense = await applyNativeDefense(option, attacker.actor);
-          const applied = await applyConditions(attacker, option.conditions);
+          const nativeDefense = isolated
+            ? { applied: true, source: "isolated defensive state" }
+            : await applyNativeDefense(option, attacker.actor);
+          if (isolated) attacker.conditions.set("defended", 1);
+          const applied = isolated
+            ? applyVirtualConditions(attacker, option.conditions)
+            : await applyConditions(attacker, option.conditions);
           await emit(`${attacker.name} uses ${option.name}${applied.length ? ` and gains ${applied.join(", ")}` : ""} [${nativeDefense.source}]; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "action");
           await pause(actionDelay());
           continue;
         }
         resolutionStage = "measured-template placement";
         const templateSource = templateData(option, attacker.token.object, target.token.object);
-        if (templateSource && canvas.scene) {
+        if (templateSource && isolated) {
+          activeOverlay = templateSource;
+        } else if (templateSource && canvas.scene) {
           const cleanTemplate = Object.fromEntries(Object.entries(templateSource).filter(([, value]) => value !== undefined));
           [temporaryTemplate] = await canvas.scene.createEmbeddedDocuments("MeasuredTemplate", [cleanTemplate]);
           await waitForTemplateShape(temporaryTemplate);
@@ -1033,7 +1182,8 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           option,
           target,
           combatants,
-          temporaryTemplate ? (candidate) => combatantInsideTemplate(temporaryTemplate, candidate) : null,
+          isolated && templateSource ? (candidate) => combatantInsideVirtualArea(templateSource, candidate)
+            : temporaryTemplate ? (candidate) => combatantInsideTemplate(temporaryTemplate, candidate) : null,
         );
         const outcomes = [];
         const nativeRolls = new Map();
@@ -1047,6 +1197,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             mapPenalty: map,
             dc: option.save ? option.dc : actorAc(affected.actor),
             checkDegree,
+            isolated,
           });
           if (!option.automatic && !nativeCheck) {
             outcomes.push(`${affected.name}: PF2e's native control did not return a readable roll; no modeled roll was substituted`);
@@ -1066,43 +1217,51 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             let damageRoll = nativeRolls.get(rollKey);
             if (!damageRoll) {
               resolutionStage = `PF2e damage roll button for ${affected.name}`;
-              damageRoll = await rollNativeDamage(option, attacker, affected, degree, map, nativeActionCard);
+              damageRoll = await rollNativeDamage(option, attacker, affected, degree, map, nativeActionCard, { isolated });
               if (damageRoll) nativeRolls.set(rollKey, damageRoll);
             }
             resolutionStage = `PF2e damage application to ${affected.name}`;
-            damage = await applyNativeDamageOrHealing(affected, damageRoll, degree, option);
+            damage = isolated
+              ? applyIsolatedDamageOrHealing(affected, damageRoll, degree, option)
+              : await applyNativeDamageOrHealing(affected, damageRoll, degree, option);
           }
           resolutionStage = `PF2e conditions and effects for ${affected.name}`;
-          const conditions = effectApplies ? await applyConditions(affected, option.conditions) : [];
+          const conditions = effectApplies
+            ? isolated ? applyVirtualConditions(affected, option.conditions) : await applyConditions(affected, option.conditions)
+            : [];
           if (effectApplies) {
             for (const condition of option.conditions) {
               affected.conditions.set(condition.slug, Math.max(affected.conditions.get(condition.slug) ?? 0, condition.value));
             }
           }
-          const clickedCardEffect = effectApplies && nativeActionCard
+          const clickedCardEffect = !isolated && effectApplies && nativeActionCard
             ? await clickNativeCardEffect(nativeActionCard)
             : false;
           const structured = effectApplies && !clickedCardEffect
-            ? await applyNativeStructuredEffects(option, attacker, affected)
+            ? isolated ? applyVirtualStructuredEffects(option, attacker, affected) : await applyNativeStructuredEffects(option, attacker, affected)
             : [];
           const missingDamage = option.damage && (option.save || degree >= 2) && !damage
             ? "; PF2e's native damage control did not return a roll, so no formula was invented"
             : "";
           outcomes.push(`${outcome}${damage ? `; native damage roll ${damage.summary}; ${damage.amount} ${option.damageType || ""} damage applied, HP ${affected.hp}/${affected.maxHp}` : ""}${missingDamage}${conditions.length || structured.length || clickedCardEffect ? `; ${[...conditions, ...structured, ...(clickedCardEffect ? ["native card effect"] : [])].join(", ")}` : ""}`);
-          if (affected.defeated) {
+          if (!isolated && affected.defeated) {
             const trackedTarget = activeCombat()?.combatants?.find((candidate) => candidate.tokenId === affected.id);
             await trackedTarget?.update({ defeated: true });
           }
         }
         const resolution = outcomes.length ? outcomes.join(" | ") : "no tokens occupy the highlighted area";
         await emit(`${attacker.name} uses ${option.name}${option.kind === "spell" ? ` through ${nativeUse.source}` : ""}, spending ${cost} action${cost === 1 ? "" : "s"}: ${resolution}.`, option.damage ? "damage" : "action");
-        target.token.object?.control({ releaseOthers: true });
-        await canvas.animatePan({ x: target.token.object?.center.x, y: target.token.object?.center.y, duration: Math.min(500, actionDelay() / 3) });
+        if (!isolated) {
+          target.token.object?.control({ releaseOthers: true });
+          await canvas.animatePan({ x: target.token.object?.center.x, y: target.token.object?.center.y, duration: Math.min(500, actionDelay() / 3) });
+        }
         await pause(actionDelay());
         if (temporaryTemplate) await temporaryTemplate.delete();
+        activeOverlay = null;
         if (option.attackTrait) map += 5;
         } catch (error) {
           if (temporaryTemplate) await temporaryTemplate.delete().catch(() => {});
+          activeOverlay = null;
           const actionName = selectedOption?.name ?? "unknown action";
           const targetName = selectedTarget?.name ? ` against ${selectedTarget.name}` : "";
           console.error(`${MODULE_ID} | Could not resolve ${attacker.name}'s ${actionName} during ${resolutionStage}.`, error);

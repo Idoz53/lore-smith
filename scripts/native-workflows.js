@@ -1056,7 +1056,7 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: "lore-smith-live-log",
     classes: ["lore-smith-live-log"],
-    position: { width: 560, height: 680, left: 70, top: 70 },
+    position: { width: 1040, height: 760, left: 40, top: 40 },
     window: { title: "Lore Smith Live Combat", icon: "fa-solid fa-swords", resizable: true },
     actions: {
       togglePause: LoreSmithLiveLog.togglePause,
@@ -1117,6 +1117,7 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     const timeline = this.element?.querySelector('[name="timelineIndex"]');
     timeline?.addEventListener("input", () => this.seekTimeline(Number(timeline.value)));
     if (log && this.followingLatest) log.scrollTop = log.scrollHeight;
+    this.renderBattlefield(this.entries[this.timelineIndex]?.snapshot, this.entries[this.timelineIndex]?.text);
     this.syncTimelineControls();
     this.bringToTop?.();
   }
@@ -1138,6 +1139,7 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     row.textContent = entry.text;
     list.append(row);
     if (this.followingLatest) list.scrollTop = list.scrollHeight;
+    if (this.followingLatest) this.renderBattlefield(entry.snapshot, entry.text);
     this.syncTimelineControls();
   }
 
@@ -1164,22 +1166,90 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
   }
 
   async applyTimelineSnapshot(snapshot) {
-    if (!Array.isArray(snapshot)) return;
-    const tokenUpdates = [];
-    const actorUpdates = [];
-    for (const state of snapshot) {
-      const token = canvas.scene?.tokens?.get(state.tokenId);
-      if (token && (token.x !== state.x || token.y !== state.y)) {
-        tokenUpdates.push({ _id: token.id, x: state.x, y: state.y });
-      }
-      const actor = token?.actor ?? game.actors?.get(state.actorId);
-      const currentHp = Number(actor?.system?.attributes?.hp?.value);
-      if (actor && Number.isFinite(state.hp) && currentHp !== Number(state.hp)) {
-        actorUpdates.push(actor.update({ "system.attributes.hp.value": Number(state.hp) }));
-      }
+    this.renderBattlefield(snapshot, this.entries[this.timelineIndex]?.text);
+  }
+
+  renderBattlefield(snapshot, captionText = "") {
+    const stage = this.element?.querySelector('[data-role="battlefield"]');
+    const layer = this.element?.querySelector('[data-role="battlefieldTokens"]');
+    const overlayLayer = this.element?.querySelector('[data-role="battlefieldOverlay"]');
+    const caption = this.element?.querySelector('[data-role="battlefieldCaption"]');
+    if (!stage || !layer || !overlayLayer || !snapshot?.scene) return;
+    const scene = snapshot.scene;
+    const safeBackground = String(scene.background ?? "").replace(/["\\]/g, (character) => `\\${character}`);
+    stage.style.aspectRatio = `${Math.max(1, scene.width)} / ${Math.max(1, scene.height)}`;
+    stage.style.backgroundImage = safeBackground ? `url("${safeBackground}")` : "none";
+    if (caption) caption.textContent = captionText || "Isolated combat state";
+    layer.replaceChildren();
+    for (const token of snapshot.tokens ?? []) {
+      const node = document.createElement("article");
+      node.className = `ls-live-token ${token.team}${token.defeated ? " defeated" : ""}`;
+      node.style.left = `${((token.x - scene.x) / scene.width) * 100}%`;
+      node.style.top = `${((token.y - scene.y) / scene.height) * 100}%`;
+      node.style.width = `${(token.width / scene.width) * 100}%`;
+      node.style.height = `${(token.height / scene.height) * 100}%`;
+      node.title = `${token.name} — ${token.hp}/${token.maxHp} HP`;
+      const portrait = document.createElement("img");
+      portrait.src = token.image;
+      portrait.alt = "";
+      const label = document.createElement("strong");
+      label.textContent = token.name;
+      const hp = document.createElement("span");
+      hp.className = "ls-live-token-hp";
+      const hpFill = document.createElement("i");
+      hpFill.style.width = `${Math.max(0, Math.min(100, token.hp / Math.max(1, token.maxHp) * 100))}%`;
+      hp.append(hpFill);
+      const details = document.createElement("small");
+      const conditions = (token.conditions ?? []).map((condition) => `${condition.slug}${condition.value > 1 ? ` ${condition.value}` : ""}`);
+      details.textContent = `${token.hp}/${token.maxHp} HP${conditions.length ? ` · ${conditions.join(", ")}` : ""}`;
+      node.append(portrait, label, hp, details);
+      layer.append(node);
     }
-    if (tokenUpdates.length) await canvas.scene.updateEmbeddedDocuments("Token", tokenUpdates, { animate: false });
-    if (actorUpdates.length) await Promise.allSettled(actorUpdates);
+    overlayLayer.replaceChildren();
+    overlayLayer.setAttribute("viewBox", `${scene.x} ${scene.y} ${scene.width} ${scene.height}`);
+    const area = snapshot.overlay;
+    if (!area) return;
+    const namespace = "http://www.w3.org/2000/svg";
+    const pixelsPerFoot = scene.gridSize / Math.max(1, scene.gridDistance);
+    const length = Number(area.distance ?? 0) * pixelsPerFoot;
+    let shape = null;
+    if (area.t === "circle") {
+      shape = document.createElementNS(namespace, "circle");
+      shape.setAttribute("cx", area.x);
+      shape.setAttribute("cy", area.y);
+      shape.setAttribute("r", length);
+    } else if (area.t === "cone") {
+      const radians = Number(area.direction ?? 0) * Math.PI / 180;
+      const half = Number(area.angle ?? 90) / 2 * Math.PI / 180;
+      const points = [
+        [area.x, area.y],
+        [area.x + Math.cos(radians - half) * length, area.y + Math.sin(radians - half) * length],
+        [area.x + Math.cos(radians + half) * length, area.y + Math.sin(radians + half) * length],
+      ];
+      shape = document.createElementNS(namespace, "polygon");
+      shape.setAttribute("points", points.map((point) => point.join(",")).join(" "));
+    } else if (area.t === "ray") {
+      const radians = Number(area.direction ?? 0) * Math.PI / 180;
+      const halfWidth = Number(area.width ?? 5) * pixelsPerFoot / 2;
+      const perpendicular = { x: -Math.sin(radians) * halfWidth, y: Math.cos(radians) * halfWidth };
+      const end = { x: area.x + Math.cos(radians) * length, y: area.y + Math.sin(radians) * length };
+      const points = [
+        [area.x + perpendicular.x, area.y + perpendicular.y],
+        [end.x + perpendicular.x, end.y + perpendicular.y],
+        [end.x - perpendicular.x, end.y - perpendicular.y],
+        [area.x - perpendicular.x, area.y - perpendicular.y],
+      ];
+      shape = document.createElementNS(namespace, "polygon");
+      shape.setAttribute("points", points.map((point) => point.join(",")).join(" "));
+    } else {
+      shape = document.createElementNS(namespace, "rect");
+      shape.setAttribute("x", Number(area.x) - length / 2);
+      shape.setAttribute("y", Number(area.y) - length / 2);
+      shape.setAttribute("width", length);
+      shape.setAttribute("height", length);
+    }
+    shape.classList.add("ls-live-area-shape");
+    overlayLayer.append(shape);
   }
 
   async seekTimeline(index) {
@@ -1226,6 +1296,16 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     this.paused = false;
     this.status = "Stopping";
     await this.render({ force: true });
+  }
+
+  async close(options = {}) {
+    if (this.running) {
+      this.stopped = true;
+      this.paused = false;
+      this.running = false;
+      this.status = "Stopped because the replay window was closed";
+    }
+    return super.close(options);
   }
 
   static async previousEntry() {
@@ -1387,10 +1467,7 @@ async function lsRunLiveCombat() {
       averageRounds: preview.averageRounds,
       iterations: previewIterations,
     };
-    if (!sides.combat.started) await sides.combat.startCombat();
-    const liveCombat = game.combat ?? sides.combat;
-    const missingInitiative = liveCombat.combatants.filter((combatant) => combatant.initiative === null).map((combatant) => combatant.id);
-    if (missingInitiative.length) await liveCombat.rollInitiative(missingInitiative);
+    const liveCombat = sides.combat;
     log.status = "Running";
     await log.render({ force: true });
     ui.notifications.info("Lore Smith live combat started. Use the separate window to read the log and change its speed.");
@@ -1399,6 +1476,7 @@ async function lsRunLiveCombat() {
       onLog: (entry) => log.add(entry),
       delay: () => game.settings.get(LS_MODULE_ID, "liveActionDelay"),
       control: log,
+      isolated: true,
     });
   } catch (error) {
     console.error(`${LS_MODULE_ID} | Live combat failed`, error);

@@ -36,10 +36,16 @@ The module provides:
 - encounter setup using actors and tokens already in the Foundry world;
 - Combat Tracker buttons for randomized iteration logs and live Scene combat;
 - spell-, ability-, item-, strike-, save-, condition-, and area-template-aware combat choices;
-- detailed iteration logs and a separate live-combat log window;
+- detailed iteration logs and a separate isolated live-combat battlefield window;
 - pause, resume, stop, adjustable pacing, and a previous/next action timeline
   that reviews logged actions together with their token positions and Hit Points,
   without Chat spam by default;
+- Live Combat operates on cloned token positions, HP, conditions, cooldowns,
+  item quantities, frequencies, and spell resources. It never moves Scene tokens,
+  changes actor HP or conditions, consumes inventory or spell slots, advances the
+  Combat Tracker, places real templates, changes targets, or moves the GM camera;
+- the isolated popup displays the Scene background, animated combatant copies,
+  HP bars, conditions, area templates, action captions, and the complete log;
 - native PF2e spellcasting-entry casts for prepared, flexible, spontaneous,
   innate, focus, at-will, and cantrip spells, using the same slot and use
   validation as the PF2e Cast control;

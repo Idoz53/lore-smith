@@ -133,6 +133,20 @@ assert.deepEqual(castCalls[0][1], {
   message: true,
   rollMode: "gmroll",
 });
+const isolatedCastResult = await consumeNativeResource(spellOption, caster, { isolated: true });
+assert.equal(isolatedCastResult.available, true);
+assert.equal(isolatedCastResult.source, "PF2e cantrip (isolated copy)");
+assert.equal(castCalls.length, 1, "isolated casting must not call PF2e Cast or consume a real slot");
+let consumableUpdates = 0;
+const consumable = item({
+  type: "consumable",
+  system: { quantity: 2, actionType: { value: "action" }, actions: { value: 1 }, traits: { value: [] }, damage: {} },
+  async update() { consumableUpdates += 1; },
+});
+const isolatedConsumable = await consumeNativeResource({ item: consumable }, caster, { isolated: true });
+assert.equal(isolatedConsumable.available, true);
+assert.equal(isolatedConsumable.source, "PF2e consumable quantity (isolated copy)");
+assert.equal(consumableUpdates, 0, "isolated item use must not decrement the real owned item");
 
 const variableSpell = item({
   type: "spell",
