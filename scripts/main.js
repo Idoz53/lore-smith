@@ -1879,8 +1879,8 @@ function sessionJournalPages(prep) {
   const npcNames = npcs.map((npc, index) => npc.name.trim() || `Important NPC ${index + 1}`);
   const overview = [
     sessionBlock("Main goal", prep.goal), sessionBlock("Opening situation", prep.opening), sessionBlock("Likely ending or cliffhanger", prep.ending),
-    `<hr><p><strong>Important places</strong></p><ul>${placeNames.map((name) => `<li>[[Place — ${escapeHtml(name)}]]</li>`).join("")}</ul>`,
-    "<p><em>Use the linked pages for sensory descriptions and table-ready details.</em></p>",
+    `<hr><p><strong>Important places</strong></p><ul>${placeNames.map((name) => `<li>Place — ${escapeHtml(name)}</li>`).join("")}</ul>`,
+    "<p><em>See each place page for its description and table-ready details.</em></p>",
   ].filter(Boolean).join("");
   const pages = [{ name: "Session Overview", content: overview }];
   for (const [index, location] of prep.locations.entries()) pages.push({ name: `Place — ${placeNames[index]}`, content: sessionLocationPage({ ...location, name: placeNames[index] }) });
@@ -1892,7 +1892,7 @@ function sessionJournalPages(prep) {
     return `<li><strong>${entry.type === "combat" ? "Combat encounter" : "Social encounter"}</strong>${actors ? ` — ${actors}` : ""}${entry.description ? `<br>${sessionHtml(entry.description)}` : ""}</li>`;
   }).join("");
   const peopleOverview = [
-    npcNames.length ? `<p><strong>Important NPCs</strong></p><ul>${npcNames.map((name) => `<li>[[NPC - ${escapeHtml(name)}]]</li>`).join("")}</ul>` : "",
+    npcNames.length ? `<p><strong>Important NPCs</strong></p><ul>${npcNames.map((name) => `<li>NPC - ${escapeHtml(name)}</li>`).join("")}</ul>` : "",
     peopleRows ? `<p><strong>Other people and factions</strong></p><ul>${peopleRows}</ul>` : "",
     hazardRows ? `<p><strong>Hazards</strong></p><ul>${hazardRows}</ul>` : "",
     encounterRows ? `<p><strong>Encounters</strong></p><ul>${encounterRows}</ul>` : "",
@@ -1922,20 +1922,20 @@ function cleanSessionPrepHeadings(content) {
     if (!SESSION_PREP_SECTION_LABELS.has(label)) return match;
     const cleanLabel = label === "Five senses" ? "Description" : label;
     return `<p><strong>${cleanLabel}</strong></p>`;
-  });
+  }).replace(/\[\[([^\]\r\n]{1,200})\]\]/g, "$1");
 }
 
 async function migrateSessionPrepJournals() {
   if (!game.user.isGM) return;
   for (const journal of game.journal.contents.filter((entry) => entry.getFlag(FLAG_SCOPE, "sessionPrep"))) {
-    if (Number(journal.getFlag(FLAG_SCOPE, "sessionPrepVersion") ?? 0) >= 2) continue;
+    if (Number(journal.getFlag(FLAG_SCOPE, "sessionPrepVersion") ?? 0) >= 3) continue;
     const updates = [];
     for (const page of journal.pages.contents.filter((entry) => entry.type === "text")) {
       const content = cleanSessionPrepHeadings(page.text?.content);
       if (content !== page.text?.content) updates.push({ _id: page.id, "text.content": content });
     }
     if (updates.length) await journal.updateEmbeddedDocuments("JournalEntryPage", updates);
-    await journal.setFlag(FLAG_SCOPE, "sessionPrepVersion", 2);
+    await journal.setFlag(FLAG_SCOPE, "sessionPrepVersion", 3);
   }
 }
 
@@ -2572,7 +2572,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     const journal = await JournalEntry.create({
       name: this.sessionPrep.title.trim(),
-      flags: { [FLAG_SCOPE]: { sessionPrep: true, sessionPrepVersion: 2, createdAt: new Date().toISOString(), sessionGoal: this.sessionPrep.goal.trim() } },
+      flags: { [FLAG_SCOPE]: { sessionPrep: true, sessionPrepVersion: 3, createdAt: new Date().toISOString(), sessionGoal: this.sessionPrep.goal.trim() } },
       pages: [],
     });
     const pages = sessionJournalPages(this.sessionPrep).map((page, index) => ({ name: page.name, type: "text", text: { content: page.content }, sort: (index + 1) * 100000 }));
