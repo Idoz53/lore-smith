@@ -464,6 +464,16 @@ export function buildActionCatalog(actor) {
 }
 
 export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0, round = 1) {
+  const tacticalNoise = () => {
+    try {
+      const value = new Uint32Array(1);
+      globalThis.crypto?.getRandomValues?.(value);
+      if (value[0]) return (value[0] / 0x100000000 - 0.5) * 2.5;
+    } catch (_error) {
+      // Fall through to the platform PRNG when Web Crypto is unavailable.
+    }
+    return (Math.random() - 0.5) * 2.5;
+  };
   const meetsRequirements = (option) => {
     if (option.requirements?.requiresDamageTaken && actor.hp >= actor.maxHp) return false;
     if (option.requirements?.forbiddenConditions?.some((condition) => actor.conditions?.has(condition))) return false;
@@ -562,7 +572,8 @@ export function chooseAction(actor, combatants, actionsRemaining, mapPenalty = 0
         cost,
         decision: decisionTrace[0] ?? null,
         score: (expected + conditionValue + defensiveValue + utilityValue + spellBias) / Math.max(1, cost)
-          - mapCost - repetitionPenalty + profileValue + targetValue - targetImmunityPenalty - redundantConditionPenalty,
+          - mapCost - repetitionPenalty + profileValue + targetValue - targetImmunityPenalty - redundantConditionPenalty
+          + tacticalNoise(),
       };
     });
   }).filter(Boolean).sort((left, right) => right.score - left.score);

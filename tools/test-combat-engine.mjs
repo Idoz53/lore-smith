@@ -136,7 +136,14 @@ assert.deepEqual(castCalls[0][1], {
 const isolatedCastResult = await consumeNativeResource(spellOption, caster, { isolated: true });
 assert.equal(isolatedCastResult.available, true);
 assert.equal(isolatedCastResult.source, "PF2e cantrip (isolated copy)");
-assert.equal(castCalls.length, 1, "isolated casting must not call PF2e Cast or consume a real slot");
+assert.equal(castCalls.length, 2, "isolated casting should create a native PF2e Cast card");
+assert.deepEqual(castCalls[1][1], {
+  rank: 0,
+  slotId: undefined,
+  consume: false,
+  message: true,
+  rollMode: "gmroll",
+}, "the isolated Cast card must never consume the actor's real spell resource");
 let consumableUpdates = 0;
 const consumable = item({
   type: "consumable",

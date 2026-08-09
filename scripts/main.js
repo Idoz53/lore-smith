@@ -285,6 +285,8 @@ function virtualCombatant(token, team) {
     targetUses: new Set(),
     cooldowns: new Map(),
     conditions,
+    baseConditions: new Set(conditions.keys()),
+    flankedBy: null,
     profile: getTacticalProfile(actor),
     defeated: false,
   };
@@ -340,6 +342,7 @@ function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = 
     for (const turn of initiatives) {
       const attacker = turn.combatant;
       if (attacker.defeated) continue;
+      refreshVirtualFlanking(combatants);
       attacker.turnUses.clear();
       attacker.damageActionsThisTurn = 0;
       attacker.utilityActionsThisTurn = 0;
@@ -347,7 +350,19 @@ function simulateEncounter(tokens, partyIds, enemyIds, { captureLog = false } = 
       for (const [key, roundsLeft] of attacker.cooldowns) {
         attacker.cooldowns.set(key, Math.max(0, roundsLeft - 1));
       }
-      let actionsRemaining = 3;
+      if (["unconscious", "paralyzed", "petrified"].some((slug) => attacker.conditions.has(slug))) {
+        push(`${attacker.name} cannot act because of ${["unconscious", "paralyzed", "petrified"].find((slug) => attacker.conditions.has(slug))}.`, "condition");
+        continue;
+      }
+      const slowed = Math.max(0, Number(attacker.conditions.get("slowed") ?? 0));
+      const stunned = Math.max(0, Number(attacker.conditions.get("stunned") ?? 0));
+      let actionsRemaining = Math.max(0, 3 - slowed - Math.min(3, stunned));
+      if (stunned) attacker.conditions.delete("stunned");
+      if (attacker.conditions.has("prone") && actionsRemaining > 0) {
+        actionsRemaining -= 1;
+        attacker.conditions.delete("prone");
+        push(`${attacker.name} spends 1 action to Stand and is no longer prone.`, "condition");
+      }
       let map = 0;
       while (actionsRemaining > 0) {
         const choice = chooseCatalogAction(attacker, combatants, actionsRemaining, map, rounds);
@@ -498,7 +513,13 @@ async function postPrivateGmRoll(roll, flavor) {
 
 function liveRollSummary(roll) {
   const expression = roll.result ?? roll.formula ?? "roll";
-  return `${expression} = ${Number(roll.total) || 0}`;
+  let total = null;
+  try {
+    total = Number(roll.total);
+  } catch (_error) {
+    total = Number(roll._total ?? roll.toJSON?.()?.total);
+  }
+  return `${expression} = ${Number.isFinite(total) ? total : 0}`;
 }
 
 function liveCheckSummary(check) {
@@ -616,8 +637,15 @@ async function applyNativeDamageOrHealing(target, roll, degree, option) {
 
 function applyIsolatedDamageOrHealing(target, roll, degree, option) {
   const nativeRoll = roll?.roll ?? roll?.rolls?.[0] ?? roll;
-  if (!nativeRoll || !Number.isFinite(Number(nativeRoll.total))) return null;
-  const rolled = Math.max(0, Math.abs(Number(nativeRoll.total)));
+  if (!nativeRoll) return null;
+  let total = null;
+  try {
+    total = Number(nativeRoll.total);
+  } catch (_error) {
+    total = Number(nativeRoll._total ?? nativeRoll.toJSON?.()?.total);
+  }
+  if (!Number.isFinite(total)) return null;
+  const rolled = Math.max(0, Math.abs(total));
   if (option.healing) {
     const before = target.hp;
     target.hp = Math.min(target.maxHp, target.hp + Math.max(1, rolled));
@@ -647,6 +675,96 @@ function sceneDistance(left, right) {
   const occupiedRadius = Math.max(0, ((Math.max(left.w, left.h) + Math.max(right.w, right.h)) / 2 - grid.size)
     * grid.distance / grid.size);
   return Math.max(0, centerDistance - occupiedRadius);
+}
+
+function randomUnit() {
+  try {
+    const value = new Uint32Array(1);
+    globalThis.crypto?.getRandomValues?.(value);
+    if (value[0]) return value[0] / 0x100000000;
+  } catch (_error) {
+    // Math.random remains suitably non-deterministic for tactical tie-breaking.
+  }
+  return Math.random();
+}
+
+function effectiveActionRange(option) {
+  const stated = Number(option?.range);
+  if (Number.isFinite(stated) && stated > 0) return stated;
+  // PF2e exposes many melee Strikes and touch actions as range 0. On a grid,
+  // their legal reach is the adjacent 5-foot square, not literally zero feet.
+  return option?.targetMode === "self" || option?.defensive ? 0 : 5;
+}
+
+function distanceToSegment(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (!lengthSquared) return Math.hypot(point.x - start.x, point.y - start.y);
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared));
+  return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
+}
+
+function flankingPairFor(target, combatants) {
+  const targetToken = target.token?.object;
+  if (!targetToken) return null;
+  const opponents = combatants.filter((candidate) => candidate.team !== target.team && !candidate.defeated
+    && candidate.token?.object && sceneDistance(candidate.token.object, targetToken) <= 5);
+  const center = targetToken.center;
+  const tolerance = Math.max(2, Math.min(targetToken.w, targetToken.h) * 0.2);
+  for (let leftIndex = 0; leftIndex < opponents.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < opponents.length; rightIndex += 1) {
+      const left = opponents[leftIndex];
+      const right = opponents[rightIndex];
+      const leftCenter = left.token.object.center;
+      const rightCenter = right.token.object.center;
+      const leftVector = { x: leftCenter.x - center.x, y: leftCenter.y - center.y };
+      const rightVector = { x: rightCenter.x - center.x, y: rightCenter.y - center.y };
+      const oppositeSides = leftVector.x * rightVector.x + leftVector.y * rightVector.y < 0;
+      if (oppositeSides && distanceToSegment(center, leftCenter, rightCenter) <= tolerance) return [left, right];
+    }
+  }
+  return null;
+}
+
+function refreshVirtualFlanking(combatants) {
+  for (const target of combatants) {
+    if (target.defeated) continue;
+    const pair = flankingPairFor(target, combatants);
+    if (pair) {
+      target.flankedBy = pair.map((combatant) => combatant.name);
+      target.conditions.set("off-guard", Math.max(1, target.conditions.get("off-guard") ?? 0));
+      continue;
+    }
+    if (!target.flankedBy) continue;
+    target.flankedBy = null;
+    const independentlyOffGuard = target.baseConditions?.has("off-guard")
+      || ["prone", "grabbed", "restrained", "unconscious"].some((slug) => target.conditions.has(slug));
+    if (!independentlyOffGuard) target.conditions.delete("off-guard");
+  }
+}
+
+async function rollVirtualEscape(attacker, target) {
+  const escapeStatistic = [attacker.actor.getStatistic?.("acrobatics"), attacker.actor.getStatistic?.("athletics")]
+    .filter(Boolean).sort((left, right) => Number(right.mod ?? right.check?.mod ?? 0) - Number(left.mod ?? left.check?.mod ?? 0))[0];
+  const fallbackDc = Number(target?.level ?? 0) + 10;
+  const escapeDc = Math.max(10, Number(target?.actor?.getStatistic?.("athletics")?.dc?.value
+    ?? target?.actor?.getStatistic?.("athletics")?.dc ?? fallbackDc));
+  const result = await escapeStatistic?.check?.roll?.({
+    dc: { value: escapeDc, slug: "escape" },
+    createMessage: true,
+    skipDialog: true,
+    rollMode: "gmroll",
+    options: ["lore-smith", "action:escape"],
+  });
+  const total = Number(result?.roll?.total ?? result?.total);
+  const success = Number.isFinite(total) && total >= escapeDc;
+  if (success) {
+    attacker.conditions.delete("immobilized");
+    attacker.conditions.delete("grabbed");
+    attacker.conditions.delete("restrained");
+  }
+  return { total, dc: escapeDc, success };
 }
 
 function lsBoundsAt(token, topLeft) {
@@ -716,12 +834,12 @@ function lsGridPath(token, {
     if (!best || value > best.score) best = { ...node, score: value };
     if (node.path.length > 0 && isGoal(node.topLeft, node.path)) return node.path;
     if (node.path.length >= maxSteps) continue;
-    const sortedDirections = [...directions].sort((left, right) => {
-      const leftTop = lsTopLeftForOffset({ i: node.offset.i + left.i, j: node.offset.j + left.j });
-      const rightTop = lsTopLeftForOffset({ i: node.offset.i + right.i, j: node.offset.j + right.j });
-      return score(rightTop, node.path) - score(leftTop, node.path);
+    const sortedDirections = directions.map((direction) => ({ direction, tie: randomUnit() })).sort((left, right) => {
+      const leftTop = lsTopLeftForOffset({ i: node.offset.i + left.direction.i, j: node.offset.j + left.direction.j });
+      const rightTop = lsTopLeftForOffset({ i: node.offset.i + right.direction.i, j: node.offset.j + right.direction.j });
+      return score(rightTop, node.path) - score(leftTop, node.path) || left.tie - right.tie;
     });
-    for (const direction of sortedDirections) {
+    for (const { direction } of sortedDirections) {
       const offset = { i: node.offset.i + direction.i, j: node.offset.j + direction.j };
       const key = lsOffsetKey(offset);
       if (visited.has(key)) continue;
@@ -971,7 +1089,13 @@ function liveStateSnapshot(combatants, overlay = null) {
       hp: combatant.hp,
       maxHp: combatant.maxHp,
       defeated: Boolean(combatant.defeated),
-      conditions: [...(combatant.conditions?.entries?.() ?? [])].map(([slug, value]) => ({ slug, value })),
+      conditions: [...(combatant.conditions?.entries?.() ?? [])].map(([slug, value]) => ({
+        slug,
+        value,
+        reason: slug === "off-guard" && combatant.flankedBy?.length
+          ? `flanked by ${combatant.flankedBy.join(" and ")}`
+          : "",
+      })),
     })),
   };
 }
@@ -1065,7 +1189,56 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         const actualIndex = turnCombat.turns.findIndex((candidate) => candidate.id === entry.tracked.id);
         if (actualIndex >= 0) await turnCombat.update({ round, turn: actualIndex });
       }
-      let actionsRemaining = 3;
+      refreshVirtualFlanking(combatants);
+      if (["unconscious", "paralyzed", "petrified"].some((slug) => attacker.conditions.has(slug))) {
+        const preventing = ["unconscious", "paralyzed", "petrified"].find((slug) => attacker.conditions.has(slug));
+        await emit(`${attacker.name} cannot act because they are ${preventing}.`, "condition");
+        continue;
+      }
+      const slowed = Math.max(0, Number(attacker.conditions.get("slowed") ?? 0));
+      const stunned = Math.max(0, Number(attacker.conditions.get("stunned") ?? 0));
+      const stunnedActions = Math.min(3, stunned);
+      let actionsRemaining = Math.max(0, 3 - slowed - stunnedActions);
+      if (stunnedActions) {
+        const remainingStunned = stunned - stunnedActions;
+        if (remainingStunned > 0) attacker.conditions.set("stunned", remainingStunned);
+        else attacker.conditions.delete("stunned");
+      }
+      if (slowed || stunnedActions) {
+        await emit(`${attacker.name} begins the turn with ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} because of ${[
+          slowed ? `slowed ${slowed}` : "",
+          stunnedActions ? `stunned ${stunned}` : "",
+        ].filter(Boolean).join(" and ")}.`, "condition");
+      }
+      if (attacker.conditions.has("prone") && actionsRemaining > 0) {
+        actionsRemaining -= 1;
+        attacker.conditions.delete("prone");
+        refreshVirtualFlanking(combatants);
+        await emit(`${attacker.name} uses the PF2e Stand action and is no longer prone; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "condition");
+        await pause(actionDelay());
+      }
+      if (attacker.conditions.has("restrained") && actionsRemaining > 0) {
+        const restrainer = chooseTarget(attacker, combatants);
+        while (attacker.conditions.has("restrained") && actionsRemaining > 0) {
+          const escape = await rollVirtualEscape(attacker, restrainer);
+          actionsRemaining -= 1;
+          await emit(`${attacker.name} is restrained and must use the PF2e Escape action: ${Number.isFinite(escape.total) ? escape.total : "no readable roll"} vs DC ${escape.dc}, ${escape.success ? "success; restrained ends" : "failure; restrained remains"}.`, "condition");
+          await pause(actionDelay());
+        }
+        if (attacker.conditions.has("restrained")) continue;
+      }
+      if (attacker.conditions.has("fleeing") && actionsRemaining > 0) {
+        const threat = chooseTarget(attacker, combatants);
+        while (actionsRemaining > 0 && threat) {
+          const moved = await moveAwayFromThreats(attacker, threat, combatants, 60);
+          actionsRemaining -= 1;
+          refreshVirtualFlanking(combatants);
+          await emit(`${attacker.name} is fleeing and ${moved ? "Strides away from" : "cannot move farther from"} ${threat.name}; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "condition");
+          await pause(actionDelay());
+          if (!moved) break;
+        }
+        continue;
+      }
       let map = 0;
       while (actionsRemaining > 0) {
         if (await waitForControl()) {
@@ -1085,13 +1258,14 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         if (!option.defensive && target !== attacker) {
           resolutionStage = "range and movement validation";
           const currentDistance = sceneDistance(attacker.token.object, target.token.object);
+          const effectiveRange = effectiveActionRange(option);
           const positioning = String(attacker.profile.positioning ?? "").toLowerCase();
-          const prefersRange = option.range > 10 && (
+          const prefersRange = effectiveRange > 10 && (
             attacker.profile.roles.includes("caster") || attacker.profile.roles.includes("ranged")
             || /backline|midline|at range|protected/.test(positioning)
           );
           if (prefersRange && currentDistance <= 10 && actionsRemaining > cost && !attacker.tacticalRepositioned) {
-            const movedAway = await moveAwayFromThreats(attacker, target, combatants, option.range);
+            const movedAway = await moveAwayFromThreats(attacker, target, combatants, effectiveRange);
             if (movedAway) {
               actionsRemaining -= 1;
               attacker.tacticalRepositioned = true;
@@ -1102,25 +1276,35 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           }
           const frontline = attacker.profile.roles.includes("frontline") || /frontline|melee flank|anchor/.test(positioning);
           const targetOffGuard = target.conditions?.has?.("off-guard") || target.conditions?.has?.("prone") || target.conditions?.has?.("grabbed");
-          if (frontline && option.damage && option.range <= 10 && currentDistance <= 10
-            && !targetOffGuard && actionsRemaining > cost && !attacker.tacticalRepositioned) {
+          if (frontline && option.damage && effectiveRange <= 10 && currentDistance <= effectiveRange
+            && !targetOffGuard && actionsRemaining > cost && !attacker.tacticalRepositioned && randomUnit() < 0.55) {
             const flanked = await moveToSafeFlank(attacker, target, combatants);
             if (flanked) {
               actionsRemaining -= 1;
               attacker.tacticalRepositioned = true;
+              refreshVirtualFlanking(combatants);
               await emit(`${attacker.name} Strides to the opposite side of ${target.name} for a rules-legal flank; ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "move");
               await pause(actionDelay());
               continue;
             }
           }
-          if (currentDistance > option.range) {
-            const movement = await moveToward(attacker, target, Math.max(5, option.range));
+          if (currentDistance > effectiveRange) {
+            if (["immobilized", "grabbed", "restrained"].some((slug) => attacker.conditions.has(slug))) {
+              const preventing = ["restrained", "grabbed", "immobilized"].find((slug) => attacker.conditions.has(slug));
+              actionsRemaining -= 1;
+              const escape = await rollVirtualEscape(attacker, target);
+              await emit(`${attacker.name} uses the PF2e Escape action: ${Number.isFinite(escape.total) ? escape.total : "no readable roll"} vs DC ${escape.dc}, ${escape.success ? `success; ${preventing} ends` : `failure; ${preventing} remains`}.`, "condition");
+              await pause(actionDelay());
+              continue;
+            }
+            const movement = await moveToward(attacker, target, effectiveRange);
             if (!movement.moved) {
-              await emit(`${attacker.name} cannot reach ${option.name}'s ${option.range}-foot range from an unoccupied square with one Stride (${movement.reason}).`, "action");
+              await emit(`${attacker.name} cannot reach ${option.name}'s ${effectiveRange}-foot range from an unoccupied square with one Stride (${movement.reason}).`, "action");
               break;
             }
             actionsRemaining -= 1;
             attacker.tacticalRepositioned = true;
+            refreshVirtualFlanking(combatants);
             await emit(`${attacker.name} Strides along an unoccupied grid path toward ${target.name}; now ${movement.distance} feet away, with ${actionsRemaining} action${actionsRemaining === 1 ? "" : "s"} remaining.`, "move");
             await pause(actionDelay());
             continue;
@@ -1139,7 +1323,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         if (option.damage) attacker.damageActionsThisTurn += 1;
         else if (!option.healing) attacker.utilityActionsThisTurn += 1;
         resolutionStage = "PF2e action card";
-        const nativeActionCard = isolated ? null : nativeUse.message ?? await postNativeActionCard(option);
+        const nativeActionCard = nativeUse.message ?? (isolated ? null : await postNativeActionCard(option));
         if (option.healing) {
           resolutionStage = "PF2e healing roll button";
           const healingRoll = await rollNativeDamage(option, attacker, target, 2, map, nativeActionCard, { isolated });
@@ -1188,6 +1372,10 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
         const outcomes = [];
         const nativeRolls = new Map();
         for (const affected of targetList) {
+          refreshVirtualFlanking(combatants);
+          const baseAc = actorAc(affected.actor);
+          const offGuardPenalty = option.attackTrait && affected.conditions.has("off-guard") ? 2 : 0;
+          const defenseDc = baseAc - offGuardPenalty;
           resolutionStage = `PF2e check/save button for ${affected.name}`;
           const nativeCheck = option.automatic ? null : await resolveNativeCheck({
             option,
@@ -1195,7 +1383,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             target: affected,
             nativeMessage: nativeActionCard,
             mapPenalty: map,
-            dc: option.save ? option.dc : actorAc(affected.actor),
+            dc: option.save ? option.dc : defenseDc,
             checkDegree,
             isolated,
           });
@@ -1208,7 +1396,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           const outcome = nativeCheck
             ? option.save
               ? `${affected.name} rolls ${option.save}: ${liveCheckSummary(nativeCheck)} vs DC ${option.dc}, ${degreeText(degree)} [PF2e native]`
-              : `${affected.name}: ${liveCheckSummary(nativeCheck)} vs ${option.defenseStatistic ?? "AC"} ${nativeCheck.dc}, ${degreeText(degree)} [PF2e native]`
+              : `${affected.name}: ${liveCheckSummary(nativeCheck)} vs ${option.defenseStatistic ?? "AC"} ${nativeCheck.dc}${offGuardPenalty ? ` (base AC ${baseAc}; off-guard because ${affected.flankedBy?.length ? `flanked by ${affected.flankedBy.join(" and ")}` : "of a condition"})` : ""}, ${degreeText(degree)} [PF2e native]`
             : `${affected.name}: the PF2e entry requires no check`;
           const effectApplies = option.save ? degree <= 1 : option.automatic || degree >= 2;
           let damage = null;

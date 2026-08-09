@@ -209,6 +209,9 @@ export async function resolveNativeCheck({
   checkDegree,
   isolated = false,
 }) {
+  const isolatedDegree = (normalized, targetDc) => isolated && normalized.total !== null
+    ? { ...normalized, degree: checkDegree(Number(normalized.total), Number(targetDc), Number(normalized.natural)) }
+    : normalized;
   try {
     if (!isolated) await setNativeTarget(target);
     if (option.kind === "strike" && option.nativeAction?.variants?.length) {
@@ -221,28 +224,29 @@ export async function resolveNativeCheck({
         target: target.token?.object ?? null,
         options: ["lore-smith", "action:live-combat"],
       });
-      const normalized = normalizeNativeResult(result, dc, checkDegree);
+      const normalized = isolatedDegree(normalizeNativeResult(result, dc, checkDegree), dc);
       if (normalized.total !== null) return { ...normalized, dc, source: "PF2e Strike" };
     }
 
     if (option.kind === "spell" && option.attackTrait && option.item?.rollAttack) {
       const attackNumber = mapPenalty >= 10 ? 3 : mapPenalty >= 5 ? 2 : 1;
       const action = attackNumber === 3 ? "spell-attack-3" : attackNumber === 2 ? "spell-attack-2" : "spell-attack";
-      const cardRoll = nativeMessage && !isolated
-        ? await pressNativeCardRoll(nativeMessage, action, target, { rollerActorId: attacker.actor?.id })
+      const cardRoll = nativeMessage
+        ? await pressNativeCardRoll(nativeMessage, action, target, { rollerActorId: attacker.actor?.id, isolated })
         : null;
-      const result = cardRoll
-        ? { roll: cardRoll.rolls?.[0], outcome: cardRoll.flags?.pf2e?.context?.outcome }
+      const result = nativeMessage
+        ? cardRoll ? { roll: cardRoll.rolls?.[0], outcome: cardRoll.flags?.pf2e?.context?.outcome } : null
         : await option.item.rollAttack(privateGmEvent("check"), attackNumber);
-      const normalized = normalizeNativeResult(result, dc, checkDegree);
+      const normalized = isolatedDegree(normalizeNativeResult(result, dc, checkDegree), dc);
       if (normalized.total !== null) return { ...normalized, dc, source: cardRoll ? "PF2e spell attack card button" : "PF2e spell attack button" };
     }
 
     if (option.save) {
-      const cardRoll = nativeMessage && !isolated
+      const cardRoll = nativeMessage
         ? await pressNativeCardRoll(nativeMessage, "spell-save", target, {
           rollerActorId: target.actor?.id,
           controlTarget: true,
+          isolated,
         })
         : null;
       const statistic = target.actor?.getStatistic?.(option.save);
@@ -254,7 +258,7 @@ export async function resolveNativeCheck({
           origin: attacker.actor ?? null,
           options: ["lore-smith", "action:live-combat"],
         });
-      const normalized = normalizeNativeResult(result, option.dc, checkDegree);
+      const normalized = isolatedDegree(normalizeNativeResult(result, option.dc, checkDegree), option.dc);
       if (normalized.total !== null) {
         return { ...normalized, dc: option.dc, source: cardRoll ? `PF2e spell-card ${option.save} save button` : `PF2e ${option.save} save` };
       }
@@ -273,7 +277,7 @@ export async function resolveNativeCheck({
         ? target.actor?.getStatistic?.(option.defenseStatistic)?.dc?.value
           ?? target.actor?.getStatistic?.(option.defenseStatistic)?.dc
         : dc;
-      const normalized = normalizeNativeResult(result, statisticDc, checkDegree);
+      const normalized = isolatedDegree(normalizeNativeResult(result, statisticDc, checkDegree), statisticDc);
       if (normalized.total !== null) {
         return { ...normalized, dc: Number(statisticDc), source: `PF2e ${option.name} action button` };
       }
@@ -289,7 +293,7 @@ export async function resolveNativeCheck({
         target: target.token?.object ?? null,
         options: ["lore-smith", "action:live-combat"],
       });
-      const normalized = normalizeNativeResult(result, statisticDc, checkDegree);
+      const normalized = isolatedDegree(normalizeNativeResult(result, statisticDc, checkDegree), statisticDc);
       if (normalized.total !== null) return { ...normalized, dc: Number(statisticDc), source: "PF2e statistic" };
     }
   } catch (error) {
@@ -338,6 +342,7 @@ async function pressNativeCardRoll(message, action, target, {
   outcome = null,
   rollerActorId = null,
   controlTarget = false,
+  isolated = false,
 } = {}) {
   const root = await waitForCardElement(message);
   const selector = outcome
@@ -345,24 +350,30 @@ async function pressNativeCardRoll(message, action, target, {
     : `[data-action="${action}"]`;
   const control = root?.querySelector(selector);
   if (!control) return null;
-  await setNativeTarget(target);
-  const targetToken = target?.token?.object ?? target?.object ?? target;
+  const proxyTarget = target?.token?.object ?? target?.object ?? target;
+  const targetToken = proxyTarget?.original ?? proxyTarget;
+  const previousTargets = [...(game.user?.targets ?? [])];
+  await setNativeTarget(targetToken);
   const previouslyControlled = [...(canvas.tokens?.controlled ?? [])];
   if (controlTarget && targetToken?.control) targetToken.control({ releaseOthers: true });
   const beforeIds = new Set(game.messages?.keys?.() ?? []);
-  // PF2e deliberately debounces chat-card controls for 500 ms. Waiting here
-  // makes sequential area saves behave like deliberate GM clicks rather than
-  // losing every roll after the first one.
-  await new Promise((resolve) => setTimeout(resolve, 525));
-  const rollType = action.includes("damage") ? "damage" : "check";
-  control.dispatchEvent(privateGmEvent(rollType));
-  const actorId = rollerActorId ?? target?.actor?.id ?? target?.document?.actor?.id ?? null;
-  const result = await waitForNewRollMessage(beforeIds, actorId);
-  if (controlTarget) {
-    targetToken?.release?.();
-    for (const token of previouslyControlled) token.control?.({ releaseOthers: false });
+  try {
+    // PF2e deliberately debounces chat-card controls for 500 ms. Waiting here
+    // makes sequential area saves behave like deliberate GM clicks rather than
+    // losing every roll after the first one.
+    await new Promise((resolve) => setTimeout(resolve, 525));
+    const rollType = action.includes("damage") ? "damage" : "check";
+    control.dispatchEvent(privateGmEvent(rollType));
+    const actorId = rollerActorId ?? target?.actor?.id ?? target?.document?.actor?.id ?? null;
+    return await waitForNewRollMessage(beforeIds, actorId);
+  } finally {
+    if (controlTarget) {
+      targetToken?.release?.();
+      for (const token of previouslyControlled) token.control?.({ releaseOthers: false });
+    }
+    for (const current of [...(game.user?.targets ?? [])]) current.setTarget?.(false, { releaseOthers: false, groupSelection: false });
+    for (const previous of previousTargets) previous.setTarget?.(true, { releaseOthers: false, groupSelection: false });
   }
-  return result;
 }
 
 export async function rollNativeDamage(option, attacker, target, degree, mapPenalty = 0, nativeMessage = null, { isolated = false } = {}) {
@@ -380,10 +391,11 @@ export async function rollNativeDamage(option, attacker, target, degree, mapPena
         : await option.nativeAction.damage?.(context);
     }
     if (option.kind === "spell" && option.item?.rollDamage) {
-      const cardRoll = nativeMessage && !isolated
-        ? await pressNativeCardRoll(nativeMessage, "spell-damage", target, { rollerActorId: attacker.actor?.id })
+      const cardRoll = nativeMessage
+        ? await pressNativeCardRoll(nativeMessage, "spell-damage", target, { rollerActorId: attacker.actor?.id, isolated })
         : null;
       if (cardRoll?.rolls?.[0]) return cardRoll.rolls[0];
+      if (nativeMessage) return null;
       return option.item.rollDamage(event, option.attackTrait ? Math.round(mapPenalty / 5) : undefined);
     }
     if (option.item?.rollDamage) return option.item.rollDamage(event);
@@ -627,8 +639,24 @@ export async function consumeNativeResource(option, actor, { isolated = false } 
       const cast = spellCastContext(option, actor);
       if (!cast.available) return { available: false, consumed: false, source: cast.source };
       if (isolated) {
+        const beforeIds = new Set(game.messages?.keys?.() ?? []);
+        // Create the real PF2e Cast card so Lore Smith can press its Attack,
+        // Save, and Roll Damage controls. consume:false preserves the actor's
+        // real slot while the isolated copy tracks expenditure separately.
+        await cast.entry.cast(item, {
+          rank: cast.rank,
+          slotId: cast.slotId,
+          consume: false,
+          message: true,
+          rollMode: "gmroll",
+        });
         const unlimited = option.traits?.includes("cantrip") || item.isCantrip || item.atWill;
-        return { available: true, consumed: !unlimited, source: `${cast.source} (isolated copy)`, message: null };
+        return {
+          available: true,
+          consumed: !unlimited,
+          source: `${cast.source} (isolated copy)`,
+          message: newestMessageAfter(beforeIds, item),
+        };
       }
       const beforeIds = new Set(game.messages?.keys?.() ?? []);
       await cast.entry.cast(item, {

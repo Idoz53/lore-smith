@@ -43,7 +43,7 @@ The module provides:
 - Live Combat operates on cloned token positions, HP, conditions, cooldowns,
   item quantities, frequencies, and spell resources. It never moves Scene tokens,
   changes actor HP or conditions, consumes inventory or spell slots, advances the
-  Combat Tracker, places real templates, changes targets, or moves the GM camera;
+  Combat Tracker, places real templates, leaves changed targets, or moves the GM camera;
 - the isolated popup displays the Scene background, animated combatant copies,
   HP bars, conditions, area templates, action captions, and the complete log;
 - native PF2e spellcasting-entry casts for prepared, flexible, spontaneous,
@@ -78,6 +78,19 @@ The module provides:
   damage, and healing;
 - automatic native PF2e roll execution uses the GM-private, skip-dialog behavior,
   so checks, saves, damage, and healing resolve without stopping for modifier dialogs;
+- isolated spell resolution now creates the native PF2e Cast chat card without
+  consuming the real slot, presses its Attack, Save, and Roll Damage buttons,
+  restores the GM's previous targets, and applies the result only to simulated HP;
+- melee entries reported by PF2e as zero range use their legal 5-foot grid reach,
+  so an actor already in range does not waste actions Striding;
+- flanking is recalculated from the centers of two adjacent allies on opposite
+  sides of a target; the simulated target becomes off-guard and the log names
+  the two flankers and shows the adjusted AC beside its base AC;
+- prone actors Stand before moving, restrained or immobilized actors use native
+  GM-private Escape checks, fleeing actors move away, and slowed, stunned,
+  unconscious, paralyzed, and petrified states constrain their action economy;
+- cryptographically seeded tactical tie-breaking and randomized equal-cost path
+  choices keep repeated combats and Monte Carlo iterations from replaying one script;
 - live grid movement uses occupied-square pathfinding, respects walls and token
   footprints, accepts legal progress when a target is farther than one Stride,
   keeps melee combatants from walking closer when already in reach, and prevents

@@ -1200,7 +1200,7 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
       hpFill.style.width = `${Math.max(0, Math.min(100, token.hp / Math.max(1, token.maxHp) * 100))}%`;
       hp.append(hpFill);
       const details = document.createElement("small");
-      const conditions = (token.conditions ?? []).map((condition) => `${condition.slug}${condition.value > 1 ? ` ${condition.value}` : ""}`);
+      const conditions = (token.conditions ?? []).map((condition) => `${condition.slug}${condition.value > 1 ? ` ${condition.value}` : ""}${condition.reason ? ` — ${condition.reason}` : ""}`);
       details.textContent = `${token.hp}/${token.maxHp} HP${conditions.length ? ` · ${conditions.join(", ")}` : ""}`;
       node.append(portrait, label, hp, details);
       layer.append(node);
