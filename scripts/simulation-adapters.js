@@ -217,11 +217,12 @@ export async function resolveNativeCheck({
     if (option.kind === "strike" && option.nativeAction?.variants?.length) {
       const variantIndex = mapPenalty >= 10 ? 2 : mapPenalty >= 5 ? 1 : 0;
       const variant = option.nativeAction.variants[Math.min(variantIndex, option.nativeAction.variants.length - 1)];
+      const targetToken = target.token?.object?.original ?? target.token?.object ?? null;
       const result = await variant?.roll?.({
         createMessage: true,
         skipDialog: true,
         rollMode: "gmroll",
-        target: target.token?.object ?? null,
+        target: targetToken,
         options: ["lore-smith", "action:live-combat"],
       });
       const normalized = isolatedDegree(normalizeNativeResult(result, dc, checkDegree), dc);
@@ -310,14 +311,54 @@ function newestMessageAfter(beforeIds, item) {
     && (!item || message.item?.id === item.id || message.flags?.pf2e?.origin?.uuid === item.uuid)) ?? null;
 }
 
-async function waitForNewRollMessage(beforeIds, actorId, timeout = 3000) {
+function renderedRollFromMessage(message) {
+  const direct = message?.rolls?.[0] ?? message?.roll ?? null;
+  if (direct) return direct;
+  if (typeof document === "undefined") return null;
+  const root = cardElement(message) ?? (() => {
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = String(message?.content ?? "");
+    return wrapper;
+  })();
+  const totalElement = root.querySelector(".dice-total, .dice-result .total, [data-roll-total]");
+  const totalMatch = String(totalElement?.dataset?.rollTotal ?? totalElement?.textContent ?? "").match(/-?\d+(?:\.\d+)?/);
+  const total = Number(totalMatch?.[0]);
+  if (!Number.isFinite(total)) return null;
+  const formula = String(root.querySelector(".dice-formula, .dice-result .formula")?.textContent ?? "PF2e native roll").trim();
+  return {
+    total,
+    _total: total,
+    formula,
+    result: `${formula} = ${total}`,
+    options: {},
+    _loreSmithRenderedResult: true,
+  };
+}
+
+function rollMessageEnvelope(message) {
+  const roll = renderedRollFromMessage(message);
+  return roll ? {
+    message,
+    rolls: [roll],
+    flags: message.flags ?? {},
+    speaker: message.speaker ?? {},
+  } : null;
+}
+
+function messageBelongsToActor(message, actorId) {
+  if (!actorId) return true;
+  return message?.speaker?.actor === actorId || message?.actor?.id === actorId;
+}
+
+async function waitForNewRollMessage(beforeIds, actorId, timeout = 4000) {
   const started = Date.now();
   while (Date.now() - started < timeout) {
-    const message = [...(game.messages?.contents ?? [])].reverse().find((candidate) =>
-      !beforeIds.has(candidate.id)
-      && candidate.rolls?.length
-      && (!actorId || candidate.speaker?.actor === actorId || candidate.actor?.id === actorId));
-    if (message) return message;
+    const candidates = [...(game.messages?.contents ?? [])].reverse()
+      .filter((candidate) => !beforeIds.has(candidate.id));
+    const preferred = candidates.find((candidate) => messageBelongsToActor(candidate, actorId) && renderedRollFromMessage(candidate));
+    const fallback = preferred ?? candidates.find((candidate) => renderedRollFromMessage(candidate));
+    const envelope = rollMessageEnvelope(fallback);
+    if (envelope) return envelope;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   return null;

@@ -54,6 +54,9 @@ The module provides:
 - the replay window is freely resizable while keeping one uniform map/grid
   scale, and Strides visibly traverse every collision-checked grid square in
   their selected route instead of teleporting to the final destination;
+- PF2e damage-card results are captured from the native ChatMessage roll or its
+  rendered dice total, so a visible result is applied instead of being falsely
+  reported as a missing roll;
 - native PF2e spellcasting-entry casts for prepared, flexible, spontaneous,
   innate, focus, at-will, and cantrip spells, using the same slot and use
   validation as the PF2e Cast control;
