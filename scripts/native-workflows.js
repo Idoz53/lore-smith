@@ -118,6 +118,119 @@ function lsBalanceReport(actor, concept) {
   };
 }
 
+const LS_BENCHMARK_TIERS = ["extreme", "high", "moderate", "low"];
+const LS_BENCHMARK_LABELS = {
+  extreme: "Extreme", high: "High", moderate: "Moderate", low: "Low", terrible: "Terrible",
+  unlimited: "Area: unlimited use", limited: "Area: limited use", "area-unlimited": "Area: unlimited use",
+  "area-limited": "Area: limited use", "strike-extreme": "Single target: extreme", "strike-high": "Single target: high",
+  "strike-moderate": "Single target: moderate", "strike-low": "Single target: low", none: "No damage", custom: "Custom",
+};
+
+function lsStrikeFormula(value) {
+  return String(value ?? "1d4").replace(/\s*\([^)]*\)\s*$/, "").trim();
+}
+
+function lsTierValue(table, level, tier) {
+  const index = LS_BENCHMARK_TIERS.indexOf(tier);
+  return index >= 0 ? creatureTableRow(table, level)[index] : null;
+}
+
+function lsStrikeWorkshop(level) {
+  const attack = creatureTableRow("strikeAttack", level);
+  const damage = creatureTableRow("strikeDamage", level);
+  const area = creatureTableRow("areaDamage", level);
+  const spell = creatureTableRow("spell", level);
+  return {
+    attackTiers: LS_BENCHMARK_TIERS.map((tier, index) => ({ value: tier, label: `${LS_BENCHMARK_LABELS[tier]} (+${attack[index]})`, result: attack[index], selected: tier === "high" })).concat({ value: "custom", label: "Custom attack bonus" }),
+    damageTiers: LS_BENCHMARK_TIERS.map((tier, index) => ({ value: tier, label: `${LS_BENCHMARK_LABELS[tier]} — ${damage[index]}`, result: lsStrikeFormula(damage[index]), selected: tier === "high" })).concat({ value: "custom", label: "Custom damage formula" }),
+    areaTiers: [
+      { value: "none", label: "No damage", result: "" },
+      ...LS_BENCHMARK_TIERS.map((tier, index) => ({ value: `strike-${tier}`, label: `Single target: ${LS_BENCHMARK_LABELS[tier]} — ${damage[index]}`, result: lsStrikeFormula(damage[index]) })),
+      { value: "area-unlimited", label: `Area: unlimited use — ${area[0]}`, result: lsStrikeFormula(area[0]), selected: true },
+      { value: "area-limited", label: `Area: limited use — ${area[1]}`, result: lsStrikeFormula(area[1]) },
+      { value: "custom", label: "Custom damage formula", result: "" },
+    ],
+    dcTiers: [
+      { value: "extreme", label: `Extreme DC ${spell[0]}`, result: spell[0] },
+      { value: "high", label: `High DC ${spell[2]}`, result: spell[2], selected: true },
+      { value: "moderate", label: `Moderate DC ${spell[4]}`, result: spell[4] },
+      { value: "custom", label: "Custom DC", result: "" },
+    ],
+  };
+}
+
+function lsAreaDamageFormula(level, tier) {
+  if (tier === "unlimited" || tier === "area-unlimited") return lsStrikeFormula(creatureTableRow("areaDamage", level)[0]);
+  if (tier === "limited" || tier === "area-limited") return lsStrikeFormula(creatureTableRow("areaDamage", level)[1]);
+  if (tier?.startsWith?.("strike-")) return lsStrikeFormula(lsTierValue("strikeDamage", level, tier.slice(7)));
+  return "";
+}
+
+function lsSpellDc(level, tier) {
+  const values = creatureTableRow("spell", level);
+  return tier === "extreme" ? values[0] : tier === "high" ? values[2] : tier === "moderate" ? values[4] : null;
+}
+
+function lsAbilityDescription(link, level) {
+  const formula = link.damageTier === "custom" ? link.customDamage : lsAreaDamageFormula(level, link.damageTier);
+  const dc = link.dcTier === "custom" ? Number(link.customDc) : lsSpellDc(level, link.dcTier);
+  const save = link.save ?? "reflex";
+  const hasArea = link.delivery === "area";
+  const hasSave = save !== "none";
+  const template = hasArea && link.areaShape && link.areaDistance
+    ? `@Template[type:${link.areaShape}|distance:${Number(link.areaDistance)}]`
+    : "";
+  const check = hasSave && Number.isFinite(dc) ? `@Check[${save}|dc:${dc}|basic]` : "";
+  const damage = formula ? `@Damage[${formula}[${link.damageType ?? "untyped"}]]` : "";
+  const requirements = link.requirements ? `<p><strong>Requirements</strong> ${lsEscapeHtml(link.requirements)}</p>` : "";
+  const trigger = link.trigger ? `<p><strong>Trigger</strong> ${lsEscapeHtml(link.trigger)}</p>` : "";
+  const duration = link.duration ? `<p><strong>Duration</strong> ${lsEscapeHtml(link.duration)}</p>` : "";
+  const condition = link.condition ? ` On the specified result, it gains <strong>${lsEscapeHtml(link.condition)}</strong>${link.conditionValue ? ` ${Number(link.conditionValue)}` : ""}.` : "";
+  const area = hasArea ? `<p><strong>Area</strong> ${Number(link.areaDistance) || 5}-foot ${lsEscapeHtml(link.areaShape ?? "burst")} ${template}</p>` : "";
+  const range = link.delivery === "target" && Number(link.range) > 0 ? `<p><strong>Range</strong> ${Number(link.range)} feet</p>` : "";
+  const defense = hasSave ? `<p><strong>Defense</strong> basic ${lsEscapeHtml(save)} ${check}</p>` : "";
+  const defaultEffect = formula
+    ? `${hasArea ? "Creatures in the area" : "The target"} take the listed damage.`
+    : "Apply the listed effect.";
+  const effect = link.effectText ? lsEscapeHtml(link.effectText) : defaultEffect;
+  return `${requirements}${trigger}${range}${area}${defense}<p><strong>Effect</strong> ${effect} ${damage}${condition}</p>${duration}`;
+}
+
+function lsAbilityActionData(usage, actions) {
+  if (usage === "reaction") return { actionType: "reaction", actions: null, icon: "Reaction.webp" };
+  if (usage === "free") return { actionType: "free", actions: null, icon: "FreeAction.webp" };
+  if (usage === "passive") return { actionType: "passive", actions: null, icon: "Passive.webp" };
+  const count = Math.max(1, Math.min(3, Number(actions) || 1));
+  return { actionType: "action", actions: count, icon: ["OneAction.webp", "TwoActions.webp", "ThreeActions.webp"][count - 1] };
+}
+
+function lsCreatureDamageLink(item) {
+  return item.getFlag(LS_MODULE_ID, "creatureDamageLink") ?? null;
+}
+
+async function lsRecalculateLinkedCreatureEntries(actor, level, { notify = false } = {}) {
+  const updates = [];
+  for (const item of actor.items) {
+    const link = lsCreatureDamageLink(item);
+    if (!link?.autoScale) continue;
+    if (link.kind === "strike" && item.type === "melee") {
+      const update = { _id: item.id, [`flags.${LS_MODULE_ID}.creatureDamageLink.levelApplied`]: level };
+      if (link.attackTier !== "custom") update["system.bonus.value"] = lsTierValue("strikeAttack", level, link.attackTier);
+      if (link.damageTier !== "custom" && link.primaryDamageId) update[`system.damageRolls.${link.primaryDamageId}.damage`] = lsStrikeFormula(lsTierValue("strikeDamage", level, link.damageTier));
+      updates.push(update);
+    } else if (link.kind === "ability" && item.type === "action") {
+      updates.push({
+        _id: item.id,
+        "system.description.value": lsAbilityDescription(link, level),
+        [`flags.${LS_MODULE_ID}.creatureDamageLink.levelApplied`]: level,
+      });
+    }
+  }
+  if (updates.length) await actor.updateEmbeddedDocuments("Item", updates, { loreSmithAutoScale: true });
+  if (notify) ui.notifications.info(`Recalculated ${updates.length} level-linked entr${updates.length === 1 ? "y" : "ies"} for level ${level}.`);
+  return updates.length;
+}
+
 function lsItemTraitConfig() {
   return Object.assign({},
     CONFIG.PF2E.actionTraits,
@@ -384,6 +497,10 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       useSource: LoreSmithCreatureBuilder.useSource,
       useCurrent: LoreSmithCreatureBuilder.useCurrent,
       applyRoadmap: LoreSmithCreatureBuilder.applyRoadmap,
+      createLinkedStrike: LoreSmithCreatureBuilder.createLinkedStrike,
+      createLinkedAbility: LoreSmithCreatureBuilder.createLinkedAbility,
+      recalculateLinked: LoreSmithCreatureBuilder.recalculateLinked,
+      toggleLinkedScaling: LoreSmithCreatureBuilder.toggleLinkedScaling,
       addTrait: LoreSmithCreatureBuilder.addTrait,
       removeTrait: LoreSmithCreatureBuilder.removeTrait,
       goToStep: LoreSmithCreatureBuilder.goToStep,
@@ -436,6 +553,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     const actorSize = system.traits?.size?.value ?? "med";
     const concept = lsCreatureConcept(actor);
     const benchmarkRows = lsBenchmarks(level);
+    const damageWorkshop = lsStrikeWorkshop(level);
     const markSelected = (rows, value) => rows.map((row) => ({ ...row, selected: Number(row.value) === Number(value) }));
     return {
       ...await super._prepareContext(options),
@@ -493,6 +611,17 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       intendedUseOptions: [["combatant", "Combatant"], ["social", "Social creature"], ["ally", "Trusted ally"]].map(([value, label]) => ({ value, label, selected: value === concept.intendedUse })),
       complexityOptions: [["simple", "Simple / group creature"], ["standard", "Standard"], ["solo", "Solo / complex"]].map(([value, label]) => ({ value, label, selected: value === concept.complexity })),
       balance: lsBalanceReport(actor, concept),
+      damageWorkshop,
+      damageTypes: Object.entries(CONFIG.PF2E.damageTypes ?? {}).map(([value, label]) => ({ value, label: game.i18n.localize(label), selected: value === "slashing" })).sort((left, right) => left.label.localeCompare(right.label)),
+      conditionOptions: Object.entries(CONFIG.PF2E.conditionTypes ?? {}).map(([value, label]) => ({ value, label: game.i18n.localize(label) })).sort((left, right) => left.label.localeCompare(right.label)),
+      linkedDamageEntries: actor.items.map((item) => {
+        const link = lsCreatureDamageLink(item);
+        if (!link) return null;
+        const primary = Object.values(item.system?.damageRolls ?? {})[0];
+        const formula = link.kind === "strike" ? primary?.damage ?? "—" : link.damageTier === "custom" ? link.customDamage : lsAreaDamageFormula(level, link.damageTier);
+        const attack = link.kind === "strike" ? lsNumber(item.system?.bonus, 0) : null;
+        return { id: item.id, name: item.name, img: item.img, kind: link.kind, formula, attack, damageType: link.damageType, attackTier: LS_BENCHMARK_LABELS[link.attackTier] ?? "", damageTier: LS_BENCHMARK_LABELS[link.damageTier] ?? link.damageTier, autoScale: Boolean(link.autoScale), levelApplied: link.levelApplied };
+      }).filter(Boolean),
       benchmarks: {
         ac: markSelected(benchmarkRows.ac, lsNumber(system.attributes?.ac, 10)),
         hp: markSelected(benchmarkRows.hp, lsNumber(system.attributes?.hp?.max, 1)),
@@ -536,6 +665,37 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         if (input && select.value !== "") input.value = select.value;
       });
     }
+    const root = this.element;
+    const field = (name) => root?.querySelector(`[name="${name}"]`);
+    const setEnabled = (name, enabled) => {
+      const input = field(name);
+      if (!input) return;
+      input.disabled = !enabled;
+      input.closest("label")?.classList.toggle("is-disabled", !enabled);
+    };
+    const syncWorkshop = () => {
+      setEnabled("strikeCustomAttack", field("strikeAttackTier")?.value === "custom");
+      setEnabled("strikeCustomDamage", field("strikeDamageTier")?.value === "custom");
+      const usage = field("abilityUsage")?.value ?? "action";
+      const delivery = field("abilityDelivery")?.value ?? "area";
+      setEnabled("abilityActions", usage === "action");
+      setEnabled("abilityRange", delivery === "target");
+      setEnabled("abilityAreaShape", delivery === "area");
+      setEnabled("abilityAreaDistance", delivery === "area");
+      setEnabled("abilityCustomDamage", field("abilityDamageTier")?.value === "custom");
+      setEnabled("abilityCustomDc", field("abilityDcTier")?.value === "custom");
+    };
+    for (const name of ["strikeAttackTier", "strikeDamageTier", "abilityUsage", "abilityDelivery", "abilityDamageTier", "abilityDcTier"]) {
+      field(name)?.addEventListener("change", syncWorkshop);
+    }
+    field("abilityDelivery")?.addEventListener("change", () => {
+      const delivery = field("abilityDelivery")?.value;
+      const damageTier = field("abilityDamageTier");
+      if (!damageTier || damageTier.value === "custom") return;
+      damageTier.value = delivery === "target" ? "strike-high" : delivery === "area" ? "area-unlimited" : "none";
+      syncWorkshop();
+    });
+    syncWorkshop();
   }
 
   async loadSources() {
@@ -707,6 +867,113 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static async removeTrait(_event, target) {
     const traits = lsTraits(this.actor).filter((trait) => trait !== target.dataset.trait);
     await this.actor.update({ "system.traits.value": traits });
+    await this.render();
+  }
+
+  static async createLinkedStrike() {
+    const root = this.element;
+    const level = lsNumber(this.actor.system.details?.level, 0);
+    const attackTier = root.querySelector('[name="strikeAttackTier"]')?.value ?? "high";
+    const damageTier = root.querySelector('[name="strikeDamageTier"]')?.value ?? "high";
+    const attack = attackTier === "custom"
+      ? lsNumber(root.querySelector('[name="strikeCustomAttack"]')?.value, 0)
+      : lsTierValue("strikeAttack", level, attackTier);
+    const primaryFormula = damageTier === "custom"
+      ? root.querySelector('[name="strikeCustomDamage"]')?.value.trim()
+      : lsStrikeFormula(lsTierValue("strikeDamage", level, damageTier));
+    if (!primaryFormula) return ui.notifications.warn("Enter a valid custom damage formula.");
+    const name = root.querySelector('[name="strikeName"]')?.value.trim() || "New Strike";
+    const damageType = root.querySelector('[name="strikeDamageType"]')?.value || "slashing";
+    const traits = lsSplitTraits(root.querySelector('[name="strikeTraits"]')?.value);
+    const attackEffects = String(root.querySelector('[name="strikeAttackEffects"]')?.value ?? "").split(",").map((effect) => effect.trim()).filter(Boolean);
+    const rangeValue = root.querySelector('[name="strikeRange"]')?.value ?? "";
+    const primaryDamageId = foundry.utils.randomID();
+    const damageRolls = {
+      [primaryDamageId]: { damage: primaryFormula, damageType, category: null },
+    };
+    const secondaryFormula = root.querySelector('[name="strikeSecondaryDamage"]')?.value.trim();
+    if (secondaryFormula) {
+      const secondaryType = root.querySelector('[name="strikeSecondaryType"]')?.value || damageType;
+      damageRolls[foundry.utils.randomID()] = { damage: secondaryFormula, damageType: secondaryType, category: null };
+    }
+    const autoScale = Boolean(root.querySelector('[name="strikeAutoScale"]')?.checked);
+    const link = { kind: "strike", attackTier, damageTier, customAttack: attack, customDamage: primaryFormula, damageType, primaryDamageId, autoScale, levelApplied: level };
+    await this.actor.createEmbeddedDocuments("Item", [{
+      name,
+      type: "melee",
+      img: "systems/pf2e/icons/actions/OneAction.webp",
+      system: {
+        description: { value: "", gm: "" }, rules: [], slug: null,
+        traits: { value: traits, otherTags: [] }, action: "strike", bonus: { value: attack }, damageRolls,
+        attackEffects: { value: attackEffects }, range: rangeValue === "" ? null : { increment: Math.max(5, lsNumber(rangeValue, 5)), max: null },
+      },
+      flags: { [LS_MODULE_ID]: { creatureDamageLink: link } },
+    }]);
+    ui.notifications.info(`Created native PF2e Strike: ${name}.`);
+    await this.render();
+  }
+
+  static async createLinkedAbility() {
+    const root = this.element;
+    const level = lsNumber(this.actor.system.details?.level, 0);
+    const damageTier = root.querySelector('[name="abilityDamageTier"]')?.value ?? "unlimited";
+    const dcTier = root.querySelector('[name="abilityDcTier"]')?.value ?? "high";
+    const damageType = root.querySelector('[name="abilityDamageType"]')?.value || "fire";
+    const customDamage = root.querySelector('[name="abilityCustomDamage"]')?.value.trim() ?? "";
+    const customDc = lsNumber(root.querySelector('[name="abilityCustomDc"]')?.value, 10);
+    if (damageTier === "custom" && !customDamage) return ui.notifications.warn("Enter a custom ability damage formula.");
+    const usage = root.querySelector('[name="abilityUsage"]')?.value ?? "action";
+    const actions = Math.max(1, Math.min(3, lsNumber(root.querySelector('[name="abilityActions"]')?.value, 2)));
+    const actionData = lsAbilityActionData(usage, actions);
+    const frequencyInput = root.querySelector('[name="abilityFrequencyMax"]')?.value?.trim() ?? "";
+    const frequencyMax = frequencyInput === "" ? (["limited", "area-limited"].includes(damageTier) ? 1 : 0) : Math.max(0, lsNumber(frequencyInput, 0));
+    const link = {
+      kind: "ability", damageTier, dcTier, customDamage, customDc, damageType,
+      usage, actions: actionData.actions,
+      delivery: root.querySelector('[name="abilityDelivery"]')?.value || "area",
+      range: Math.max(0, lsNumber(root.querySelector('[name="abilityRange"]')?.value, 0)),
+      save: root.querySelector('[name="abilitySave"]')?.value || "reflex",
+      areaShape: root.querySelector('[name="abilityAreaShape"]')?.value || "burst",
+      areaDistance: Math.max(5, lsNumber(root.querySelector('[name="abilityAreaDistance"]')?.value, 5)),
+      requirements: root.querySelector('[name="abilityRequirements"]')?.value.trim() ?? "",
+      trigger: root.querySelector('[name="abilityTrigger"]')?.value.trim() ?? "",
+      duration: root.querySelector('[name="abilityDuration"]')?.value.trim() ?? "",
+      effectText: root.querySelector('[name="abilityEffectText"]')?.value.trim() ?? "",
+      condition: root.querySelector('[name="abilityCondition"]')?.value ?? "",
+      conditionValue: Math.max(0, lsNumber(root.querySelector('[name="abilityConditionValue"]')?.value, 0)),
+      autoScale: Boolean(root.querySelector('[name="abilityAutoScale"]')?.checked), levelApplied: level,
+    };
+    const traits = lsSplitTraits(root.querySelector('[name="abilityTraits"]')?.value);
+    if (damageTier !== "none" && !traits.includes(damageType) && damageType !== "untyped") traits.push(damageType);
+    const system = {
+      description: { value: lsAbilityDescription(link, level), gm: "" }, rules: [], slug: null,
+      traits: { value: traits, otherTags: [] }, actionType: { value: actionData.actionType }, actions: { value: actionData.actions }, category: null,
+    };
+    if (frequencyMax) system.frequency = { max: frequencyMax, per: root.querySelector('[name="abilityFrequencyPer"]')?.value || "day" };
+    if (link.delivery === "target" && link.range > 0) system.range = { increment: null, max: link.range };
+    await this.actor.createEmbeddedDocuments("Item", [{
+      name: root.querySelector('[name="abilityName"]')?.value.trim() || "New Ability",
+      type: "action",
+      img: `systems/pf2e/icons/actions/${actionData.icon}`,
+      system,
+      flags: { [LS_MODULE_ID]: { creatureDamageLink: link } },
+    }]);
+    ui.notifications.info("Created a native PF2e ability with the selected action, target, roll, and effect modules.");
+    await this.render();
+  }
+
+  static async recalculateLinked() {
+    await lsRecalculateLinkedCreatureEntries(this.actor, lsNumber(this.actor.system.details?.level, 0), { notify: true });
+    await this.render();
+  }
+
+  static async toggleLinkedScaling(_event, target) {
+    const item = this.actor.items.get(target.dataset.id);
+    const link = item ? lsCreatureDamageLink(item) : null;
+    if (!item || !link) return;
+    const enabled = !link.autoScale;
+    await item.update({ [`flags.${LS_MODULE_ID}.creatureDamageLink.autoScale`]: enabled }, { loreSmithAutoScale: true });
+    if (enabled) await lsRecalculateLinkedCreatureEntries(this.actor, lsNumber(this.actor.system.details?.level, 0));
     await this.render();
   }
 
@@ -2519,6 +2786,26 @@ Hooks.on("deleteItem", (item) => {
   if (!game.user.isGM || !actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type)) return;
   const linkedIds = actor.items.filter((candidate) => candidate.type === "action" && candidate.getFlag(LS_MODULE_ID, "itemActivation")?.sourceItemId === item.id).map((candidate) => candidate.id);
   if (linkedIds.length) queueMicrotask(() => actor.deleteEmbeddedDocuments("Item", linkedIds).catch((error) => console.error("Lore Smith | Failed to remove linked item activations", error)));
+});
+
+Hooks.on("preUpdateItem", (item, changed, options) => {
+  const link = lsCreatureDamageLink(item);
+  if (!game.user.isGM || !item.actor || !link?.autoScale || options?.loreSmithAutoScale) return;
+  const paths = Object.keys(foundry.utils.flattenObject(changed));
+  const changesGeneratedValue = link.kind === "strike"
+    ? paths.some((path) => path === "system.bonus.value" || path.startsWith("system.damageRolls."))
+    : paths.includes("system.description.value");
+  if (!changesGeneratedValue) return;
+  foundry.utils.setProperty(changed, `flags.${LS_MODULE_ID}.creatureDamageLink.autoScale`, false);
+  queueMicrotask(() => ui.notifications.info(`${item.name} was changed manually, so its level scaling is now Custom. You can relink it from the Creature Builder.`));
+});
+
+Hooks.on("updateActor", (actor, changed) => {
+  if (!game.user.isGM || actor.type !== "npc") return;
+  const flattened = foundry.utils.flattenObject(changed);
+  if (!("system.details.level.value" in flattened)) return;
+  const level = Math.max(-1, Math.min(24, lsNumber(flattened["system.details.level.value"], lsNumber(actor.system.details?.level, 0))));
+  queueMicrotask(() => lsRecalculateLinkedCreatureEntries(actor, level).catch((error) => console.error("Lore Smith | Failed to rescale linked creature entries", error)));
 });
 
 Hooks.on("renderJournalSheet", (app, html) => {

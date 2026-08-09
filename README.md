@@ -153,6 +153,13 @@ concept-and-role step, editable level-scaled suggestions, and a persistent
 balance assistant. The assistant checks push-and-pull, extreme-stat density,
 size guidance, durability combinations, and displays all eleven Building
 Creatures tables for the actor's current level (levels -1 through 24).
+Its offense workshop creates native PF2e Strikes and abilities from independent
+modules: attack benchmark, primary and secondary damage, range, traits, action
+cost, frequency, target or area, save/DC, conditions, requirements, trigger,
+duration, and effect text. Benchmark-linked attack bonuses, Strike damage,
+area damage, and save DCs recalculate automatically when the NPC's level changes;
+custom values remain untouched. Manual edits to generated numbers safely change
+that entry to Custom until the GM explicitly relinks it.
 The Item Builder icon appears in native PF2e Item sheets. The Combat Tracker
 adds **Simulate Logs** and **Live Combat** controls when an encounter is active.
 Use the slider in the Live Combat window to change the delay from 0.25 to 10

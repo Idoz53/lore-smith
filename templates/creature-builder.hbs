@@ -117,6 +117,59 @@
       <section class="ls-builder-step">
         <h2>Actions, abilities, strikes, and spells</h2>
         <p>Search standalone PF2e entries and every action embedded in installed bestiary and NPC compendiums. Added entries keep their traits, action costs, inline rolls, spell data, and system automation.</p>
+        <section class="ls-damage-workshop">
+          <header><div><span>Building Creatures tables</span><h3>Modular offense workshop</h3></div><button type="button" data-action="recalculateLinked"><i class="fa-solid fa-rotate"></i> Recalculate linked entries</button></header>
+          <p>Build native PF2e entries from independent modules. Only values linked to a benchmark change when the creature's level changes.</p>
+          <details open>
+            <summary><i class="fa-solid fa-hand-fist"></i> Create a benchmark-linked Strike</summary>
+            <div class="ls-module-grid">
+              <label class="wide">Strike name<input name="strikeName" value="New Strike"></label>
+              <label>Attack benchmark<select name="strikeAttackTier">{{#each damageWorkshop.attackTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label>Custom attack bonus<input name="strikeCustomAttack" type="number" placeholder="Used only for Custom"></label>
+              <label>Damage benchmark<select name="strikeDamageTier">{{#each damageWorkshop.damageTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label>Custom damage formula<input name="strikeCustomDamage" placeholder="e.g. 2d8+7"></label>
+              <label>Primary damage type<select name="strikeDamageType">{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label>Range increment<input name="strikeRange" type="number" min="5" step="5" placeholder="Blank for melee"></label>
+              <label class="wide">Strike traits<input name="strikeTraits" placeholder="agile, finesse, reach-10, magical"></label>
+              <label class="wide">Attack effects<input name="strikeAttackEffects" placeholder="Grab, Knockdown, poison name (comma separated)"></label>
+              <div class="ls-module-subsection wide"><strong>Optional secondary damage module</strong><label>Formula<input name="strikeSecondaryDamage" placeholder="e.g. 1d6"></label><label>Damage type<select name="strikeSecondaryType">{{#each damageTypes}}<option value="{{value}}">{{label}}</option>{{/each}}</select></label></div>
+              <label class="ls-check-label wide"><input name="strikeAutoScale" type="checkbox" checked> Automatically scale linked attack and damage benchmarks with creature level</label>
+              <button class="wide" type="button" data-action="createLinkedStrike"><i class="fa-solid fa-plus"></i> Create native PF2e Strike</button>
+            </div>
+          </details>
+          <details>
+            <summary><i class="fa-solid fa-burst"></i> Create a modular ability</summary>
+            <div class="ls-module-grid">
+              <label class="wide">Ability name<input name="abilityName" value="New Ability"></label>
+              <label>Usage<select name="abilityUsage"><option value="action" selected>Action</option><option value="reaction">Reaction</option><option value="free">Free action</option><option value="passive">Passive</option></select></label>
+              <label>Actions<select name="abilityActions"><option value="1">One action</option><option value="2" selected>Two actions</option><option value="3">Three actions</option></select></label>
+              <label>Delivery<select name="abilityDelivery"><option value="target">One target</option><option value="area" selected>Area</option><option value="none">No target / utility</option></select></label>
+              <label>Range (feet)<input name="abilityRange" type="number" min="0" step="5" placeholder="For one target"></label>
+              <label>Damage benchmark<select name="abilityDamageTier">{{#each damageWorkshop.areaTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label>Custom damage formula<input name="abilityCustomDamage" placeholder="Used only for Custom"></label>
+              <label>Damage type<select name="abilityDamageType">{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label>Defense<select name="abilitySave"><option value="none">No saving throw</option><option value="reflex" selected>Basic Reflex</option><option value="fortitude">Basic Fortitude</option><option value="will">Basic Will</option></select></label>
+              <label>DC benchmark<select name="abilityDcTier">{{#each damageWorkshop.dcTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label>Custom DC<input name="abilityCustomDc" type="number" placeholder="Used only for Custom"></label>
+              <label>Area shape<select name="abilityAreaShape"><option value="burst">Burst</option><option value="cone">Cone</option><option value="line">Line</option><option value="emanation">Emanation</option></select></label>
+              <label>Area size (feet)<input name="abilityAreaDistance" type="number" min="5" step="5" value="15"></label>
+              <label>Uses<input name="abilityFrequencyMax" type="number" min="0" placeholder="Blank for unlimited"></label>
+              <label>Recharge period<select name="abilityFrequencyPer"><option value="round">Round</option><option value="minute">Minute</option><option value="hour">Hour</option><option value="day" selected>Day</option></select></label>
+              <label class="wide">Ability traits<input name="abilityTraits" placeholder="arcane, concentrate, manipulate"></label>
+              <label>Requirements<input name="abilityRequirements" placeholder="What must already be true?"></label>
+              <label>Trigger<input name="abilityTrigger" placeholder="Leave blank unless reactive"></label>
+              <label>Duration<input name="abilityDuration" placeholder="e.g. 1 round"></label>
+              <label>Condition<select name="abilityCondition"><option value="">No condition</option>{{#each conditionOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select></label>
+              <label>Condition value<input name="abilityConditionValue" type="number" min="0" value="1"></label>
+              <label class="wide">Effect text<textarea name="abilityEffectText" rows="3" placeholder="Describe what happens. Foundry save, damage, and template buttons are generated automatically."></textarea></label>
+              <label class="ls-check-label wide"><input name="abilityAutoScale" type="checkbox" checked> Automatically scale the linked damage and DC with creature level</label>
+              <button class="wide" type="button" data-action="createLinkedAbility"><i class="fa-solid fa-plus"></i> Create native PF2e ability</button>
+            </div>
+          </details>
+          {{#if linkedDamageEntries.length}}
+            <div class="ls-linked-offense"><h4>Level-linked entries on this creature</h4>{{#each linkedDamageEntries}}<article><img src="{{img}}"><div><strong>{{name}}</strong><span>{{kind}} · {{damageTier}} · {{formula}} {{damageType}}{{#if attack}} · attack +{{attack}}{{/if}}</span><small>Last calculated at level {{levelApplied}}</small></div><button type="button" data-action="toggleLinkedScaling" data-id="{{id}}" class="{{#unless autoScale}}secondary{{/unless}}"><i class="fa-solid {{#if autoScale}}fa-link{{else}}fa-link-slash{{/if}}"></i> {{#if autoScale}}Linked{{else}}Custom{{/if}}</button></article>{{/each}}</div>
+          {{/if}}
+        </section>
         <div class="ls-builder-filters content">
           <input name="contentQuery" value="{{contentQuery}}" placeholder="Name, trait, or keyword">
           <select name="contentType">{{#each contentTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select>
