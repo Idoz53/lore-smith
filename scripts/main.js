@@ -979,15 +979,30 @@ function newSessionNpc() {
 const SESSION_MUSIC_MOMENTS = ["Opening", "Exploration", "Social scene", "Tension", "Combat", "Revelation", "Victory", "Defeat", "Closing", "Custom"];
 
 function newSessionMusicCue() {
-  return { id: foundry.utils.randomID(), name: "", moment: "Opening", mood: "", playlistId: "", audio: "", notes: "" };
+  return { id: foundry.utils.randomID(), name: "", moment: "Opening", mood: "", playlistId: "", soundId: "", audio: "", notes: "" };
+}
+
+function newSessionPeopleEntry(description = "") {
+  return { id: foundry.utils.randomID(), name: "", description };
+}
+
+function newSessionTextEntry(text = "") {
+  return { id: foundry.utils.randomID(), text };
+}
+
+function newSessionEncounter() {
+  return { id: foundry.utils.randomID(), type: "social", description: "", actors: [] };
 }
 
 function newSessionPrep() {
   return {
     title: "", goal: "", opening: "", ending: "",
-    locations: [newSessionLocation(), newSessionLocation(), newSessionLocation()],
+    locations: [newSessionLocation(), newSessionLocation()],
     npcs: [newSessionNpc()],
     musicCues: [newSessionMusicCue()],
+    peopleEntries: [newSessionPeopleEntry()], hazards: [], encounterEntries: [newSessionEncounter()],
+    sceneEntries: [newSessionTextEntry()], clueEntries: [newSessionTextEntry()], rewardItems: [],
+    consequenceEntries: [newSessionTextEntry()], changeEntries: [newSessionTextEntry()],
     people: "", opposition: "", scenes: "", rewards: "", reminders: "",
   };
 }
@@ -1015,6 +1030,101 @@ function sessionNpcPage(npc) {
     ? `<figure><img src="${escapeHtml(npc.image)}" alt="${escapeHtml(npc.name)}"></figure>` : "";
   return `${image}${sessionBlock("Role in the session", npc.role)}${sessionBlock("Motivation", npc.motivation)}${sessionBlock("Secret or complication", npc.secret)}`
     || "<p>Add this NPC's role, motivation, and secrets here.</p>";
+}
+
+function sessionReferenceLink(reference) {
+  return reference?.uuid ? `@UUID[${reference.uuid}]{${escapeHtml(reference.name || "Foundry document")}}` : escapeHtml(reference?.name || "Foundry document");
+}
+
+function sessionList(title, entries) {
+  const rows = entries.filter((value) => String(value ?? "").trim());
+  return rows.length ? `<p><strong>${escapeHtml(title)}</strong></p><ul>${rows.map((value) => `<li>${sessionHtml(value)}</li>`).join("")}</ul>` : "";
+}
+
+function normalizeSessionReference(reference = {}) {
+  return {
+    id: reference.id || foundry.utils.randomID(),
+    uuid: String(reference.uuid ?? ""), name: String(reference.name ?? "Foundry document"),
+    img: String(reference.img ?? "icons/svg/item-bag.svg"), type: String(reference.type ?? ""),
+  };
+}
+
+function normalizeSessionTextEntries(entries, fallback = "") {
+  const source = Array.isArray(entries) && entries.length ? entries : [newSessionTextEntry(fallback)];
+  return source.map((entry) => ({ ...newSessionTextEntry(), ...entry, id: entry.id || foundry.utils.randomID() }));
+}
+
+const LOOT_ROLES = {
+  dps: { label: "DPS", words: ["damage", "attack", "weapon", "striking", "potency", "bomb", "ammunition", "critical", "deadly", "fatal"] },
+  tank: { label: "TANK", words: ["armor", "shield", "resilient", "fortification", "defense", "armor class", "resistance", "saving throw", "hardness", "bulk", "carry", "lifting belt"] },
+  healer: { label: "HEALER", words: ["heal", "healing", "medicine", "vitality", "elixir of life", "antidote", "antiplague", "restoration", "recovery", "stabilize"] },
+  annoyer: { label: "ANNOYER", words: ["condition", "frightened", "slowed", "stunned", "sickened", "clumsy", "enfeebled", "stupefied", "off-guard", "prone", "restrained", "immobilized", "dazzled", "blind", "control"] },
+};
+
+function lootRoleScore(entry, role) {
+  const text = `${entry.name ?? ""} ${entry.description ?? ""} ${(entry.traits ?? []).join(" ")}`.toLowerCase();
+  return (LOOT_ROLES[role]?.words ?? []).reduce((score, word) => score + (text.includes(word) ? (entry.name?.toLowerCase().includes(word) ? 4 : 1) : 0), 0);
+}
+
+async function resolveTableResultDocument(result) {
+  const uuid = result.documentUuid || (result.documentCollection && result.documentId
+    ? (game.packs.get(result.documentCollection) ? `Compendium.${result.documentCollection}.${result.documentId}` : `${result.documentCollection}.${result.documentId}`)
+    : "");
+  try { return uuid ? await fromUuid(uuid) : null; } catch { return null; }
+}
+
+async function installedTreasureTables(kind, level) {
+  const aliases = { permanent: ["permanent"], consumable: ["consumable"], gems: ["gem", "precious stone"], art: ["art object"] }[kind] ?? [];
+  const matches = (name) => {
+    const text = String(name ?? "").toLowerCase();
+    const kindMatch = aliases.some((alias) => text.includes(alias));
+    return kindMatch && (["gems", "art"].includes(kind) || new RegExp(`(^|\\D)${level}(\\D|$)`).test(text));
+  };
+  const tables = game.tables.contents.filter((table) => matches(table.name));
+  for (const pack of game.packs.filter((candidate) => candidate.documentName === "RollTable")) {
+    const index = await pack.getIndex({ fields: ["name"] });
+    for (const entry of index.filter((candidate) => matches(candidate.name))) {
+      const table = await pack.getDocument(entry._id);
+      if (table) tables.push(table);
+    }
+  }
+  return tables;
+}
+
+async function rollTreasureTable(kind, level) {
+  const tables = await installedTreasureTables(kind, level);
+  if (!tables.length) return null;
+  const table = tables[Math.floor(Math.random() * tables.length)];
+  const draw = await table.roll({ recursive: true });
+  const result = draw?.results?.[0];
+  if (!result) return null;
+  const document = await resolveTableResultDocument(result);
+  if (document?.documentName === "Item") return { document, table: table.name };
+  return { text: result.text || result.name || "Treasure result", img: result.img || "icons/commodities/gems/gem-faceted-round-white.webp", table: table.name };
+}
+
+async function collectRoleLoot(level, role, includePermanent, includeConsumable) {
+  const allowedTypes = new Set();
+  if (includePermanent) ["armor", "shield", "weapon", "equipment", "backpack", "kit", "book", "treasure"].forEach((type) => allowedTypes.add(type));
+  if (includeConsumable) ["consumable", "ammo"].forEach((type) => allowedTypes.add(type));
+  const entries = [];
+  for (const pack of game.packs.filter((candidate) => candidate.documentName === "Item")) {
+    const index = await pack.getIndex({ fields: ["name", "img", "type", "system.level.value", "system.description.value", "system.traits.value"] });
+    for (const entry of index) {
+      if (!allowedTypes.has(entry.type)) continue;
+      const itemLevel = numeric(entry.system?.level, 0);
+      if (itemLevel !== level) continue;
+      const candidate = {
+        name: entry.name, img: entry.img, type: ITEM_TYPE_LABELS[entry.type] ?? entry.type, level: itemLevel,
+        description: entry.system?.description?.value ?? "", traits: entry.system?.traits?.value ?? [],
+        uuid: entry.uuid ?? `Compendium.${pack.collection}.${entry._id}`, source: pack.metadata.label,
+      };
+      candidate.score = lootRoleScore(candidate, role);
+      entries.push(candidate);
+    }
+  }
+  const roleMatches = entries.filter((entry) => entry.score > 0);
+  return (roleMatches.length ? roleMatches : entries).sort((left, right) => right.score - left.score || Math.random() - 0.5);
 }
 
 function activeSessionMusicCues(prep) {
@@ -1049,12 +1159,16 @@ async function materializeSessionMusic(prep) {
     const playlist = game.playlists.get(cue.playlistId) ?? defaultPlaylist;
     if (!playlist) continue;
     cue.playlistId = playlist.id;
+    if (cue.soundId && playlist.sounds.get(cue.soundId)) continue;
     const audio = String(cue.audio ?? "").trim();
-    if (!audio || playlist.sounds.some((sound) => sound.path === audio)) continue;
-    await playlist.createEmbeddedDocuments("PlaylistSound", [{
+    if (!audio) continue;
+    const existing = playlist.sounds.find((sound) => sound.path === audio);
+    if (existing) { cue.soundId = existing.id; continue; }
+    const [created] = await playlist.createEmbeddedDocuments("PlaylistSound", [{
       name: cue.name.trim() || `${cue.moment || "Music"} cue`,
       path: audio,
     }]);
+    cue.soundId = created?.id ?? "";
   }
   return defaultPlaylist;
 }
@@ -1064,9 +1178,12 @@ function sessionMusicPage(prep) {
   if (!cues.length) return "<p>Add music, ambience, and moments of deliberate silence here.</p>";
   return cues.map((cue, index) => {
     const playlist = game.playlists.get(cue.playlistId);
+    const sound = playlist?.sounds?.get(cue.soundId);
     const title = cue.name.trim() || `${cue.moment || "Music"} cue ${index + 1}`;
-    const source = playlist
-      ? `<p><strong>Foundry Playlist</strong> @UUID[${playlist.uuid}]{${escapeHtml(playlist.name)}}</p>`
+    const source = playlist && sound
+      ? `<p><strong>Song</strong> ${escapeHtml(sound.name)} <button type="button" class="ls-play-session-track" data-playlist-id="${playlist.id}" data-sound-id="${sound.id}"><i class="fa-solid fa-play"></i> Play this song</button></p><p><strong>Playlist</strong> @UUID[${playlist.uuid}]{${escapeHtml(playlist.name)}}</p>`
+      : playlist
+        ? `<p><strong>Foundry Playlist</strong> @UUID[${playlist.uuid}]{${escapeHtml(playlist.name)}}</p><p><em>Choose a specific song in Session Prep before creating the Journal.</em></p>`
       : (cue.audio ? `<p><strong>Audio file</strong> ${escapeHtml(cue.audio)}</p><audio controls src="${escapeHtml(cue.audio)}"></audio>` : "");
     return `<section><p><strong>${escapeHtml(title)}</strong></p>${sessionBlock("When to play", cue.moment)}${sessionBlock("Mood and purpose", cue.mood)}${source}${sessionBlock("Cue notes", cue.notes)}</section>`;
   }).join("<hr>");
@@ -1083,16 +1200,25 @@ function sessionJournalPages(prep) {
   ].filter(Boolean).join("");
   const pages = [{ name: "Session Overview", content: overview }];
   for (const [index, location] of prep.locations.entries()) pages.push({ name: `Place — ${placeNames[index]}`, content: sessionLocationPage({ ...location, name: placeNames[index] }) });
+  const peopleRows = (prep.peopleEntries ?? []).filter((entry) => entry.name?.trim() || entry.description?.trim())
+    .map((entry) => `<li><strong>${sessionHtml(entry.name || "Unnamed person or faction")}</strong>${entry.description ? ` — ${sessionHtml(entry.description)}` : ""}</li>`).join("");
+  const hazardRows = (prep.hazards ?? []).map((entry) => `<li>${sessionReferenceLink(entry)}</li>`).join("");
+  const encounterRows = (prep.encounterEntries ?? []).filter((entry) => entry.description?.trim() || entry.actors?.length).map((entry) => {
+    const actors = (entry.actors ?? []).map(sessionReferenceLink).join(", ");
+    return `<li><strong>${entry.type === "combat" ? "Combat encounter" : "Social encounter"}</strong>${actors ? ` — ${actors}` : ""}${entry.description ? `<br>${sessionHtml(entry.description)}` : ""}</li>`;
+  }).join("");
   const peopleOverview = [
     npcNames.length ? `<p><strong>Important NPCs</strong></p><ul>${npcNames.map((name) => `<li>[[NPC - ${escapeHtml(name)}]]</li>`).join("")}</ul>` : "",
-    sessionBlock("Other people and factions", prep.people),
-    sessionBlock("Opposition, hazards, and encounters", prep.opposition),
+    peopleRows ? `<p><strong>Other people and factions</strong></p><ul>${peopleRows}</ul>` : "",
+    hazardRows ? `<p><strong>Hazards</strong></p><ul>${hazardRows}</ul>` : "",
+    encounterRows ? `<p><strong>Encounters</strong></p><ul>${encounterRows}</ul>` : "",
   ].filter(Boolean).join("") || "<p>Who can help, hinder, or surprise the party?</p>";
-  pages.push({ name: "People & Opposition", content: peopleOverview });
+  pages.push({ name: "People, Hazards & Encounters", content: peopleOverview });
   for (const [index, npc] of npcs.entries()) pages.push({ name: `NPC - ${npcNames[index]}`, content: sessionNpcPage({ ...npc, name: npcNames[index] }) });
   pages.push({ name: "Music & Atmosphere", content: sessionMusicPage(prep) });
+  const rewardRows = (prep.rewardItems ?? []).map((entry) => sessionReferenceLink(entry));
   pages.push(
-    { name: "Scenes, Clues & Rewards", content: `${sessionBlock("Likely scenes and clues", prep.scenes)}${sessionBlock("Rewards, consequences, and changes", prep.rewards)}` || "<p>Prepare situations, clues, and consequences here.</p>" },
+    { name: "Scenes, Clues & Rewards", content: `${sessionList("Likely scenes", (prep.sceneEntries ?? []).map((entry) => entry.text))}${sessionList("Clues", (prep.clueEntries ?? []).map((entry) => entry.text))}${sessionList("Rewards", rewardRows)}${sessionList("Consequences", (prep.consequenceEntries ?? []).map((entry) => entry.text))}${sessionList("Changes", (prep.changeEntries ?? []).map((entry) => entry.text))}` || "<p>Prepare situations, clues, and consequences here.</p>" },
     { name: "GM Reminders & Secrets", content: sessionBlock("GM-only notes", prep.reminders) || "<p>Private reminders, secrets, and contingencies.</p>" },
   );
   return pages;
@@ -1151,6 +1277,13 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       addMusicCue: LoreSmithDashboard.addMusicCue,
       removeMusicCue: LoreSmithDashboard.removeMusicCue,
       browseMusicAudio: LoreSmithDashboard.browseMusicAudio,
+      addPeopleEntry: LoreSmithDashboard.addPeopleEntry,
+      removePeopleEntry: LoreSmithDashboard.removePeopleEntry,
+      addSessionEncounter: LoreSmithDashboard.addSessionEncounter,
+      removeSessionEncounter: LoreSmithDashboard.removeSessionEncounter,
+      addSessionTextEntry: LoreSmithDashboard.addSessionTextEntry,
+      removeSessionTextEntry: LoreSmithDashboard.removeSessionTextEntry,
+      removeSessionReference: LoreSmithDashboard.removeSessionReference,
       createSessionJournal: LoreSmithDashboard.createSessionJournal,
       openLastSessionJournal: LoreSmithDashboard.openLastSessionJournal,
       createNote: LoreSmithDashboard.createNote,
@@ -1165,6 +1298,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       refreshEncounter: LoreSmithDashboard.refreshEncounter,
       runEstimate: LoreSmithDashboard.runEstimate,
       runLive: LoreSmithDashboard.runLive,
+      generateLoot: LoreSmithDashboard.generateLoot,
+      clearLoot: LoreSmithDashboard.clearLoot,
+      addLootToRewards: LoreSmithDashboard.addLootToRewards,
+      openLootDocument: LoreSmithDashboard.openLootDocument,
     },
   };
 
@@ -1188,6 +1325,13 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   sessionDraftLoaded = false;
   sessionSaveTimer = null;
   lastSessionJournalId = null;
+  sessionScrollTop = 0;
+  lootResults = [];
+  lootStatus = "";
+  lootLevel = 1;
+  lootRole = "dps";
+  lootCount = 6;
+  lootSources = { permanent: true, consumable: true, gems: false, art: false };
 
   async getNotebook(create = false) {
     let journal = game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "notebook"));
@@ -1227,6 +1371,18 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
             musicCues: Array.isArray(storedPrep.musicCues)
               ? storedPrep.musicCues.map((cue) => ({ ...newSessionMusicCue(), ...cue, id: cue.id || foundry.utils.randomID() }))
               : fresh.musicCues,
+            peopleEntries: Array.isArray(storedPrep.peopleEntries)
+              ? storedPrep.peopleEntries.map((entry) => ({ ...newSessionPeopleEntry(), ...entry, id: entry.id || foundry.utils.randomID() }))
+              : [newSessionPeopleEntry(storedPrep.people ?? "")],
+            hazards: Array.isArray(storedPrep.hazards) ? storedPrep.hazards.map(normalizeSessionReference) : [],
+            encounterEntries: Array.isArray(storedPrep.encounterEntries)
+              ? storedPrep.encounterEntries.map((entry) => ({ ...newSessionEncounter(), ...entry, id: entry.id || foundry.utils.randomID(), actors: (entry.actors ?? []).map(normalizeSessionReference) }))
+              : [newSessionEncounter()],
+            sceneEntries: normalizeSessionTextEntries(storedPrep.sceneEntries, storedPrep.scenes ?? ""),
+            clueEntries: normalizeSessionTextEntries(storedPrep.clueEntries),
+            rewardItems: Array.isArray(storedPrep.rewardItems) ? storedPrep.rewardItems.map(normalizeSessionReference) : [],
+            consequenceEntries: normalizeSessionTextEntries(storedPrep.consequenceEntries, storedPrep.rewards ?? ""),
+            changeEntries: normalizeSessionTextEntries(storedPrep.changeEntries),
           };
           this.sessionStep = Math.max(0, Math.min(5, Number(stored?.step) || 0));
         }
@@ -1271,7 +1427,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         .sort((left, right) => String(right.getFlag(FLAG_SCOPE, "createdAt") ?? "").localeCompare(String(left.getFlag(FLAG_SCOPE, "createdAt") ?? "")))[0];
       this.lastSessionJournalId = latestSession?.id ?? null;
     }
-    const locationViews = this.sessionPrep.locations.map((location, index) => ({ ...location, number: index + 1, canRemove: this.sessionPrep.locations.length > 3 }));
+    const locationViews = this.sessionPrep.locations.map((location, index) => ({ ...location, number: index + 1, canRemove: this.sessionPrep.locations.length > 2 }));
     const npcViews = (this.sessionPrep.npcs ?? []).map((npc, index) => ({ ...npc, number: index + 1 }));
     const playlists = [...game.playlists.contents].sort((left, right) => left.name.localeCompare(right.name));
     const musicCueViews = (this.sessionPrep.musicCues ?? []).map((cue, index) => ({
@@ -1282,11 +1438,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         { value: "", label: "No Foundry Playlist", selected: !cue.playlistId },
         ...playlists.map((playlist) => ({ value: playlist.id, label: playlist.name, selected: cue.playlistId === playlist.id })),
       ],
+      trackOptions: [
+        { value: "", label: cue.playlistId ? "Choose a song from this Playlist" : "Choose a Playlist first", selected: !cue.soundId },
+        ...(game.playlists.get(cue.playlistId)?.sounds?.contents ?? []).map((sound) => ({ value: sound.id, label: sound.name, selected: cue.soundId === sound.id })),
+      ],
     }));
     const sessionValidation = [];
     if (!this.sessionPrep.title.trim()) sessionValidation.push("Add a session title.");
     if (!this.sessionPrep.goal.trim()) sessionValidation.push("Add the session's main goal.");
-    if (this.sessionPrep.locations.length < 3) sessionValidation.push("Prepare at least three important places.");
+    if (this.sessionPrep.locations.length < 2) sessionValidation.push("Prepare at least two important places.");
     for (const [index, location] of this.sessionPrep.locations.entries()) {
       if (!location.name.trim()) sessionValidation.push(`Name important place ${index + 1}.`);
       if (!location.image.trim()) sessionValidation.push(`Choose an image for important place ${index + 1}.`);
@@ -1316,11 +1476,21 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       canSessionBack: this.sessionStep > 0,
       lastSessionJournalId: this.lastSessionJournalId,
       hasFoundryPlaylists: game.playlists.size > 0,
+      peopleEntries: (this.sessionPrep.peopleEntries ?? []).map((entry, index) => ({ ...entry, number: index + 1 })),
+      hazards: this.sessionPrep.hazards ?? [],
+      encounterEntries: (this.sessionPrep.encounterEntries ?? []).map((entry, index) => ({ ...entry, number: index + 1, social: entry.type === "social", combat: entry.type === "combat" })),
+      sceneEntries: this.sessionPrep.sceneEntries ?? [], clueEntries: this.sessionPrep.clueEntries ?? [],
+      rewardItems: this.sessionPrep.rewardItems ?? [], consequenceEntries: this.sessionPrep.consequenceEntries ?? [], changeEntries: this.sessionPrep.changeEntries ?? [],
+      lootRoles: Object.entries(LOOT_ROLES).map(([value, data]) => ({ value, label: data.label, selected: value === this.lootRole })),
+      lootResults: this.lootResults, lootStatus: this.lootStatus,
+      lootLevel: this.lootLevel, lootCount: this.lootCount, lootSources: this.lootSources,
     };
   }
 
   _onRender(context, options) {
     super._onRender(context, options);
+    const main = this.element?.querySelector(".ls-main");
+    if (main && this.sessionScrollTop) main.scrollTop = this.sessionScrollTop;
     if (this.activeTab === "session") {
       for (const field of this.element?.querySelectorAll(".ls-session-panel input, .ls-session-panel textarea, .ls-session-panel select") ?? []) {
         const eventName = field.matches("select") ? "change" : "input";
@@ -1328,6 +1498,22 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
           clearTimeout(this.sessionSaveTimer);
           this.sessionSaveTimer = setTimeout(() => void this.syncSessionPrepForm(), 350);
         });
+      }
+      for (const select of this.element?.querySelectorAll('[name="musicPlaylist"], [name="encounterType"]') ?? []) {
+        select.addEventListener("change", async () => {
+          await this.syncSessionPrepForm();
+          if (select.name === "musicPlaylist") {
+            const card = select.closest("[data-session-music-id]");
+            const cue = this.sessionPrep.musicCues.find((entry) => entry.id === card?.dataset.sessionMusicId);
+            if (cue) cue.soundId = "";
+          }
+          await this.renderSessionPreservingScroll();
+        });
+      }
+      for (const zone of this.element?.querySelectorAll("[data-session-drop-kind]") ?? []) {
+        zone.addEventListener("dragover", (event) => { event.preventDefault(); zone.classList.add("dragover"); });
+        zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+        zone.addEventListener("drop", (event) => void this.handleSessionDrop(event, zone));
       }
       return;
     }
@@ -1416,6 +1602,36 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       : 100;
   }
 
+  async renderSessionPreservingScroll() {
+    this.sessionScrollTop = this.element?.querySelector(".ls-main")?.scrollTop ?? this.sessionScrollTop;
+    await this.render();
+  }
+
+  async handleSessionDrop(event, zone) {
+    event.preventDefault();
+    zone.classList.remove("dragover");
+    let data;
+    try { data = JSON.parse(event.dataTransfer?.getData("text/plain") || "{}"); } catch { return; }
+    const uuid = data.uuid || (data.type && data.id ? `${data.type}.${data.id}` : "");
+    const document = uuid ? await fromUuid(uuid) : null;
+    if (!document) return ui.notifications.warn("Lore Smith could not read that dropped Foundry document.");
+    const kind = zone.dataset.sessionDropKind;
+    if (kind === "hazard" && (document.documentName !== "Actor" || document.type !== "hazard")) return ui.notifications.warn("Drop a PF2e Hazard actor here.");
+    if (kind === "encounter" && document.documentName !== "Actor") return ui.notifications.warn("Drop a PF2e Actor here.");
+    if (kind === "reward" && document.documentName !== "Item") return ui.notifications.warn("Drop a PF2e Item here.");
+    const reference = normalizeSessionReference({ uuid: document.uuid, name: document.name, img: document.img, type: document.type });
+    if (kind === "hazard") {
+      if (!(this.sessionPrep.hazards ?? []).some((entry) => entry.uuid === reference.uuid)) this.sessionPrep.hazards.push(reference);
+    } else if (kind === "reward") {
+      if (!(this.sessionPrep.rewardItems ?? []).some((entry) => entry.uuid === reference.uuid)) this.sessionPrep.rewardItems.push(reference);
+    } else {
+      const encounter = this.sessionPrep.encounterEntries.find((entry) => entry.id === zone.dataset.parentId);
+      if (encounter && !encounter.actors.some((entry) => entry.uuid === reference.uuid)) encounter.actors.push(reference);
+    }
+    await this.saveSessionPrepDraft();
+    await this.renderSessionPreservingScroll();
+  }
+
   async saveSessionPrepDraft() {
     await game.settings.set(MODULE_ID, "sessionPrepDraft", JSON.stringify({ step: this.sessionStep, prep: this.sessionPrep }));
   }
@@ -1425,8 +1641,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!root || this.activeTab !== "session") return;
     const visibleFields = {
       title: "sessionTitle", goal: "sessionGoal", opening: "sessionOpening", ending: "sessionEnding",
-      people: "sessionPeople", opposition: "sessionOpposition", scenes: "sessionScenes",
-      rewards: "sessionRewards", reminders: "sessionReminders",
+      reminders: "sessionReminders",
     };
     for (const [property, name] of Object.entries(visibleFields)) {
       const field = root.querySelector(`[name="${name}"]`);
@@ -1451,8 +1666,30 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (musicCards.length) this.sessionPrep.musicCues = musicCards.map((card) => {
       const id = card.dataset.sessionMusicId;
       const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
-      return { ...previousMusicCues.get(id), id, name: field("musicName"), moment: field("musicMoment"), mood: field("musicMood"), playlistId: field("musicPlaylist"), audio: field("musicAudio"), notes: field("musicNotes") };
+      return { ...previousMusicCues.get(id), id, name: field("musicName"), moment: field("musicMoment"), mood: field("musicMood"), playlistId: field("musicPlaylist"), soundId: field("musicSound"), audio: field("musicAudio"), notes: field("musicNotes") };
     });
+    const peopleCards = [...root.querySelectorAll("[data-people-entry-id]")];
+    if (peopleCards.length) this.sessionPrep.peopleEntries = peopleCards.map((card) => ({
+      id: card.dataset.peopleEntryId,
+      name: card.querySelector('[name="peopleName"]')?.value.trim() ?? "",
+      description: card.querySelector('[name="peopleDescription"]')?.value.trim() ?? "",
+    }));
+    const encounterCards = [...root.querySelectorAll("[data-session-encounter-id]")];
+    if (encounterCards.length) {
+      const existing = new Map(this.sessionPrep.encounterEntries.map((entry) => [entry.id, entry]));
+      this.sessionPrep.encounterEntries = encounterCards.map((card) => ({
+        ...existing.get(card.dataset.sessionEncounterId), id: card.dataset.sessionEncounterId,
+        type: card.querySelector('[name="encounterType"]')?.value ?? "social",
+        description: card.querySelector('[name="encounterDescription"]')?.value.trim() ?? "",
+      }));
+    }
+    const textCollections = { scene: "sceneEntries", clue: "clueEntries", consequence: "consequenceEntries", change: "changeEntries" };
+    for (const [kind, property] of Object.entries(textCollections)) {
+      const entries = [...root.querySelectorAll(`[data-session-text-kind="${kind}"]`)].map((card) => ({
+        id: card.dataset.sessionTextId, text: card.querySelector("input, textarea")?.value.trim() ?? "",
+      }));
+      if (entries.length) this.sessionPrep[property] = entries;
+    }
     await this.saveSessionPrepDraft();
   }
 
@@ -1502,7 +1739,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async removeLocation(_event, target) {
     await this.syncSessionPrepForm();
-    if (this.sessionPrep.locations.length <= 3) return;
+    if (this.sessionPrep.locations.length <= 2) return;
     this.sessionPrep.locations = this.sessionPrep.locations.filter((location) => location.id !== target.dataset.id);
     await this.saveSessionPrepDraft();
     await this.render();
@@ -1515,7 +1752,8 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     new FilePicker({ type: "imagevideo", current: location.image, callback: async (path) => {
       location.image = path;
       await this.saveSessionPrepDraft();
-      await this.render();
+      const input = this.element?.querySelector(`[data-location-id="${location.id}"] [name="locationImage"]`);
+      if (input) input.value = path;
     } }).browse();
   }
 
@@ -1541,7 +1779,14 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     new FilePicker({ type: "imagevideo", current: npc.image, callback: async (path) => {
       npc.image = path;
       await this.saveSessionPrepDraft();
-      await this.render();
+      const card = this.element?.querySelector(`[data-session-npc-id="${npc.id}"]`);
+      const input = card?.querySelector('[name="npcImage"]');
+      if (input) input.value = path;
+      const portrait = card?.querySelector(".ls-session-npc-portrait");
+      if (portrait) {
+        portrait.replaceChildren();
+        const image = document.createElement("img"); image.src = path; image.alt = npc.name || "NPC"; portrait.append(image);
+      }
     } }).browse();
   }
 
@@ -1567,18 +1812,71 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     new FilePicker({ type: "audio", current: cue.audio, callback: async (path) => {
       cue.audio = path;
       await this.saveSessionPrepDraft();
-      await this.render();
+      const input = this.element?.querySelector(`[data-session-music-id="${cue.id}"] [name="musicAudio"]`);
+      if (input) input.value = path;
     } }).browse();
+  }
+
+  static async addPeopleEntry() {
+    await this.syncSessionPrepForm(); this.sessionPrep.peopleEntries.push(newSessionPeopleEntry());
+    await this.saveSessionPrepDraft(); await this.renderSessionPreservingScroll();
+  }
+
+  static async removePeopleEntry(_event, target) {
+    await this.syncSessionPrepForm();
+    this.sessionPrep.peopleEntries = this.sessionPrep.peopleEntries.filter((entry) => entry.id !== target.dataset.id);
+    if (!this.sessionPrep.peopleEntries.length) this.sessionPrep.peopleEntries.push(newSessionPeopleEntry());
+    await this.saveSessionPrepDraft(); await this.renderSessionPreservingScroll();
+  }
+
+  static async addSessionEncounter() {
+    await this.syncSessionPrepForm(); this.sessionPrep.encounterEntries.push(newSessionEncounter());
+    await this.saveSessionPrepDraft(); await this.renderSessionPreservingScroll();
+  }
+
+  static async removeSessionEncounter(_event, target) {
+    await this.syncSessionPrepForm();
+    this.sessionPrep.encounterEntries = this.sessionPrep.encounterEntries.filter((entry) => entry.id !== target.dataset.id);
+    if (!this.sessionPrep.encounterEntries.length) this.sessionPrep.encounterEntries.push(newSessionEncounter());
+    await this.saveSessionPrepDraft(); await this.renderSessionPreservingScroll();
+  }
+
+  static async addSessionTextEntry(_event, target) {
+    await this.syncSessionPrepForm();
+    const property = { scene: "sceneEntries", clue: "clueEntries", consequence: "consequenceEntries", change: "changeEntries" }[target.dataset.kind];
+    if (!property) return;
+    this.sessionPrep[property].push(newSessionTextEntry());
+    await this.saveSessionPrepDraft(); await this.renderSessionPreservingScroll();
+  }
+
+  static async removeSessionTextEntry(_event, target) {
+    await this.syncSessionPrepForm();
+    const property = { scene: "sceneEntries", clue: "clueEntries", consequence: "consequenceEntries", change: "changeEntries" }[target.dataset.kind];
+    if (!property) return;
+    this.sessionPrep[property] = this.sessionPrep[property].filter((entry) => entry.id !== target.dataset.id);
+    if (!this.sessionPrep[property].length) this.sessionPrep[property].push(newSessionTextEntry());
+    await this.saveSessionPrepDraft(); await this.renderSessionPreservingScroll();
+  }
+
+  static async removeSessionReference(_event, target) {
+    const { kind, parentId, id } = target.dataset;
+    if (kind === "hazard") this.sessionPrep.hazards = this.sessionPrep.hazards.filter((entry) => entry.id !== id);
+    if (kind === "reward") this.sessionPrep.rewardItems = this.sessionPrep.rewardItems.filter((entry) => entry.id !== id);
+    if (kind === "encounter") {
+      const encounter = this.sessionPrep.encounterEntries.find((entry) => entry.id === parentId);
+      if (encounter) encounter.actors = encounter.actors.filter((entry) => entry.id !== id);
+    }
+    await this.saveSessionPrepDraft(); await this.renderSessionPreservingScroll();
   }
 
   static async createSessionJournal() {
     await this.syncSessionPrepForm();
     const invalid = !this.sessionPrep.title.trim() || !this.sessionPrep.goal.trim()
-      || this.sessionPrep.locations.length < 3 || this.sessionPrep.locations.some((location) => !location.name.trim() || !location.image.trim());
+      || this.sessionPrep.locations.length < 2 || this.sessionPrep.locations.some((location) => !location.name.trim() || !location.image.trim());
     if (invalid) {
       this.sessionStep = 5;
       await this.render();
-      return ui.notifications.warn("Complete the title, goal, and all three important places before creating the Journal.");
+      return ui.notifications.warn("Complete the title, goal, and both important places before creating the Journal.");
     }
     try {
       await materializeSessionMusic(this.sessionPrep);
@@ -1755,6 +2053,68 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     else item.sheet.render(true);
   }
 
+  static async generateLoot() {
+    const root = this.element;
+    const level = Math.max(0, Math.min(30, Number(root.querySelector('[name="lootLevel"]')?.value) || 0));
+    const role = root.querySelector('[name="lootRole"]')?.value || "dps";
+    const count = Math.max(1, Math.min(20, Number(root.querySelector('[name="lootCount"]')?.value) || 6));
+    const permanent = Boolean(root.querySelector('[name="lootPermanent"]')?.checked);
+    const consumable = Boolean(root.querySelector('[name="lootConsumable"]')?.checked);
+    const gems = Boolean(root.querySelector('[name="lootGems"]')?.checked);
+    const art = Boolean(root.querySelector('[name="lootArt"]')?.checked);
+    Object.assign(this, { lootLevel: level, lootRole: role, lootCount: count, lootSources: { permanent, consumable, gems, art } });
+    if (!permanent && !consumable && !gems && !art) return ui.notifications.warn("Choose at least one treasure source.");
+    const results = [];
+    const tableKinds = [...(permanent ? ["permanent"] : []), ...(consumable ? ["consumable"] : [])];
+    let tablesUsed = 0;
+    for (const kind of tableKinds) {
+      const rolled = await rollTreasureTable(kind, level);
+      if (!rolled?.document) continue;
+      tablesUsed += 1;
+      const data = { name: rolled.document.name, img: rolled.document.img, type: ITEM_TYPE_LABELS[rolled.document.type] ?? rolled.document.type, level: numeric(rolled.document.system?.level, level), description: rolled.document.system?.description?.value ?? "", traits: rolled.document.system?.traits?.value ?? [], uuid: rolled.document.uuid, source: rolled.table };
+      data.score = lootRoleScore(data, role);
+      if (data.score > 0) results.push(data);
+    }
+    const candidates = await collectRoleLoot(level, role, permanent, consumable);
+    for (const candidate of candidates) {
+      if (results.length >= count) break;
+      if (!results.some((entry) => entry.uuid === candidate.uuid)) results.push(candidate);
+    }
+    for (const kind of [...(gems ? ["gems"] : []), ...(art ? ["art"] : [])]) {
+      const rolled = await rollTreasureTable(kind, level);
+      if (!rolled) continue;
+      tablesUsed += 1;
+      if (rolled.document) results.push({ name: rolled.document.name, img: rolled.document.img, type: ITEM_TYPE_LABELS[rolled.document.type] ?? rolled.document.type, level: numeric(rolled.document.system?.level, level), uuid: rolled.document.uuid, source: rolled.table, score: 0 });
+      else results.push({ name: rolled.text, img: rolled.img, type: kind === "gems" ? "Precious stone" : "Art object", level, uuid: "", source: rolled.table, score: 0 });
+    }
+    this.lootResults = results.slice(0, Math.max(count, results.length)).map((entry) => ({
+      ...entry, id: foundry.utils.randomID(),
+      reason: entry.score > 0 ? `Strong ${LOOT_ROLES[role].label} match` : `Useful level ${level} treasure`,
+    }));
+    this.lootStatus = tablesUsed
+      ? `Used ${tablesUsed} installed PF2e treasure table${tablesUsed === 1 ? "" : "s"}; role matching was completed from installed item compendia.`
+      : "No matching installed treasure table was found, so Lore Smith used the installed PF2e item compendia directly.";
+    await this.render();
+  }
+
+  static async clearLoot() { this.lootResults = []; this.lootStatus = ""; await this.render(); }
+
+  static async openLootDocument(_event, target) {
+    const document = await fromUuid(target.dataset.uuid);
+    document?.sheet?.render(true);
+  }
+
+  static async addLootToRewards(_event, target) {
+    const result = this.lootResults.find((entry) => entry.id === target.dataset.id);
+    if (!result?.uuid) return;
+    this.sessionPrep.rewardItems ??= [];
+    if (!this.sessionPrep.rewardItems.some((entry) => entry.uuid === result.uuid)) {
+      this.sessionPrep.rewardItems.push(normalizeSessionReference(result));
+      await this.saveSessionPrepDraft();
+    }
+    ui.notifications.info(`${result.name} was added to Session Prep rewards.`);
+  }
+
   static async refreshEncounter() {
     this.captureEncounterSelection();
     await this.render();
@@ -1875,4 +2235,20 @@ Hooks.on("getSceneControlButtons", (controls) => {
 Hooks.on("renderSceneControls", (_app, html) => {
   const root = html instanceof HTMLElement ? html : html?.[0] ?? html?.element;
   root?.querySelector('[data-tool="lore-smith"]')?.classList.add("lore-smith-scene-control");
+});
+
+Hooks.on("renderJournalSheet", (_app, html) => {
+  const root = html instanceof HTMLElement ? html : html?.[0] ?? html?.element;
+  if (!root || root.dataset.loreSmithSessionAudio === "true") return;
+  root.dataset.loreSmithSessionAudio = "true";
+  root.addEventListener("click", async (event) => {
+    const button = event.target.closest?.(".ls-play-session-track");
+    if (!button) return;
+    event.preventDefault();
+    const playlist = game.playlists.get(button.dataset.playlistId);
+    const sound = playlist?.sounds?.get(button.dataset.soundId);
+    if (!playlist || !sound) return ui.notifications.warn("That session song no longer exists in its Playlist.");
+    if (sound.playing) await playlist.stopSound(sound);
+    else await playlist.playSound(sound);
+  });
 });

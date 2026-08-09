@@ -5,16 +5,20 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- a five-step Session Prep dashboard that turns a session goal, three or more
-  image-backed locations, sensory descriptions, people, scenes, rewards, and GM
+- a six-step Session Prep dashboard that turns a session goal, two or more
+  image-backed locations, sensory descriptions, structured people and factions,
+  dropped hazards and encounter actors, scenes, clues, rewards, consequences, and GM
   reminders into one linked, editable Foundry Journal, with an automatically
   saved draft that survives navigation and reopening the dashboard;
 - image-backed NPC prep cards with roles, motivations, and secrets, generated as
   linked portrait pages inside the finished session Journal;
-- a dedicated music-and-atmosphere prep step with reusable cues, Foundry Playlist
-  selection, direct audio files, mood, timing, and playback notes; audio cues are
+- a dedicated music-and-atmosphere prep step with reusable cues, specific song
+  selection inside a Foundry Playlist, direct audio files, mood, timing, and playback notes; audio cues are
   added as native Playlist tracks, with a session Playlist created automatically
-  when one is not available;
+  when one is not available; generated Journal controls play only the selected song;
+- a role-aware Loot & Treasure Generator for DPS, tank, healer, and battlefield-control
+  characters, using installed PF2e permanent/consumable treasure RollTables, gem and
+  art-object tables, and installed item compendia with direct links back to native items;
 - a responsive, wiki-style Journal workspace with a compact native page tree,
   clean rendered notes, and Foundry's visual rich-text editor integrated into
   a focused writing window;
