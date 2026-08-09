@@ -2107,7 +2107,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     const minLevel = Math.min(enteredMin, enteredMax);
     const maxLevel = Math.max(enteredMin, enteredMax);
     const role = root.querySelector('[name="lootRole"]')?.value || "dps";
-    const count = Math.max(1, Math.min(20, Number(root.querySelector('[name="lootCount"]')?.value) || 6));
+    const count = Math.max(1, Math.min(100, Number(root.querySelector('[name="lootCount"]')?.value) || 6));
     const permanent = Boolean(root.querySelector('[name="lootPermanent"]')?.checked);
     const consumable = Boolean(root.querySelector('[name="lootConsumable"]')?.checked);
     const gems = Boolean(root.querySelector('[name="lootGems"]')?.checked);

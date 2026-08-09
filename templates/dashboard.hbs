@@ -94,7 +94,7 @@
           <label>Minimum level<input type="number" name="lootMinLevel" min="0" max="30" value="{{lootMinLevel}}"></label>
           <label>Maximum level<input type="number" name="lootMaxLevel" min="0" max="30" value="{{lootMaxLevel}}"></label>
           <label>Party role<select name="lootRole">{{#each lootRoles}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-          <label>Number of results<input type="number" name="lootCount" min="1" max="20" value="{{lootCount}}"></label>
+          <label>Number of results<input type="number" name="lootCount" min="1" max="100" value="{{lootCount}}"></label>
           <fieldset><legend>Treasure sources</legend><label><input type="checkbox" name="lootPermanent" {{#if lootSources.permanent}}checked{{/if}}> Permanent items</label><label><input type="checkbox" name="lootConsumable" {{#if lootSources.consumable}}checked{{/if}}> Consumables</label><label><input type="checkbox" name="lootGems" {{#if lootSources.gems}}checked{{/if}}> Precious stones</label><label><input type="checkbox" name="lootArt" {{#if lootSources.art}}checked{{/if}}> Art objects</label></fieldset>
           <button data-action="generateLoot"><i class="fa-solid fa-dice"></i> Generate treasure</button>
         </div>
