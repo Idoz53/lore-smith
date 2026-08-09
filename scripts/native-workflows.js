@@ -3135,24 +3135,6 @@ Hooks.on("updateActor", (actor, changed) => {
   queueMicrotask(() => lsRecalculateLinkedCreatureEntries(actor, level).catch((error) => console.error("Lore Smith | Failed to rescale linked creature entries", error)));
 });
 
-Hooks.on("renderJournalSheet", (app, html) => {
-  lsEnhanceNativeJournal(app, html);
-});
-Hooks.on("renderJournalPageSheet", (app, html) => lsEnhanceJournalPageEditor(app, html));
-Hooks.on("renderJournalEntryPageSheet", (app, html) => lsEnhanceJournalPageEditor(app, html));
-const lsCloseJournalPageEditor = (app) => {
-  app._loreSmithWikiController?.disconnect();
-  delete app._loreSmithWikiController;
-};
-Hooks.on("closeJournalPageSheet", lsCloseJournalPageEditor);
-Hooks.on("closeJournalEntryPageSheet", lsCloseJournalPageEditor);
-
-Hooks.on("closeJournalSheet", (app) => {
-  app._loreSmithJournalObserver?.disconnect();
-  delete app._loreSmithJournalObserver;
-  lsRefreshJournalWikiHighlights();
-});
-
 Hooks.on("renderApplicationV2", (app, html) => {
   const document = app.document ?? app.object ?? app.actor ?? app.item;
   if (document?.documentName === "Actor" && document.type === "npc") {
@@ -3169,16 +3151,8 @@ Hooks.on("renderApplicationV2", (app, html) => {
       title: "Open Lore Smith Item Builder",
       onClick: () => new LoreSmithItemBuilder(document).render(true),
     });
-  } else if (document?.documentName === "JournalEntry") {
-    lsEnhanceNativeJournal(app, html);
-  } else if (document?.documentName === "JournalEntryPage") {
-    lsEnhanceJournalPageEditor(app, html);
   }
   if (/CombatTracker/i.test(app.constructor?.name ?? "")) lsAddCombatTrackerButtons(app, html);
-});
-
-Hooks.on("closeApplicationV2", (app) => {
-  lsCloseJournalPageEditor(app);
 });
 
 Hooks.once("ready", async () => {

@@ -24,9 +24,8 @@ The module provides:
   characters, with minimum/maximum item levels, family-level duplicate removal, strict
   mechanical role matching, installed PF2e permanent/consumable treasure RollTables,
   gem and art-object tables, and direct links back to native compendium items;
-- a responsive, wiki-style Journal workspace with a compact native page tree,
-  clean rendered notes, and Foundry's visual rich-text editor integrated into
-  a focused writing window;
+- standard Foundry Journal sheets and page editors, without replacing or
+  intercepting Foundry's native Journal interface;
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
 - a seven-step creature builder with editable GM Core attribute, perception,
   defense, save, and skill benchmarks; searchable PF2e trait pickers for
@@ -86,17 +85,9 @@ The module provides:
   list, including its enriched PF2e description, traits, action cost, source
   pack, and source creature before it is added;
 - GM Core level benchmark menus for creature statistics;
-- native Foundry Journal documents, page permissions, sharing, Show Players,
-  images, tables, document links, and rendered read view; no Obsidian install,
-  web service, browser extension, or other application is required;
-- the Journal edit button opens a normal visual editor built on Foundry's own
-  ProseMirror foundation. Formatting is displayed while writing; users never
-  have to edit Markdown or use an IDE-like interface;
-- editor wiki links are first-class: typing
-  `[[` supplies the closing brackets and opens searchable page autocomplete;
-  use the mouse wheel, arrow keys, Enter, or Tab to choose a page. After saving,
-  completed links display as clean blue note names and open or create pages in
-  the same Journal when clicked;
+- Session Prep creates ordinary Foundry Journal documents whose pages use the
+  system's normal permissions, sharing, Show Players, images, tables, document
+  links, read view, and editor;
 - side-by-side creature and item source previews before copying a compendium entry.
 - PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
   separately from the randomized character victory estimate.

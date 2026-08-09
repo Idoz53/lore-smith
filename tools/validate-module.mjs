@@ -16,7 +16,6 @@ const templateFiles = [
   "templates/creature-builder.hbs",
   "templates/item-builder.hbs",
   "templates/live-combat.hbs",
-  "templates/journal-editor.hbs",
 ];
 
 for (const relativePath of [...manifest.esmodules, ...manifest.styles, ...templateFiles]) {
@@ -29,27 +28,11 @@ const template = await readFile(resolve(root, "templates/dashboard.hbs"), "utf8"
 const creatureTemplate = await readFile(resolve(root, "templates/creature-builder.hbs"), "utf8");
 const itemTemplate = await readFile(resolve(root, "templates/item-builder.hbs"), "utf8");
 const liveTemplate = await readFile(resolve(root, "templates/live-combat.hbs"), "utf8");
-if (nativeScript.includes("lsMountAlwaysEditableJournalPages")) {
-  throw new Error("Lore Smith must not mount an always-editing Journal page.");
-}
-const journalScript = await readFile(resolve(root, "scripts/journal-editor.js"), "utf8");
-if (!nativeScript.includes("lsEnableJournalWikiLinksInEditor")
-  || !nativeScript.includes("lsEnhanceJournalPageEditor")
-  || !nativeScript.includes("lsOpenOrCreateJournalPage")
-  || !nativeScript.includes('data-action="editPage"')
-  || !nativeScript.includes("LoreSmithJournalEditor.open")
-  || !nativeScript.includes("lsJournalWikiDraftFromSelection")
-  || !nativeScript.includes("ls-journal-link-autocomplete")
-  || !nativeScript.includes("lore-smith-wiki-brackets")
-  || !nativeScript.includes("lore-smith-wiki-links")) {
-  throw new Error("Journal page-editor wiki-link handling is missing.");
-}
-if (!journalScript.includes("LoreSmithRichJournalEditor")
-  || !journalScript.includes("HTMLProseMirrorElement")
-  || !journalScript.includes("openJournalEditor")
-  || !nativeScript.includes("LoreSmithJournalWikiBridge")
-  || !nativeScript.includes("enableNativeWikiLinks")) {
-  throw new Error("The bundled rich-text Journal editor is incomplete.");
+if (manifest.esmodules.some((path) => path.includes("journal-editor"))
+  || nativeScript.includes('Hooks.on("renderJournalSheet"')
+  || nativeScript.includes('Hooks.on("renderJournalPageSheet"')
+  || nativeScript.includes('Hooks.on("renderJournalEntryPageSheet"')) {
+  throw new Error("Lore Smith must leave Foundry's Journal sheets and page editors unmodified.");
 }
 if (!script.includes("combatantInsideTemplate") || !script.includes("rollNativeDamage")) {
   throw new Error("Live area hit-testing or native PF2e damage controls are missing.");
