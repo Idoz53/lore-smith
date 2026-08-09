@@ -1063,6 +1063,7 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
       stop: LoreSmithLiveLog.stop,
       previousEntry: LoreSmithLiveLog.previousEntry,
       nextEntry: LoreSmithLiveLog.nextEntry,
+      resetBattlefieldView: LoreSmithLiveLog.resetBattlefieldView,
     },
   };
 
@@ -1079,6 +1080,11 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
   coverageHtml = "";
   timelineIndex = -1;
   followingLatest = true;
+  mapZoom = 1;
+  mapPan = { x: 0, y: 0 };
+  mapSceneKey = "";
+  currentBattlefieldScene = null;
+  battlefieldObserver = null;
 
   async _prepareContext(options) {
     return {
@@ -1117,9 +1123,92 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     const timeline = this.element?.querySelector('[name="timelineIndex"]');
     timeline?.addEventListener("input", () => this.seekTimeline(Number(timeline.value)));
     if (log && this.followingLatest) log.scrollTop = log.scrollHeight;
+    this.bindBattlefieldNavigation();
     this.renderBattlefield(this.entries[this.timelineIndex]?.snapshot, this.entries[this.timelineIndex]?.text);
     this.syncTimelineControls();
     this.bringToTop?.();
+  }
+
+  bindBattlefieldNavigation() {
+    const stage = this.element?.querySelector('[data-role="battlefield"]');
+    if (!stage) return;
+    this.battlefieldObserver?.disconnect?.();
+    this.battlefieldObserver = new ResizeObserver(() => this.applyBattlefieldTransform());
+    this.battlefieldObserver.observe(stage);
+    stage.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      if (!this.currentBattlefieldScene) return;
+      const rect = stage.getBoundingClientRect();
+      const scene = this.currentBattlefieldScene;
+      const fit = Math.min(rect.width / Math.max(1, scene.width), rect.height / Math.max(1, scene.height));
+      const previousScale = fit * this.mapZoom;
+      const previousBase = {
+        x: (rect.width - scene.width * previousScale) / 2 + this.mapPan.x,
+        y: (rect.height - scene.height * previousScale) / 2 + this.mapPan.y,
+      };
+      const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      const worldPoint = {
+        x: (pointer.x - previousBase.x) / Math.max(0.0001, previousScale),
+        y: (pointer.y - previousBase.y) / Math.max(0.0001, previousScale),
+      };
+      this.mapZoom = Math.max(0.5, Math.min(8, this.mapZoom * (event.deltaY < 0 ? 1.16 : 1 / 1.16)));
+      const nextScale = fit * this.mapZoom;
+      const centered = {
+        x: (rect.width - scene.width * nextScale) / 2,
+        y: (rect.height - scene.height * nextScale) / 2,
+      };
+      this.mapPan = {
+        x: pointer.x - worldPoint.x * nextScale - centered.x,
+        y: pointer.y - worldPoint.y * nextScale - centered.y,
+      };
+      this.applyBattlefieldTransform();
+    }, { passive: false });
+    let dragging = false;
+    let previous = null;
+    stage.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || event.target.closest("button")) return;
+      dragging = true;
+      previous = { x: event.clientX, y: event.clientY };
+      stage.setPointerCapture?.(event.pointerId);
+      stage.classList.add("panning");
+    });
+    stage.addEventListener("pointermove", (event) => {
+      if (!dragging || !previous) return;
+      this.mapPan.x += event.clientX - previous.x;
+      this.mapPan.y += event.clientY - previous.y;
+      previous = { x: event.clientX, y: event.clientY };
+      this.applyBattlefieldTransform();
+    });
+    const finishPan = (event) => {
+      if (!dragging) return;
+      dragging = false;
+      previous = null;
+      stage.releasePointerCapture?.(event.pointerId);
+      stage.classList.remove("panning");
+    };
+    stage.addEventListener("pointerup", finishPan);
+    stage.addEventListener("pointercancel", finishPan);
+  }
+
+  applyBattlefieldTransform() {
+    const stage = this.element?.querySelector('[data-role="battlefield"]');
+    const world = this.element?.querySelector('[data-role="battlefieldWorld"]');
+    const scene = this.currentBattlefieldScene;
+    if (!stage || !world || !scene) return;
+    const width = stage.clientWidth;
+    const height = stage.clientHeight;
+    if (!width || !height) return;
+    const fit = Math.min(width / Math.max(1, scene.width), height / Math.max(1, scene.height));
+    const scale = fit * this.mapZoom;
+    const left = (width - scene.width * scale) / 2 + this.mapPan.x;
+    const top = (height - scene.height * scale) / 2 + this.mapPan.y;
+    world.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
+  }
+
+  resetMapView() {
+    this.mapZoom = 1;
+    this.mapPan = { x: 0, y: 0 };
+    this.applyBattlefieldTransform();
   }
 
   async add(entry) {
@@ -1171,23 +1260,37 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
 
   renderBattlefield(snapshot, captionText = "") {
     const stage = this.element?.querySelector('[data-role="battlefield"]');
+    const world = this.element?.querySelector('[data-role="battlefieldWorld"]');
+    const background = this.element?.querySelector('[data-role="battlefieldBackground"]');
+    const grid = this.element?.querySelector('[data-role="battlefieldGrid"]');
     const layer = this.element?.querySelector('[data-role="battlefieldTokens"]');
+    const wallLayer = this.element?.querySelector('[data-role="battlefieldWalls"]');
     const overlayLayer = this.element?.querySelector('[data-role="battlefieldOverlay"]');
     const caption = this.element?.querySelector('[data-role="battlefieldCaption"]');
-    if (!stage || !layer || !overlayLayer || !snapshot?.scene) return;
+    if (!stage || !world || !background || !grid || !layer || !wallLayer || !overlayLayer || !snapshot?.scene) return;
     const scene = snapshot.scene;
+    const sceneKey = `${scene.id}:${scene.x}:${scene.y}:${scene.width}:${scene.height}:${scene.gridSize}`;
+    if (this.mapSceneKey !== sceneKey) {
+      this.mapSceneKey = sceneKey;
+      this.mapZoom = 1;
+      this.mapPan = { x: 0, y: 0 };
+    }
+    this.currentBattlefieldScene = scene;
     const safeBackground = String(scene.background ?? "").replace(/["\\]/g, (character) => `\\${character}`);
-    stage.style.aspectRatio = `${Math.max(1, scene.width)} / ${Math.max(1, scene.height)}`;
-    stage.style.backgroundImage = safeBackground ? `url("${safeBackground}")` : "none";
+    world.style.width = `${scene.width}px`;
+    world.style.height = `${scene.height}px`;
+    background.style.backgroundImage = safeBackground ? `url("${safeBackground}")` : "none";
+    grid.style.backgroundSize = `${Math.max(1, scene.gridSize)}px ${Math.max(1, scene.gridSize)}px`;
+    grid.hidden = Number(scene.gridType) === Number(CONST.GRID_TYPES.GRIDLESS);
     if (caption) caption.textContent = captionText || "Isolated combat state";
     layer.replaceChildren();
     for (const token of snapshot.tokens ?? []) {
       const node = document.createElement("article");
       node.className = `ls-live-token ${token.team}${token.defeated ? " defeated" : ""}`;
-      node.style.left = `${((token.x - scene.x) / scene.width) * 100}%`;
-      node.style.top = `${((token.y - scene.y) / scene.height) * 100}%`;
-      node.style.width = `${(token.width / scene.width) * 100}%`;
-      node.style.height = `${(token.height / scene.height) * 100}%`;
+      node.style.left = `${token.x - scene.x}px`;
+      node.style.top = `${token.y - scene.y}px`;
+      node.style.width = `${token.width}px`;
+      node.style.height = `${token.height}px`;
       node.title = `${token.name} — ${token.hp}/${token.maxHp} HP`;
       const portrait = document.createElement("img");
       portrait.src = token.image;
@@ -1205,26 +1308,45 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
       node.append(portrait, label, hp, details);
       layer.append(node);
     }
-    overlayLayer.replaceChildren();
-    overlayLayer.setAttribute("viewBox", `${scene.x} ${scene.y} ${scene.width} ${scene.height}`);
-    const area = snapshot.overlay;
-    if (!area) return;
     const namespace = "http://www.w3.org/2000/svg";
+    wallLayer.replaceChildren();
+    wallLayer.setAttribute("viewBox", `0 0 ${scene.width} ${scene.height}`);
+    for (const wall of scene.walls ?? []) {
+      const [x1, y1, x2, y2] = wall.coordinates;
+      const line = document.createElementNS(namespace, "line");
+      line.setAttribute("x1", Number(x1) - scene.x);
+      line.setAttribute("y1", Number(y1) - scene.y);
+      line.setAttribute("x2", Number(x2) - scene.x);
+      line.setAttribute("y2", Number(y2) - scene.y);
+      line.classList.add("ls-live-wall");
+      if (wall.door) line.classList.add("door");
+      if (wall.doorState === Number(CONST.WALL_DOOR_STATES?.OPEN ?? 1)) line.classList.add("open");
+      wallLayer.append(line);
+    }
+    overlayLayer.replaceChildren();
+    overlayLayer.setAttribute("viewBox", `0 0 ${scene.width} ${scene.height}`);
+    const area = snapshot.overlay;
+    if (!area) {
+      requestAnimationFrame(() => this.applyBattlefieldTransform());
+      return;
+    }
     const pixelsPerFoot = scene.gridSize / Math.max(1, scene.gridDistance);
     const length = Number(area.distance ?? 0) * pixelsPerFoot;
+    const areaX = Number(area.x) - scene.x;
+    const areaY = Number(area.y) - scene.y;
     let shape = null;
     if (area.t === "circle") {
       shape = document.createElementNS(namespace, "circle");
-      shape.setAttribute("cx", area.x);
-      shape.setAttribute("cy", area.y);
+      shape.setAttribute("cx", areaX);
+      shape.setAttribute("cy", areaY);
       shape.setAttribute("r", length);
     } else if (area.t === "cone") {
       const radians = Number(area.direction ?? 0) * Math.PI / 180;
       const half = Number(area.angle ?? 90) / 2 * Math.PI / 180;
       const points = [
-        [area.x, area.y],
-        [area.x + Math.cos(radians - half) * length, area.y + Math.sin(radians - half) * length],
-        [area.x + Math.cos(radians + half) * length, area.y + Math.sin(radians + half) * length],
+        [areaX, areaY],
+        [areaX + Math.cos(radians - half) * length, areaY + Math.sin(radians - half) * length],
+        [areaX + Math.cos(radians + half) * length, areaY + Math.sin(radians + half) * length],
       ];
       shape = document.createElementNS(namespace, "polygon");
       shape.setAttribute("points", points.map((point) => point.join(",")).join(" "));
@@ -1232,24 +1354,25 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
       const radians = Number(area.direction ?? 0) * Math.PI / 180;
       const halfWidth = Number(area.width ?? 5) * pixelsPerFoot / 2;
       const perpendicular = { x: -Math.sin(radians) * halfWidth, y: Math.cos(radians) * halfWidth };
-      const end = { x: area.x + Math.cos(radians) * length, y: area.y + Math.sin(radians) * length };
+      const end = { x: areaX + Math.cos(radians) * length, y: areaY + Math.sin(radians) * length };
       const points = [
-        [area.x + perpendicular.x, area.y + perpendicular.y],
+        [areaX + perpendicular.x, areaY + perpendicular.y],
         [end.x + perpendicular.x, end.y + perpendicular.y],
         [end.x - perpendicular.x, end.y - perpendicular.y],
-        [area.x - perpendicular.x, area.y - perpendicular.y],
+        [areaX - perpendicular.x, areaY - perpendicular.y],
       ];
       shape = document.createElementNS(namespace, "polygon");
       shape.setAttribute("points", points.map((point) => point.join(",")).join(" "));
     } else {
       shape = document.createElementNS(namespace, "rect");
-      shape.setAttribute("x", Number(area.x) - length / 2);
-      shape.setAttribute("y", Number(area.y) - length / 2);
+      shape.setAttribute("x", areaX - length / 2);
+      shape.setAttribute("y", areaY - length / 2);
       shape.setAttribute("width", length);
       shape.setAttribute("height", length);
     }
     shape.classList.add("ls-live-area-shape");
     overlayLayer.append(shape);
+    requestAnimationFrame(() => this.applyBattlefieldTransform());
   }
 
   async seekTimeline(index) {
@@ -1298,7 +1421,12 @@ class LoreSmithLiveLog extends LSHandlebarsMixin(LSApplicationV2) {
     await this.render({ force: true });
   }
 
+  static resetBattlefieldView() {
+    this.resetMapView();
+  }
+
   async close(options = {}) {
+    this.battlefieldObserver?.disconnect?.();
     if (this.running) {
       this.stopped = true;
       this.paused = false;
@@ -1442,8 +1570,15 @@ async function lsRunIterations() {
 
 async function lsRunLiveCombat() {
   await game.loreSmith.ensureDecisionFlows?.();
+  const viewportMargin = 8;
   const log = new LoreSmithLiveLog({
     id: `lore-smith-live-log-${foundry.utils.randomID(6)}`,
+    position: {
+      left: viewportMargin,
+      top: viewportMargin,
+      width: Math.max(320, window.innerWidth - viewportMargin * 2),
+      height: Math.max(360, window.innerHeight - viewportMargin * 2),
+    },
   });
   await log.render(true);
   await log.add({ text: "Preparing the current Combat Tracker encounter...", kind: "round" });

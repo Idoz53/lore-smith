@@ -813,6 +813,12 @@ function lsStepBlocked(token, fromTopLeft, toTopLeft) {
   return Boolean(token.checkCollision?.(destination, { origin, type: "move", mode: "any" }));
 }
 
+function lsLineBlocked(token, targetToken, fromTopLeft = { x: token.x, y: token.y }, type = "sight") {
+  if (!token || !targetToken) return true;
+  const origin = lsCenterFor(token, fromTopLeft);
+  return Boolean(token.checkCollision?.(targetToken.center, { origin, type, mode: "any" }));
+}
+
 function lsGridPath(token, {
   maxSteps,
   isGoal,
@@ -862,6 +868,10 @@ async function lsMoveTokenAlong(attacker, path) {
 
 function createIsolatedToken(document, world) {
   const original = document.object;
+  const sourcePosition = { x: Number(document.x ?? original?.x ?? 0), y: Number(document.y ?? original?.y ?? 0) };
+  const snappedPosition = canvas.grid.type === CONST.GRID_TYPES.GRIDLESS
+    ? sourcePosition
+    : canvas.grid.getTopLeftPoint(canvas.grid.getOffset({ x: sourcePosition.x + 1, y: sourcePosition.y + 1 }));
   const state = {
     id: document.id,
     actor: document.actor,
@@ -869,14 +879,21 @@ function createIsolatedToken(document, world) {
     name: document.name ?? document.actor?.name ?? "Combatant",
     hidden: false,
     texture: { src: document.texture?.src ?? document.actor?.img ?? "icons/svg/mystery-man.svg" },
-    x: Number(document.x ?? original?.x ?? 0),
-    y: Number(document.y ?? original?.y ?? 0),
+    x: Number(snappedPosition.x),
+    y: Number(snappedPosition.y),
     width: Number(document.width ?? 1),
     height: Number(document.height ?? 1),
     _loreSmithIsolated: true,
     async update(changes = {}) {
-      if (Number.isFinite(Number(changes.x))) state.x = Number(changes.x);
-      if (Number.isFinite(Number(changes.y))) state.y = Number(changes.y);
+      const requested = {
+        x: Number.isFinite(Number(changes.x)) ? Number(changes.x) : state.x,
+        y: Number.isFinite(Number(changes.y)) ? Number(changes.y) : state.y,
+      };
+      const position = canvas.grid.type === CONST.GRID_TYPES.GRIDLESS
+        ? requested
+        : canvas.grid.getTopLeftPoint(canvas.grid.getOffset({ x: requested.x + 1, y: requested.y + 1 }));
+      state.x = Number(position.x);
+      state.y = Number(position.y);
       world.onChange?.();
       return state;
     },
@@ -976,7 +993,10 @@ async function moveToward(attacker, target, desiredRange = 5) {
   const targetToken = target.token.object;
   if (!token || !targetToken) return { moved: false, reason: "missing token" };
   const distance = await sceneDistance(token, targetToken);
-  if (distance <= desiredRange) return { moved: false, reason: "already in range" };
+  const hasLineOfSight = (topLeft) => !lsLineBlocked(token, targetToken, topLeft, "sight");
+  if (distance <= desiredRange && hasLineOfSight({ x: token.x, y: token.y })) {
+    return { moved: false, reason: "already in range with line of sight" };
+  }
   const speed = numeric(attacker.actor.system?.attributes?.speed, 25);
   const maxSteps = Math.max(1, Math.floor(speed / Math.max(5, canvas.grid.distance)));
   const targetCenter = targetToken.center;
@@ -989,13 +1009,17 @@ async function moveToward(attacker, target, desiredRange = 5) {
   };
   const path = lsGridPath(token, {
     maxSteps,
-    isGoal: (topLeft) => distanceAt(topLeft) <= desiredRange,
-    score: (topLeft) => -distanceAt(topLeft),
+    isGoal: (topLeft) => distanceAt(topLeft) <= desiredRange && hasLineOfSight(topLeft),
+    score: (topLeft) => -distanceAt(topLeft) - (hasLineOfSight(topLeft) ? 0 : 10000),
     allowBest: true,
   });
-  const startingDistance = distanceAt({ x: token.x, y: token.y });
-  if (!path?.length || distanceAt(path.at(-1)) >= startingDistance) {
-    return { moved: false, reason: "no unoccupied grid square makes legal progress" };
+  const startingTopLeft = { x: token.x, y: token.y };
+  const startingScore = -distanceAt(startingTopLeft) - (hasLineOfSight(startingTopLeft) ? 0 : 10000);
+  const destinationScore = path?.length
+    ? -distanceAt(path.at(-1)) - (hasLineOfSight(path.at(-1)) ? 0 : 10000)
+    : Number.NEGATIVE_INFINITY;
+  if (!path?.length || destinationScore <= startingScore) {
+    return { moved: false, reason: "no unoccupied grid square within one Stride improves range and line of sight around the Scene walls" };
   }
   return await lsMoveTokenAlong(attacker, path)
     ? { moved: true, distance: distanceAt(path.at(-1)), path }
@@ -1067,6 +1091,7 @@ function liveStateSnapshot(combatants, overlay = null) {
   const dimensions = canvas.dimensions;
   return {
     scene: {
+      id: canvas.scene?.id ?? "",
       x: dimensions.sceneX,
       y: dimensions.sceneY,
       width: dimensions.sceneWidth,
@@ -1074,6 +1099,14 @@ function liveStateSnapshot(combatants, overlay = null) {
       background: canvas.scene?.background?.src ?? canvas.scene?.img ?? "",
       gridSize: canvas.grid.size,
       gridDistance: canvas.grid.distance,
+      gridType: canvas.grid.type,
+      walls: [...(canvas.scene?.walls ?? [])].map((wall) => ({
+        coordinates: [...(wall.c ?? [])],
+        door: Number(wall.door ?? 0),
+        doorState: Number(wall.ds ?? 0),
+        movement: Number(wall.move ?? wall.movement ?? 0),
+        sight: Number(wall.sight ?? 0),
+      })).filter((wall) => wall.coordinates.length === 4),
     },
     overlay,
     tokens: combatants.map((combatant) => ({
@@ -1259,6 +1292,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
           resolutionStage = "range and movement validation";
           const currentDistance = sceneDistance(attacker.token.object, target.token.object);
           const effectiveRange = effectiveActionRange(option);
+          const lineOfSightBlocked = lsLineBlocked(attacker.token.object, target.token.object, undefined, "sight");
           const positioning = String(attacker.profile.positioning ?? "").toLowerCase();
           const prefersRange = effectiveRange > 10 && (
             attacker.profile.roles.includes("caster") || attacker.profile.roles.includes("ranged")
@@ -1288,7 +1322,7 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
               continue;
             }
           }
-          if (currentDistance > effectiveRange) {
+          if (currentDistance > effectiveRange || lineOfSightBlocked) {
             if (["immobilized", "grabbed", "restrained"].some((slug) => attacker.conditions.has(slug))) {
               const preventing = ["restrained", "grabbed", "immobilized"].find((slug) => attacker.conditions.has(slug));
               actionsRemaining -= 1;
@@ -1299,7 +1333,8 @@ async function runLiveReplay(tokens, partyIds, enemyIds, {
             }
             const movement = await moveToward(attacker, target, effectiveRange);
             if (!movement.moved) {
-              await emit(`${attacker.name} cannot reach ${option.name}'s ${effectiveRange}-foot range from an unoccupied square with one Stride (${movement.reason}).`, "action");
+              const requirement = lineOfSightBlocked ? "range and an unobstructed line of sight" : "range";
+              await emit(`${attacker.name} cannot reach ${option.name}'s ${effectiveRange}-foot ${requirement} from an unoccupied square with one Stride (${movement.reason}).`, "action");
               break;
             }
             actionsRemaining -= 1;

@@ -46,6 +46,11 @@ The module provides:
   Combat Tracker, places real templates, leaves changed targets, or moves the GM camera;
 - the isolated popup displays the Scene background, animated combatant copies,
   HP bars, conditions, area templates, action captions, and the complete log;
+- the isolated replay opens at the available screen size, preserves the Scene's
+  true aspect ratio and pixel coordinates, snaps combatant copies to Foundry's
+  grid, supports wheel zoom and drag panning, and displays the real Scene walls;
+- replay pathfinding uses Foundry's native wall collision for movement and
+  requires an unobstructed sight line before resolving a targeted action;
 - native PF2e spellcasting-entry casts for prepared, flexible, spontaneous,
   innate, focus, at-will, and cantrip spells, using the same slot and use
   validation as the PF2e Cast control;
