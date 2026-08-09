@@ -24,6 +24,13 @@ The module provides:
   clean rendered notes, and Foundry's visual rich-text editor integrated into
   a focused writing window;
 - compendium-backed guided creature and item builders embedded in native PF2e sheets;
+- a seven-step creature builder with editable GM Core attribute, perception,
+  defense, save, and skill benchmarks; native searchable creature traits;
+  land, fly, swim, climb, and burrow Speeds; special senses; separate native
+  spellcasting; and scroll position preserved while filtering or editing;
+- modular creature entries separated into native PF2e Attacks,
+  Actions/Reactions, and Passives, including self, single-target, area, and
+  utility targeting modes;
 - a six-step, type-aware item workshop for native weapons, armor, shields,
   consumables, ammunition, equipment, and other PF2e item documents;
 - any number of named item activations rendered as native PF2e stat blocks with

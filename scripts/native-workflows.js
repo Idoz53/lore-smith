@@ -21,25 +21,50 @@ function lsSplitTraits(value) {
   return [...new Set(String(value ?? "").split(",").map((trait) => trait.trim().toLowerCase()).filter(Boolean))];
 }
 
+function lsParseTagify(value) {
+  try {
+    const parsed = JSON.parse(String(value ?? "[]"));
+    return [...new Set((Array.isArray(parsed) ? parsed : []).map((tag) => tag.id ?? tag.value).filter(Boolean))];
+  } catch {
+    return lsSplitTraits(value);
+  }
+}
+
 function lsBenchmarks(level) {
-  const named = (names, values) => names.map((label, index) => ({ label, value: values[index] }));
+  const named = (names, values) => names.map((label, index) => ({ label, value: values[index] })).filter((entry) => entry.value != null);
   const hp = creatureTableRow("hitPoints", level);
+  const skill = creatureTableRow("skills", level);
   return {
+    attributes: named(["Extreme", "High", "Moderate", "Low"], creatureTableRow("attributes", level)),
     ac: named(["Extreme", "High", "Moderate", "Low"], creatureTableRow("armorClass", level)),
     hp: ["High", "Moderate", "Low"].map((label, index) => ({ label: `${label} ${hp[index][0]}–${hp[index][1]}`, value: Math.round((hp[index][0] + hp[index][1]) / 2), range: hp[index] })),
     perception: named(["Extreme", "High", "Moderate", "Low", "Terrible"], creatureTableRow("perception", level)),
     saves: named(["Extreme", "High", "Moderate", "Low", "Terrible"], creatureTableRow("saves", level)),
+    skills: [
+      ...named(["Extreme", "High", "Moderate"], skill.slice(0, 3)),
+      { label: `Low (${skill[3][0]}–${skill[3][1]})`, value: Math.round((skill[3][0] + skill[3][1]) / 2) },
+    ],
   };
 }
 
+const LS_SPEED_TYPES = [["land", "Land / walk"], ["fly", "Fly"], ["swim", "Swim"], ["climb", "Climb"], ["burrow", "Burrow"]];
+const LS_SENSE_TYPES = [
+  ["darkvision", "Darkvision", "precise"], ["greater-darkvision", "Greater darkvision", "precise"],
+  ["low-light-vision", "Low-light vision", "precise"], ["scent", "Scent", "imprecise"],
+  ["tremorsense", "Tremorsense", "imprecise"], ["echolocation", "Echolocation", "precise"],
+  ["lifesense", "Lifesense", "imprecise"], ["motionsense", "Motionsense", "imprecise"],
+  ["thoughtsense", "Thoughtsense", "imprecise"], ["wavesense", "Wavesense", "imprecise"],
+  ["see-invisibility", "See invisibility", "precise"], ["truesight", "Truesight", "precise"],
+];
+
 const LS_CREATURE_ROADMAPS = {
-  brute: { label: "Brute", description: "Tough and forceful: high HP and Fortitude, but weaker AC, Reflex, Will, and Perception.", stats: { ac: "moderate", hp: "high", perception: "low", fortitude: "high", reflex: "low", will: "low", speed: 25 } },
-  magicalStriker: { label: "Magical Striker", description: "A weapon threat backed by a smaller magical toolkit and a moderate-to-high spell DC.", stats: { ac: "moderate", hp: "moderate", perception: "moderate", fortitude: "moderate", reflex: "moderate", will: "high", speed: 25 } },
-  skillParagon: { label: "Skill Paragon", description: "Excels at several skills, with one or two signature extreme skills and a skill-driven combat trick.", stats: { ac: "moderate", hp: "moderate", perception: "high", fortitude: "low", reflex: "high", will: "moderate", speed: 25 } },
-  skirmisher: { label: "Skirmisher", description: "A mobile combatant with high Reflex, a faster Speed, and weaker Fortitude.", stats: { ac: "moderate", hp: "moderate", perception: "moderate", fortitude: "low", reflex: "high", will: "moderate", speed: 35 } },
-  sniper: { label: "Sniper", description: "A perceptive ranged threat with strong accuracy, low HP, and a deliberately weaker melee option.", stats: { ac: "moderate", hp: "low", perception: "high", fortitude: "low", reflex: "high", will: "moderate", speed: 25 } },
-  soldier: { label: "Soldier", description: "A durable frontliner with high AC, Fortitude, attack accuracy, and tactical reactions.", stats: { ac: "high", hp: "moderate", perception: "moderate", fortitude: "high", reflex: "moderate", will: "low", speed: 25 } },
-  spellcaster: { label: "Spellcaster", description: "A fragile magical specialist with high Will and spell DCs, but low HP, Fortitude, and weapon offense.", stats: { ac: "low", hp: "low", perception: "moderate", fortitude: "low", reflex: "moderate", will: "high", speed: 25 } },
+  brute: { label: "Brute", description: "Tough and forceful: high HP and Fortitude, but weaker AC, Reflex, Will, and Perception.", stats: { ac: "moderate", hp: "high", perception: "low", fortitude: "high", reflex: "low", will: "low", speed: 25, str: "high", dex: "low", con: "high", int: "low", wis: "moderate", cha: "low" } },
+  magicalStriker: { label: "Magical Striker", description: "A weapon threat backed by a smaller magical toolkit and a moderate-to-high spell DC.", stats: { ac: "moderate", hp: "moderate", perception: "moderate", fortitude: "moderate", reflex: "moderate", will: "high", speed: 25, str: "high", dex: "moderate", con: "moderate", int: "high", wis: "moderate", cha: "moderate" } },
+  skillParagon: { label: "Skill Paragon", description: "Excels at several skills, with one or two signature extreme skills and a skill-driven combat trick.", stats: { ac: "moderate", hp: "moderate", perception: "high", fortitude: "low", reflex: "high", will: "moderate", speed: 25, str: "moderate", dex: "high", con: "low", int: "high", wis: "moderate", cha: "moderate" } },
+  skirmisher: { label: "Skirmisher", description: "A mobile combatant with high Reflex, a faster Speed, and weaker Fortitude.", stats: { ac: "moderate", hp: "moderate", perception: "moderate", fortitude: "low", reflex: "high", will: "moderate", speed: 35, str: "moderate", dex: "high", con: "low", int: "moderate", wis: "moderate", cha: "low" } },
+  sniper: { label: "Sniper", description: "A perceptive ranged threat with strong accuracy, low HP, and a deliberately weaker melee option.", stats: { ac: "moderate", hp: "low", perception: "high", fortitude: "low", reflex: "high", will: "moderate", speed: 25, str: "low", dex: "high", con: "low", int: "moderate", wis: "high", cha: "moderate" } },
+  soldier: { label: "Soldier", description: "A durable frontliner with high AC, Fortitude, attack accuracy, and tactical reactions.", stats: { ac: "high", hp: "moderate", perception: "moderate", fortitude: "high", reflex: "moderate", will: "low", speed: 25, str: "high", dex: "moderate", con: "high", int: "low", wis: "moderate", cha: "low" } },
+  spellcaster: { label: "Spellcaster", description: "A fragile magical specialist with high Will and spell DCs, but low HP, Fortitude, and weapon offense.", stats: { ac: "low", hp: "low", perception: "moderate", fortitude: "low", reflex: "moderate", will: "high", speed: 25, str: "low", dex: "moderate", con: "low", int: "high", wis: "high", cha: "high" } },
 };
 
 function lsCreatureConcept(actor) {
@@ -188,12 +213,13 @@ function lsAbilityDescription(link, level) {
   const condition = link.condition ? ` On the specified result, it gains <strong>${lsEscapeHtml(link.condition)}</strong>${link.conditionValue ? ` ${Number(link.conditionValue)}` : ""}.` : "";
   const area = hasArea ? `<p><strong>Area</strong> ${Number(link.areaDistance) || 5}-foot ${lsEscapeHtml(link.areaShape ?? "burst")} ${template}</p>` : "";
   const range = link.delivery === "target" && Number(link.range) > 0 ? `<p><strong>Range</strong> ${Number(link.range)} feet</p>` : "";
+  const target = link.delivery === "self" ? "<p><strong>Targets</strong> Self</p>" : "";
   const defense = hasSave ? `<p><strong>Defense</strong> basic ${lsEscapeHtml(save)} ${check}</p>` : "";
   const defaultEffect = formula
     ? `${hasArea ? "Creatures in the area" : "The target"} take the listed damage.`
     : "Apply the listed effect.";
   const effect = link.effectText ? lsEscapeHtml(link.effectText) : defaultEffect;
-  return `${requirements}${trigger}${range}${area}${defense}<p><strong>Effect</strong> ${effect} ${damage}${condition}</p>${duration}`;
+  return `${requirements}${trigger}${range}${target}${area}${defense}<p><strong>Effect</strong> ${effect} ${damage}${condition}</p>${duration}`;
 }
 
 function lsAbilityActionData(usage, actions) {
@@ -499,10 +525,18 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       applyRoadmap: LoreSmithCreatureBuilder.applyRoadmap,
       createLinkedStrike: LoreSmithCreatureBuilder.createLinkedStrike,
       createLinkedAbility: LoreSmithCreatureBuilder.createLinkedAbility,
+      createLinkedPassive: LoreSmithCreatureBuilder.createLinkedPassive,
       recalculateLinked: LoreSmithCreatureBuilder.recalculateLinked,
       toggleLinkedScaling: LoreSmithCreatureBuilder.toggleLinkedScaling,
       addTrait: LoreSmithCreatureBuilder.addTrait,
       removeTrait: LoreSmithCreatureBuilder.removeTrait,
+      addSkill: LoreSmithCreatureBuilder.addSkill,
+      removeSkill: LoreSmithCreatureBuilder.removeSkill,
+      addSpeed: LoreSmithCreatureBuilder.addSpeed,
+      removeSpeed: LoreSmithCreatureBuilder.removeSpeed,
+      addSense: LoreSmithCreatureBuilder.addSense,
+      removeSense: LoreSmithCreatureBuilder.removeSense,
+      createSpellcastingEntry: LoreSmithCreatureBuilder.createSpellcastingEntry,
       goToStep: LoreSmithCreatureBuilder.goToStep,
       searchContent: LoreSmithCreatureBuilder.searchContent,
       previewContent: LoreSmithCreatureBuilder.previewContent,
@@ -533,19 +567,32 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   contentType = "";
   contentGlossaryOnly = false;
   contentScrollTop = 0;
+  builderScrollTop = 0;
+  resetBuilderScroll = false;
+  loadedContentStep = null;
+  spellcastingEntryId = "";
   sourceResults = [];
   sourcePreview = null;
   contentPreview = null;
   contentResults = [];
 
   async _prepareContext(options) {
+    const oldViewport = this.element?.querySelector?.(".ls-builder-body") ?? this.element?.closest?.(".window-content");
+    if (this.resetBuilderScroll) {
+      this.builderScrollTop = 0;
+      this.resetBuilderScroll = false;
+    } else if (oldViewport) this.builderScrollTop = oldViewport.scrollTop;
     if (this.step === 0 && !this.sourcesLoaded) await this.loadSources();
-    if (this.step === 4 && !this.contentResults.length) {
+    if ([4, 5].includes(this.step) && this.loadedContentStep !== this.step) {
+      this.contentQuery = "";
+      this.contentType = this.step === 5 ? "spell" : "";
+      this.contentGlossaryOnly = false;
       this.contentResults = await lsSearchCreatureContent({
-        types: ["action", "feat", "melee", "spell", "effect"],
+        types: this.step === 5 ? ["spell"] : ["action", "feat", "melee", "effect"],
         limit: 250,
       });
       if (this.contentResults[0]) this.contentPreview = await lsBuildContentPreview(this.contentResults[0].uuid);
+      this.loadedContentStep = this.step;
     }
     const actor = this.actor;
     const system = actor.system;
@@ -555,6 +602,31 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     const benchmarkRows = lsBenchmarks(level);
     const damageWorkshop = lsStrikeWorkshop(level);
     const markSelected = (rows, value) => rows.map((row) => ({ ...row, selected: Number(row.value) === Number(value) }));
+    const traitChoices = Object.entries(CONFIG.PF2E.creatureTraits ?? {}).map(([value, label]) => ({ value, label: game.i18n.localize(label) })).sort((a, b) => a.label.localeCompare(b.label));
+    const existingSkills = system.skills ?? {};
+    const skillConfig = CONFIG.PF2E.skills ?? {};
+    const skillRows = Object.entries(existingSkills).map(([slug, skill]) => ({
+      slug,
+      label: game.i18n.localize(skillConfig[slug]?.label ?? skillConfig[slug] ?? slug),
+      value: lsNumber(skill.base, 0),
+      benchmarks: markSelected(benchmarkRows.skills, lsNumber(skill.base, 0)),
+    })).sort((a, b) => a.label.localeCompare(b.label));
+    const speedRows = [
+      { type: "land", label: "Land / walk", value: lsNumber(system.attributes?.speed, 25) },
+      ...(system.attributes?.speed?.otherSpeeds ?? []).map((speed) => ({ type: speed.type, label: LS_SPEED_TYPES.find(([value]) => value === speed.type)?.[1] ?? speed.type, value: lsNumber(speed.value, 0) })),
+    ];
+    const senseRows = (system.perception?.senses ?? []).map((sense, index) => ({
+      index, type: sense.type, label: LS_SENSE_TYPES.find(([value]) => value === sense.type)?.[1] ?? sense.type,
+      acuity: sense.acuity ?? "imprecise", range: sense.range ?? "",
+    }));
+    const configuredSenses = Object.entries(CONFIG.PF2E.senses ?? {}).map(([value, data]) => ({
+      value, label: game.i18n.localize(data?.label ?? data ?? value), acuity: data?.acuity ?? LS_SENSE_TYPES.find(([slug]) => slug === value)?.[2] ?? "imprecise",
+    }));
+    const senseTypeOptions = configuredSenses.length
+      ? configuredSenses.sort((a, b) => a.label.localeCompare(b.label))
+      : LS_SENSE_TYPES.map(([value, label, acuity]) => ({ value, label, acuity }));
+    const spellEntries = actor.itemTypes?.spellcastingEntry ?? actor.items.filter((item) => item.type === "spellcastingEntry");
+    if (!this.spellcastingEntryId && spellEntries[0]) this.spellcastingEntryId = spellEntries[0].id;
     return {
       ...await super._prepareContext(options),
       actor: {
@@ -570,11 +642,17 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         ac: lsNumber(system.attributes?.ac, 10),
         hp: lsNumber(system.attributes?.hp?.max, 1),
         perception: lsNumber(system.perception, 0),
+        abilities: Object.fromEntries(["str", "dex", "con", "int", "wis", "cha"].map((ability) => [ability, lsNumber(system.abilities?.[ability], 0)])),
         fortitude: lsNumber(system.saves?.fortitude, 0),
         reflex: lsNumber(system.saves?.reflex, 0),
         will: lsNumber(system.saves?.will, 0),
         speed: lsNumber(system.attributes?.speed, 25),
-        items: actor.items.map((item) => ({ id: item.id, name: item.name, img: item.img, type: item.type })),
+        speeds: speedRows,
+        senses: senseRows,
+        skills: skillRows,
+        items: actor.items.filter((item) => !["spellcastingEntry"].includes(item.type)).map((item) => ({ id: item.id, name: item.name, img: item.img, type: item.type })),
+        actionItems: actor.items.filter((item) => ["action", "feat", "melee", "effect"].includes(item.type)).map((item) => ({ id: item.id, name: item.name, img: item.img, type: item.type })),
+        spellItems: actor.items.filter((item) => item.type === "spell").map((item) => ({ id: item.id, name: item.name, img: item.img, type: item.type })),
       },
       sourceQuery: this.sourceQuery,
       contentQuery: this.contentQuery,
@@ -596,11 +674,17 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         ["tiny", "Tiny"], ["sm", "Small"], ["med", "Medium"],
         ["lg", "Large"], ["huge", "Huge"], ["grg", "Gargantuan"],
       ].map(([value, label]) => ({ value, label, selected: value === actorSize })),
-      creatureTraitOptions: Object.entries(CONFIG.PF2E.creatureTraits ?? {}).map(([value, label]) => ({
-        value,
-        label: game.i18n.localize(label),
+      creatureTraitOptions: traitChoices.map(({ value, label }) => ({
+        value, label,
         selected: value === this.sourceTrait,
-      })).sort((left, right) => left.label.localeCompare(right.label)),
+      })),
+      traitWhitelist: traitChoices,
+      traitTagifyValue: lsTraits(actor).map((value) => ({ id: value, value, label: game.i18n.localize(CONFIG.PF2E.creatureTraits?.[value] ?? value) })),
+      skillOptions: Object.entries(skillConfig).filter(([slug]) => !(slug in existingSkills)).map(([value, data]) => ({ value, label: game.i18n.localize(data?.label ?? data ?? value) })).sort((a, b) => a.label.localeCompare(b.label)),
+      speedTypeOptions: LS_SPEED_TYPES.filter(([value]) => value !== "land" && !speedRows.some((speed) => speed.type === value)).map(([value, label]) => ({ value, label })),
+      senseTypeOptions,
+      senseAcuityOptions: [["precise", "Precise"], ["imprecise", "Imprecise"], ["vague", "Vague"]].map(([value, label]) => ({ value, label })),
+      spellcastingEntries: spellEntries.map((item) => ({ id: item.id, name: item.name, selected: item.id === this.spellcastingEntryId })),
       contentResults: this.contentResults.map((entry) => ({
         ...entry,
         selected: entry.uuid === this.contentPreview?.uuid,
@@ -623,6 +707,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         return { id: item.id, name: item.name, img: item.img, kind: link.kind, formula, attack, damageType: link.damageType, attackTier: LS_BENCHMARK_LABELS[link.attackTier] ?? "", damageTier: LS_BENCHMARK_LABELS[link.damageTier] ?? link.damageTier, autoScale: Boolean(link.autoScale), levelApplied: link.levelApplied };
       }).filter(Boolean),
       benchmarks: {
+        attributes: Object.fromEntries(["str", "dex", "con", "int", "wis", "cha"].map((ability) => [ability, markSelected(benchmarkRows.attributes, lsNumber(system.abilities?.[ability], 0))])),
         ac: markSelected(benchmarkRows.ac, lsNumber(system.attributes?.ac, 10)),
         hp: markSelected(benchmarkRows.hp, lsNumber(system.attributes?.hp?.max, 1)),
         perception: markSelected(benchmarkRows.perception, lsNumber(system.perception, 0)),
@@ -633,11 +718,10 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       contentType: this.contentType,
       contentGlossaryOnly: this.contentGlossaryOnly,
       contentTypes: [
-        { value: "", label: "All actions, abilities, and spells" },
-        { value: "spell", label: "Spells" },
+        { value: "", label: "All attacks, actions, and passives" },
         { value: "action", label: "Actions and abilities" },
-        { value: "feat", label: "Feats and passive abilities" },
-        { value: "melee", label: "NPC strikes" },
+        { value: "feat", label: "Passive abilities and feats" },
+        { value: "melee", label: "NPC attacks" },
         { value: "effect", label: "Effects and conditions" },
       ].map((type) => ({ ...type, selected: type.value === this.contentType })),
       step: this.step,
@@ -648,15 +732,20 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         identity: this.step === 2,
         defenses: this.step === 3,
         content: this.step === 4,
-        review: this.step === 5,
+        spells: this.step === 5,
+        review: this.step === 6,
       },
       canBack: this.step > 0,
-      canNext: this.step > 0 && this.step < 5,
+      canNext: this.step > 0 && this.step < 6,
     };
   }
 
   _onRender(context, options) {
     super._onRender(context, options);
+    requestAnimationFrame(() => {
+      const viewport = this.element?.querySelector?.(".ls-builder-body") ?? this.element?.closest?.(".window-content");
+      if (viewport) viewport.scrollTop = this.builderScrollTop;
+    });
     const contentList = this.element?.querySelector(".ls-content-columns .ls-builder-results");
     if (contentList) contentList.scrollTop = this.contentScrollTop;
     for (const select of this.element?.querySelectorAll("[data-benchmark-target]") ?? []) {
@@ -666,6 +755,18 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       });
     }
     const root = this.element;
+    const traitTags = root?.querySelector('tagify-tags[name="creatureTraits"]');
+    if (traitTags) {
+      const whitelist = context.traitWhitelist.map((trait) => ({ id: trait.value, value: trait.value, label: trait.label }));
+      traitTags.whitelist = whitelist;
+      traitTags.enforceWhitelist = true;
+      const nativeTagify = traitTags.tagify ?? traitTags._tagify;
+      if (nativeTagify?.settings) {
+        nativeTagify.settings.whitelist = whitelist;
+        nativeTagify.settings.enforceWhitelist = true;
+        nativeTagify.settings.dropdown = { ...(nativeTagify.settings.dropdown ?? {}), enabled: 0, maxItems: 100, searchKeys: ["label", "value"] };
+      }
+    }
     const field = (name) => root?.querySelector(`[name="${name}"]`);
     const setEnabled = (name, enabled) => {
       const input = field(name);
@@ -731,14 +832,27 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       await this.actor.setFlag(LS_MODULE_ID, "creatureConcept", conceptData);
     }
     if (this.step === 2) {
+      const traitField = root.querySelector('[name="creatureTraits"]');
       await this.actor.update({
         name: root.querySelector('[name="name"]')?.value.trim() || this.actor.name,
         "system.details.level.value": Math.max(-1, Math.min(24, lsNumber(root.querySelector('[name="level"]')?.value, 0))),
         "system.traits.size.value": root.querySelector('[name="size"]')?.value || "med",
+        ...(traitField ? { "system.traits.value": lsParseTagify(traitField.value) } : {}),
       });
     }
     if (this.step === 3) {
+      const otherSpeeds = [...root.querySelectorAll("[data-speed-type]")].filter((input) => input.dataset.speedType !== "land").map((input) => ({
+        type: input.dataset.speedType,
+        value: Math.max(0, lsNumber(input.value, 0)),
+      })).filter((speed) => speed.value > 0);
+      const senses = [...root.querySelectorAll("[data-sense-row]")].map((row) => ({
+        type: row.dataset.senseType,
+        acuity: row.querySelector('[data-sense-acuity]')?.value || "imprecise",
+        range: row.querySelector('[data-sense-range]')?.value === "" ? null : Math.max(0, lsNumber(row.querySelector('[data-sense-range]')?.value, 0)),
+      }));
+      const skillUpdates = Object.fromEntries([...root.querySelectorAll("[data-skill-slug]")].map((input) => [`system.skills.${input.dataset.skillSlug}.base`, lsNumber(input.value, 0)]));
       await this.actor.update({
+        ...Object.fromEntries(["str", "dex", "con", "int", "wis", "cha"].map((ability) => [`system.abilities.${ability}.mod`, lsNumber(root.querySelector(`[name="${ability}"]`)?.value, 0)])),
         "system.attributes.ac.value": lsNumber(root.querySelector('[name="ac"]')?.value, 10),
         "system.attributes.hp.max": Math.max(1, lsNumber(root.querySelector('[name="hp"]')?.value, 1)),
         "system.attributes.hp.value": Math.max(1, lsNumber(root.querySelector('[name="hp"]')?.value, 1)),
@@ -746,7 +860,10 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         "system.saves.fortitude.value": lsNumber(root.querySelector('[name="fortitude"]')?.value, 0),
         "system.saves.reflex.value": lsNumber(root.querySelector('[name="reflex"]')?.value, 0),
         "system.saves.will.value": lsNumber(root.querySelector('[name="will"]')?.value, 0),
-        "system.attributes.speed.value": Math.max(0, lsNumber(root.querySelector('[name="speed"]')?.value, 25)),
+        "system.attributes.speed.value": Math.max(0, lsNumber(root.querySelector('[data-speed-type="land"]')?.value, 25)),
+        "system.attributes.speed.otherSpeeds": otherSpeeds,
+        "system.perception.senses": senses,
+        ...skillUpdates,
       });
     }
   }
@@ -754,18 +871,21 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static async previous() {
     await this.saveStep();
     this.step = Math.max(0, this.step - 1);
+    this.resetBuilderScroll = true;
     await this.render();
   }
 
   static async next() {
     await this.saveStep();
-    this.step = Math.min(5, this.step + 1);
+    this.step = Math.min(6, this.step + 1);
+    this.resetBuilderScroll = true;
     await this.render();
   }
 
   static async goToStep(_event, target) {
     await this.saveStep();
-    this.step = Math.max(0, Math.min(5, Number(target.dataset.step) || 0));
+    this.step = Math.max(0, Math.min(6, Number(target.dataset.step) || 0));
+    this.resetBuilderScroll = true;
     await this.render();
   }
 
@@ -849,6 +969,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       "system.saves.reflex.value": find("saves", stats.reflex),
       "system.saves.will.value": find("saves", stats.will),
       "system.attributes.speed.value": stats.speed,
+      ...Object.fromEntries(["str", "dex", "con", "int", "wis", "cha"].map((ability) => [`system.abilities.${ability}.mod`, find("attributes", stats[ability] ?? "moderate")])),
     });
     ui.notifications.info(`${roadmap.label} suggestions applied for level ${level}. Every value remains editable.`);
     await this.render();
@@ -867,6 +988,82 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static async removeTrait(_event, target) {
     const traits = lsTraits(this.actor).filter((trait) => trait !== target.dataset.trait);
     await this.actor.update({ "system.traits.value": traits });
+    await this.render();
+  }
+
+  static async addSkill() {
+    await this.saveStep();
+    const slug = this.element.querySelector('[name="skillToAdd"]')?.value;
+    if (!slug) return;
+    const moderate = lsBenchmarks(lsNumber(this.actor.system.details?.level, 0)).skills.find((entry) => entry.label === "Moderate")?.value ?? 0;
+    await this.actor.update({ [`system.skills.${slug}`]: { base: moderate, note: "", special: [] } });
+    await this.render();
+  }
+
+  static async removeSkill(_event, target) {
+    await this.saveStep();
+    await this.actor.update({ [`system.skills.-=${target.dataset.skill}`]: null });
+    await this.render();
+  }
+
+  static async addSpeed() {
+    await this.saveStep();
+    const type = this.element.querySelector('[name="speedTypeToAdd"]')?.value;
+    if (!type) return;
+    const otherSpeeds = foundry.utils.deepClone(this.actor.system.attributes?.speed?.otherSpeeds ?? []);
+    if (!otherSpeeds.some((speed) => speed.type === type)) otherSpeeds.push({ type, value: 25 });
+    await this.actor.update({ "system.attributes.speed.otherSpeeds": otherSpeeds });
+    await this.render();
+  }
+
+  static async removeSpeed(_event, target) {
+    await this.saveStep();
+    const otherSpeeds = (this.actor.system.attributes?.speed?.otherSpeeds ?? []).filter((speed) => speed.type !== target.dataset.speed);
+    await this.actor.update({ "system.attributes.speed.otherSpeeds": otherSpeeds });
+    await this.render();
+  }
+
+  static async addSense() {
+    await this.saveStep();
+    const type = this.element.querySelector('[name="senseTypeToAdd"]')?.value;
+    if (!type) return;
+    const definition = LS_SENSE_TYPES.find(([value]) => value === type);
+    const senses = foundry.utils.deepClone(this.actor.system.perception?.senses ?? []);
+    senses.push({ type, acuity: definition?.[2] ?? "imprecise", range: ["darkvision", "greater-darkvision", "low-light-vision", "see-invisibility", "truesight"].includes(type) ? null : 30 });
+    await this.actor.update({ "system.perception.senses": senses });
+    await this.render();
+  }
+
+  static async removeSense(_event, target) {
+    await this.saveStep();
+    const index = Number(target.dataset.index);
+    const senses = foundry.utils.deepClone(this.actor.system.perception?.senses ?? []);
+    senses.splice(index, 1);
+    await this.actor.update({ "system.perception.senses": senses });
+    await this.render();
+  }
+
+  static async createSpellcastingEntry() {
+    const root = this.element;
+    const level = lsNumber(this.actor.system.details?.level, 0);
+    const tier = root.querySelector('[name="spellDcTier"]')?.value ?? "high";
+    const values = creatureTableRow("spell", level);
+    const pair = tier === "extreme" ? [values[0], values[1]] : tier === "moderate" ? [values[4], values[5]] : [values[2], values[3]];
+    const dc = tier === "custom" ? lsNumber(root.querySelector('[name="spellCustomDc"]')?.value, pair[0]) : pair[0];
+    const attack = tier === "custom" ? lsNumber(root.querySelector('[name="spellCustomAttack"]')?.value, pair[1]) : pair[1];
+    const tradition = root.querySelector('[name="spellTradition"]')?.value || "arcane";
+    const prepared = root.querySelector('[name="spellPrepared"]')?.value || "innate";
+    const [entry] = await this.actor.createEmbeddedDocuments("Item", [{
+      name: root.querySelector('[name="spellEntryName"]')?.value.trim() || `${tradition.charAt(0).toUpperCase()}${tradition.slice(1)} Spellcasting`,
+      type: "spellcastingEntry",
+      system: {
+        ability: { value: root.querySelector('[name="spellAbility"]')?.value || "cha" },
+        spelldc: { value: attack, dc }, tradition: { value: tradition }, prepared: { value: prepared },
+        showSlotlessLevels: { value: true }, proficiency: { value: 1 }, autoHeightenLevel: { value: null },
+      },
+    }]);
+    this.spellcastingEntryId = entry?.id ?? "";
+    ui.notifications.info("Created a native PF2e spellcasting entry.");
     await this.render();
   }
 
@@ -962,6 +1159,46 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     await this.render();
   }
 
+  static async createLinkedPassive() {
+    const root = this.element;
+    const level = lsNumber(this.actor.system.details?.level, 0);
+    const damageTier = root.querySelector('[name="passiveDamageTier"]')?.value ?? "none";
+    const dcTier = root.querySelector('[name="passiveDcTier"]')?.value ?? "high";
+    const damageType = root.querySelector('[name="passiveDamageType"]')?.value || "untyped";
+    const customDamage = root.querySelector('[name="passiveCustomDamage"]')?.value.trim() ?? "";
+    const customDc = lsNumber(root.querySelector('[name="passiveCustomDc"]')?.value, 10);
+    if (damageTier === "custom" && !customDamage) return ui.notifications.warn("Enter a custom passive damage formula.");
+    const link = {
+      kind: "ability", damageTier, dcTier, customDamage, customDc, damageType,
+      usage: "passive", actions: null,
+      delivery: root.querySelector('[name="passiveDelivery"]')?.value || "self",
+      range: Math.max(0, lsNumber(root.querySelector('[name="passiveRange"]')?.value, 0)),
+      save: root.querySelector('[name="passiveSave"]')?.value || "none",
+      areaShape: root.querySelector('[name="passiveAreaShape"]')?.value || "emanation",
+      areaDistance: Math.max(5, lsNumber(root.querySelector('[name="passiveAreaDistance"]')?.value, 5)),
+      requirements: root.querySelector('[name="passiveRequirements"]')?.value.trim() ?? "",
+      trigger: "", duration: root.querySelector('[name="passiveDuration"]')?.value.trim() ?? "",
+      effectText: root.querySelector('[name="passiveEffectText"]')?.value.trim() ?? "",
+      condition: root.querySelector('[name="passiveCondition"]')?.value ?? "",
+      conditionValue: Math.max(0, lsNumber(root.querySelector('[name="passiveConditionValue"]')?.value, 0)),
+      autoScale: Boolean(root.querySelector('[name="passiveAutoScale"]')?.checked), levelApplied: level,
+    };
+    const traits = lsSplitTraits(root.querySelector('[name="passiveTraits"]')?.value);
+    if (damageTier !== "none" && damageType !== "untyped" && !traits.includes(damageType)) traits.push(damageType);
+    await this.actor.createEmbeddedDocuments("Item", [{
+      name: root.querySelector('[name="passiveName"]')?.value.trim() || "New Passive",
+      type: "action",
+      img: "systems/pf2e/icons/actions/Passive.webp",
+      system: {
+        description: { value: lsAbilityDescription(link, level), gm: "" }, rules: [], slug: null,
+        traits: { value: traits, otherTags: [] }, actionType: { value: "passive" }, actions: { value: null }, category: null,
+      },
+      flags: { [LS_MODULE_ID]: { creatureDamageLink: link } },
+    }]);
+    ui.notifications.info("Created a native PF2e passive ability.");
+    await this.render();
+  }
+
   static async recalculateLinked() {
     await lsRecalculateLinkedCreatureEntries(this.actor, lsNumber(this.actor.system.details?.level, 0), { notify: true });
     await this.render();
@@ -979,11 +1216,12 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   static async searchContent() {
     this.contentQuery = this.element.querySelector('[name="contentQuery"]')?.value ?? "";
-    this.contentType = this.element.querySelector('[name="contentType"]')?.value ?? "";
+    this.contentType = this.step === 5 ? "spell" : this.element.querySelector('[name="contentType"]')?.value ?? "";
+    this.spellcastingEntryId = this.element.querySelector('[name="spellcastingEntry"]')?.value ?? this.spellcastingEntryId;
     this.contentGlossaryOnly = Boolean(this.element.querySelector('[name="contentGlossaryOnly"]')?.checked);
     this.contentResults = await lsSearchCreatureContent({
       query: this.contentQuery,
-      types: this.contentType ? [this.contentType] : ["action", "feat", "melee", "spell", "effect"],
+      types: this.step === 5 ? ["spell"] : this.contentType ? [this.contentType] : ["action", "feat", "melee", "effect"],
       limit: 250,
       bestiaryGlossaryOnly: this.contentGlossaryOnly,
     });
@@ -1007,6 +1245,11 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     if (!source) return ui.notifications.error("Could not load that PF2e compendium entry.");
     const data = source.toObject();
     delete data._id;
+    if (source.type === "spell") {
+      this.spellcastingEntryId = this.element.querySelector('[name="spellcastingEntry"]')?.value ?? this.spellcastingEntryId;
+      if (!this.spellcastingEntryId) return ui.notifications.warn("Create or choose a native spellcasting entry first.");
+      data.system.location = { ...(data.system.location ?? {}), value: this.spellcastingEntryId };
+    }
     await this.actor.createEmbeddedDocuments("Item", [data]);
     ui.notifications.info(`Added ${source.name} to ${this.actor.name}.`);
     await this.render();

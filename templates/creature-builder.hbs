@@ -1,16 +1,17 @@
 <section class="ls-builder">
   <header class="ls-builder-heading">
-    <div><span>PF2e native actor</span><h1>Creature Builder</h1><p>Step {{stepNumber}} of 6</p></div>
+    <div><span>PF2e native actor</span><h1>Creature Builder</h1><p>Step {{stepNumber}} of 7</p></div>
     <div class="ls-builder-actor"><img src="{{actor.img}}"><strong>{{actor.name}}</strong><small>Level {{actor.level}} NPC</small></div>
   </header>
 
-  <div class="ls-step-track six">
+  <div class="ls-step-track seven">
     <button type="button" data-action="goToStep" data-step="0" class="{{#if steps.source}}active{{/if}}">1. Starting point</button>
     <button type="button" data-action="goToStep" data-step="1" class="{{#if steps.concept}}active{{/if}}">2. Concept & role</button>
     <button type="button" data-action="goToStep" data-step="2" class="{{#if steps.identity}}active{{/if}}">3. Identity</button>
     <button type="button" data-action="goToStep" data-step="3" class="{{#if steps.defenses}}active{{/if}}">4. Statistics</button>
-    <button type="button" data-action="goToStep" data-step="4" class="{{#if steps.content}}active{{/if}}">5. Actions & spells</button>
-    <button type="button" data-action="goToStep" data-step="5" class="{{#if steps.review}}active{{/if}}">6. Finish</button>
+    <button type="button" data-action="goToStep" data-step="4" class="{{#if steps.content}}active{{/if}}">5. Attacks & abilities</button>
+    <button type="button" data-action="goToStep" data-step="5" class="{{#if steps.spells}}active{{/if}}">6. Spells</button>
+    <button type="button" data-action="goToStep" data-step="6" class="{{#if steps.review}}active{{/if}}">7. Finish</button>
   </div>
 
   <main class="ls-builder-body {{#unless steps.source}}with-assistant{{/unless}}">
@@ -76,7 +77,7 @@
           {{#each roadmapOptions}}<article class="{{#if selected}}selected{{/if}}"><strong>{{label}}</strong><span>{{description}}</span></article>{{/each}}
         </div>
         <button type="button" data-action="applyRoadmap"><i class="fa-solid fa-wand-magic-sparkles"></i> Apply this road map's level-based suggestions</button>
-        <div class="ls-builder-tip"><i class="fa-solid fa-scale-balanced"></i><span>Applying a road map updates AC, HP, Perception, saves, and Speed. It never locks the actor or replaces its existing abilities.</span></div>
+        <div class="ls-builder-tip"><i class="fa-solid fa-scale-balanced"></i><span>Applying a road map gives one-time suggestions for attributes, AC, HP, Perception, saves, and Speed. Every field remains editable afterward.</span></div>
       </section>
     {{/if}}
 
@@ -88,10 +89,10 @@
           <label class="wide">Creature name<input name="name" value="{{actor.name}}"></label>
           <label>Level<select name="level">{{#each creatureLevels}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
           <label>Size<select name="size">{{#each sizeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-          <label class="wide">Add a creature trait
-            <span class="ls-inline-control"><select name="traitToAdd"><option value="">Choose a trait</option>{{#each creatureTraitOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button type="button" data-action="addTrait">Add</button></span>
+          <label class="wide">Creature traits
+            <tagify-tags class="tags paizo-style ls-native-traits" name="creatureTraits" value="{{json traitTagifyValue}}" placeholder="Search PF2e creature traits" />
+            <small>Foundry's native searchable trait control. Type to filter; press Enter to add.</small>
           </label>
-          <div class="ls-trait-chips wide">{{#each actor.traits}}<button type="button" class="ls-trait-chip" data-action="removeTrait" data-trait="{{value}}">{{label}} <i class="fa-solid fa-xmark"></i></button>{{else}}<span>No traits selected.</span>{{/each}}</div>
         </div>
       </section>
     {{/if}}
@@ -100,6 +101,16 @@
       <section class="ls-builder-step">
         <h2>Level-based statistics</h2>
         <p>Choose a GM Core benchmark or type a custom final value. The menus are recalculated from the creature level selected in the previous step.</p>
+        <h3>Attribute modifiers</h3>
+        <div class="ls-form-grid stats ls-six-stats">
+          <label>Strength<select data-benchmark-target="str"><option value="">Custom</option>{{#each benchmarks.attributes.str}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="str" type="number" value="{{actor.abilities.str}}"></label>
+          <label>Dexterity<select data-benchmark-target="dex"><option value="">Custom</option>{{#each benchmarks.attributes.dex}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="dex" type="number" value="{{actor.abilities.dex}}"></label>
+          <label>Constitution<select data-benchmark-target="con"><option value="">Custom</option>{{#each benchmarks.attributes.con}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="con" type="number" value="{{actor.abilities.con}}"></label>
+          <label>Intelligence<select data-benchmark-target="int"><option value="">Custom</option>{{#each benchmarks.attributes.int}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="int" type="number" value="{{actor.abilities.int}}"></label>
+          <label>Wisdom<select data-benchmark-target="wis"><option value="">Custom</option>{{#each benchmarks.attributes.wis}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="wis" type="number" value="{{actor.abilities.wis}}"></label>
+          <label>Charisma<select data-benchmark-target="cha"><option value="">Custom</option>{{#each benchmarks.attributes.cha}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="cha" type="number" value="{{actor.abilities.cha}}"></label>
+        </div>
+        <h3>Defenses and Perception</h3>
         <div class="ls-form-grid stats">
           <label>Armor Class<select data-benchmark-target="ac"><option value="">Custom</option>{{#each benchmarks.ac}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} ({{value}})</option>{{/each}}</select><input name="ac" type="number" value="{{actor.ac}}"></label>
           <label>Hit Points<select data-benchmark-target="hp"><option value="">Custom</option>{{#each benchmarks.hp}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} ({{value}})</option>{{/each}}</select><input name="hp" type="number" min="1" value="{{actor.hp}}"></label>
@@ -107,23 +118,37 @@
           <label>Fortitude<select data-benchmark-target="fortitude"><option value="">Custom</option>{{#each benchmarks.fortitude}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="fortitude" type="number" value="{{actor.fortitude}}"></label>
           <label>Reflex<select data-benchmark-target="reflex"><option value="">Custom</option>{{#each benchmarks.reflex}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="reflex" type="number" value="{{actor.reflex}}"></label>
           <label>Will<select data-benchmark-target="will"><option value="">Custom</option>{{#each benchmarks.will}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="will" type="number" value="{{actor.will}}"></label>
-          <label>Land Speed (feet)<input name="speed" type="number" min="0" step="5" value="{{actor.speed}}"></label>
         </div>
-        <div class="ls-builder-tip"><i class="fa-solid fa-circle-info"></i><span>The native NPC sheet remains available for special speeds, senses, languages, immunities, weaknesses, resistances, and detailed statistic notes.</span></div>
+        <h3>Skills</h3>
+        <div class="ls-inline-control"><select name="skillToAdd"><option value="">Choose a PF2e skill</option>{{#each skillOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button type="button" data-action="addSkill"><i class="fa-solid fa-plus"></i> Add skill</button></div>
+        <div class="ls-stat-rows">
+          {{#each actor.skills}}<article><strong>{{label}}</strong><select data-benchmark-target="skill.{{slug}}"><option value="">Custom</option>{{#each benchmarks}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="skill.{{slug}}" data-skill-slug="{{slug}}" type="number" value="{{value}}"><button type="button" class="danger" data-action="removeSkill" data-skill="{{slug}}"><i class="fa-solid fa-trash"></i></button></article>{{else}}<p>No trained skills yet. Add only the skills this creature is meant to use.</p>{{/each}}
+        </div>
+        <h3>Movement</h3>
+        <div class="ls-stat-rows">
+          {{#each actor.speeds}}<article><strong>{{label}}</strong><input type="number" min="0" step="5" value="{{value}}" data-speed-type="{{type}}"><span>feet</span>{{#unless (eq type "land")}}<button type="button" class="danger" data-action="removeSpeed" data-speed="{{type}}"><i class="fa-solid fa-trash"></i></button>{{/unless}}</article>{{/each}}
+        </div>
+        {{#if speedTypeOptions.length}}<div class="ls-inline-control"><select name="speedTypeToAdd"><option value="">Add another Speed type</option>{{#each speedTypeOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button type="button" data-action="addSpeed"><i class="fa-solid fa-plus"></i> Add Speed</button></div>{{/if}}
+        <h3>Special senses</h3>
+        <div class="ls-inline-control"><select name="senseTypeToAdd"><option value="">Choose a special sense</option>{{#each senseTypeOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button type="button" data-action="addSense"><i class="fa-solid fa-plus"></i> Add sense</button></div>
+        <div class="ls-stat-rows">
+          {{#each actor.senses}}<article data-sense-row data-sense-type="{{type}}"><strong>{{label}}</strong><select data-sense-acuity><option value="precise" {{#if (eq acuity "precise")}}selected{{/if}}>Precise</option><option value="imprecise" {{#if (eq acuity "imprecise")}}selected{{/if}}>Imprecise</option><option value="vague" {{#if (eq acuity "vague")}}selected{{/if}}>Vague</option></select><input data-sense-range type="number" min="0" step="5" value="{{range}}" placeholder="Unlimited"><span>feet</span><button type="button" class="danger" data-action="removeSense" data-index="{{index}}"><i class="fa-solid fa-trash"></i></button></article>{{else}}<p>No special senses selected.</p>{{/each}}
+        </div>
+        <div class="ls-builder-tip"><i class="fa-solid fa-circle-info"></i><span>Every number remains editable. GM Core road maps only provide starting suggestions; they never lock Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma, or skills.</span></div>
       </section>
     {{/if}}
 
     {{#if steps.content}}
       <section class="ls-builder-step">
-        <h2>Actions, abilities, strikes, and spells</h2>
-        <p>Search standalone PF2e entries and every action embedded in installed bestiary and NPC compendiums. Added entries keep their traits, action costs, inline rolls, spell data, and system automation.</p>
+        <h2>Attacks, actions & reactions, and passives</h2>
+        <p>These match the three sections on the native PF2e NPC sheet. Spells have their own builder step.</p>
         <section class="ls-damage-workshop">
           <header><div><span>Building Creatures tables</span><h3>Modular offense workshop</h3></div><button type="button" data-action="recalculateLinked"><i class="fa-solid fa-rotate"></i> Recalculate linked entries</button></header>
-          <p>Build native PF2e entries from independent modules. Only values linked to a benchmark change when the creature's level changes.</p>
+          <p>Build native PF2e attacks, actions/reactions, and passive abilities. Only benchmark-linked values change with creature level.</p>
           <details open>
-            <summary><i class="fa-solid fa-hand-fist"></i> Create a benchmark-linked Strike</summary>
+            <summary><i class="fa-solid fa-hand-fist"></i> Attacks</summary>
             <div class="ls-module-grid">
-              <label class="wide">Strike name<input name="strikeName" value="New Strike"></label>
+              <label class="wide">Attack name<input name="strikeName" value="New Attack"></label>
               <label>Attack benchmark<select name="strikeAttackTier">{{#each damageWorkshop.attackTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
               <label>Custom attack bonus<input name="strikeCustomAttack" type="number" placeholder="Used only for Custom"></label>
               <label>Damage benchmark<select name="strikeDamageTier">{{#each damageWorkshop.damageTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
@@ -134,16 +159,16 @@
               <label class="wide">Attack effects<input name="strikeAttackEffects" placeholder="Grab, Knockdown, poison name (comma separated)"></label>
               <div class="ls-module-subsection wide"><strong>Optional secondary damage module</strong><label>Formula<input name="strikeSecondaryDamage" placeholder="e.g. 1d6"></label><label>Damage type<select name="strikeSecondaryType">{{#each damageTypes}}<option value="{{value}}">{{label}}</option>{{/each}}</select></label></div>
               <label class="ls-check-label wide"><input name="strikeAutoScale" type="checkbox" checked> Automatically scale linked attack and damage benchmarks with creature level</label>
-              <button class="wide" type="button" data-action="createLinkedStrike"><i class="fa-solid fa-plus"></i> Create native PF2e Strike</button>
+              <button class="wide" type="button" data-action="createLinkedStrike"><i class="fa-solid fa-plus"></i> Create native PF2e attack</button>
             </div>
           </details>
           <details>
-            <summary><i class="fa-solid fa-burst"></i> Create a modular ability</summary>
+            <summary><i class="fa-solid fa-burst"></i> Actions & reactions</summary>
             <div class="ls-module-grid">
               <label class="wide">Ability name<input name="abilityName" value="New Ability"></label>
-              <label>Usage<select name="abilityUsage"><option value="action" selected>Action</option><option value="reaction">Reaction</option><option value="free">Free action</option><option value="passive">Passive</option></select></label>
+              <label>Usage<select name="abilityUsage"><option value="action" selected>Action</option><option value="reaction">Reaction</option><option value="free">Free action</option></select></label>
               <label>Actions<select name="abilityActions"><option value="1">One action</option><option value="2" selected>Two actions</option><option value="3">Three actions</option></select></label>
-              <label>Delivery<select name="abilityDelivery"><option value="target">One target</option><option value="area" selected>Area</option><option value="none">No target / utility</option></select></label>
+              <label>Targeting<select name="abilityDelivery"><option value="self">Self</option><option value="target">One target</option><option value="area" selected>Area</option><option value="none">No target / utility</option></select></label>
               <label>Range (feet)<input name="abilityRange" type="number" min="0" step="5" placeholder="For one target"></label>
               <label>Damage benchmark<select name="abilityDamageTier">{{#each damageWorkshop.areaTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
               <label>Custom damage formula<input name="abilityCustomDamage" placeholder="Used only for Custom"></label>
@@ -164,6 +189,30 @@
               <label class="wide">Effect text<textarea name="abilityEffectText" rows="3" placeholder="Describe what happens. Foundry save, damage, and template buttons are generated automatically."></textarea></label>
               <label class="ls-check-label wide"><input name="abilityAutoScale" type="checkbox" checked> Automatically scale the linked damage and DC with creature level</label>
               <button class="wide" type="button" data-action="createLinkedAbility"><i class="fa-solid fa-plus"></i> Create native PF2e ability</button>
+            </div>
+          </details>
+          <details>
+            <summary><i class="fa-solid fa-shield-halved"></i> Passives</summary>
+            <div class="ls-module-grid">
+              <label class="wide">Passive name<input name="passiveName" value="New Passive"></label>
+              <label>Targeting<select name="passiveDelivery"><option value="self" selected>Self</option><option value="target">One target</option><option value="area">Aura / area</option><option value="none">No target</option></select></label>
+              <label>Range (feet)<input name="passiveRange" type="number" min="0" step="5"></label>
+              <label>Damage benchmark<select name="passiveDamageTier">{{#each damageWorkshop.areaTiers}}<option value="{{value}}" {{#if (eq value "none")}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label>Custom damage formula<input name="passiveCustomDamage" placeholder="Used only for Custom"></label>
+              <label>Damage type<select name="passiveDamageType">{{#each damageTypes}}<option value="{{value}}">{{label}}</option>{{/each}}</select></label>
+              <label>Defense<select name="passiveSave"><option value="none" selected>No saving throw</option><option value="reflex">Basic Reflex</option><option value="fortitude">Basic Fortitude</option><option value="will">Basic Will</option></select></label>
+              <label>DC benchmark<select name="passiveDcTier">{{#each damageWorkshop.dcTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label>Custom DC<input name="passiveCustomDc" type="number"></label>
+              <label>Area shape<select name="passiveAreaShape"><option value="emanation">Emanation</option><option value="burst">Burst</option><option value="cone">Cone</option><option value="line">Line</option></select></label>
+              <label>Area size (feet)<input name="passiveAreaDistance" type="number" min="5" step="5" value="10"></label>
+              <label class="wide">Traits<input name="passiveTraits" placeholder="aura, fire, mental"></label>
+              <label>Requirements<input name="passiveRequirements"></label>
+              <label>Duration<input name="passiveDuration"></label>
+              <label>Condition<select name="passiveCondition"><option value="">No condition</option>{{#each conditionOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select></label>
+              <label>Condition value<input name="passiveConditionValue" type="number" min="0" value="1"></label>
+              <label class="wide">Effect text<textarea name="passiveEffectText" rows="3" placeholder="Describe the constant or triggered passive mechanics."></textarea></label>
+              <label class="ls-check-label wide"><input name="passiveAutoScale" type="checkbox" checked> Scale linked damage and DC with creature level</label>
+              <button class="wide" type="button" data-action="createLinkedPassive"><i class="fa-solid fa-plus"></i> Create native PF2e passive</button>
             </div>
           </details>
           {{#if linkedDamageEntries.length}}
@@ -195,10 +244,44 @@
           </aside>
         </div>
         <section class="ls-attached-content"><h3>On this creature</h3><div class="ls-builder-results compact">
-          {{#each actor.items}}
+          {{#each actor.actionItems}}
             <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}}</small></div><button class="danger" data-action="removeContent" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></article>
           {{else}}<div class="ls-builder-empty">No embedded actions or items yet.</div>{{/each}}
         </div></section>
+      </section>
+    {{/if}}
+
+    {{#if steps.spells}}
+      <section class="ls-builder-step">
+        <h2>Native PF2e spellcasting</h2>
+        <p>Create or choose a native spellcasting entry, then add installed PF2e spells to it. Lore Smith links each spell to that entry instead of creating loose action items.</p>
+        <section class="ls-damage-workshop">
+          <header><div><span>Spell DC and spell attack table</span><h3>Spellcasting entry</h3></div></header>
+          <div class="ls-module-grid">
+            <label class="wide">Entry name<input name="spellEntryName" value="Creature Spellcasting"></label>
+            <label>Tradition<select name="spellTradition"><option value="arcane">Arcane</option><option value="divine">Divine</option><option value="occult">Occult</option><option value="primal">Primal</option></select></label>
+            <label>Style<select name="spellPrepared"><option value="innate">Innate</option><option value="prepared">Prepared</option><option value="spontaneous">Spontaneous</option><option value="focus">Focus</option></select></label>
+            <label>Key ability<select name="spellAbility"><option value="cha">Charisma</option><option value="int">Intelligence</option><option value="wis">Wisdom</option></select></label>
+            <label>Benchmark<select name="spellDcTier">{{#each damageWorkshop.dcTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label>Custom spell DC<input name="spellCustomDc" type="number" placeholder="Custom only"></label>
+            <label>Custom spell attack<input name="spellCustomAttack" type="number" placeholder="Custom only"></label>
+            <button class="wide" type="button" data-action="createSpellcastingEntry"><i class="fa-solid fa-plus"></i> Create native spellcasting entry</button>
+          </div>
+        </section>
+        <div class="ls-builder-filters content ls-spell-filters">
+          <select name="spellcastingEntry"><option value="">Choose a spellcasting entry</option>{{#each spellcastingEntries}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}</select>
+          <input name="contentQuery" value="{{contentQuery}}" placeholder="Search spell name, trait, tradition, or mechanics">
+          <button data-action="searchContent"><i class="fa-solid fa-magnifying-glass"></i> Search spells</button>
+        </div>
+        <div class="ls-content-columns">
+          <section><h3>Installed PF2e spells</h3><div class="ls-builder-results compact tall">
+            {{#each contentResults}}<article class="{{#if selected}}selected{{/if}}" data-action="previewContent" data-uuid="{{uuid}}"><img src="{{img}}"><div><strong>{{name}}</strong><small>Rank {{level}} &middot; {{pack}}</small></div><button data-action="addContent" data-uuid="{{uuid}}" data-tooltip="Add to spellcasting entry"><i class="fa-solid fa-plus"></i></button></article>{{else}}<div class="ls-builder-empty">No installed spell matches this search.</div>{{/each}}
+          </div></section>
+          <aside class="ls-source-preview ls-content-preview">
+            {{#if contentPreview}}<header><img src="{{contentPreview.img}}"><div><h3>{{contentPreview.name}}</h3><span>Rank {{contentPreview.level}} &middot; {{contentPreview.sourcePack}}</span></div></header><div class="ls-preview-traits">{{#each contentPreview.traits}}<span>{{label}}</span>{{/each}}</div><div class="ls-preview-description">{{{contentPreview.description}}}</div><button data-action="addContent" data-uuid="{{contentPreview.uuid}}"><i class="fa-solid fa-plus"></i> Add spell</button>{{else}}<div class="ls-preview-empty"><i class="fa-solid fa-eye"></i><strong>Select a spell</strong><span>Its complete native PF2e entry appears here before you add it.</span></div>{{/if}}
+          </aside>
+        </div>
+        <section class="ls-attached-content"><h3>Spells on this creature</h3><div class="ls-builder-results compact">{{#each actor.spellItems}}<article><img src="{{img}}"><div><strong>{{name}}</strong><small>spell</small></div><button class="danger" data-action="removeContent" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></article>{{else}}<div class="ls-builder-empty">No spells added yet.</div>{{/each}}</div></section>
       </section>
     {{/if}}
 
