@@ -788,9 +788,9 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       const search = picker.querySelector("[data-ls-trait-search]");
       const hidden = picker.querySelector("[data-ls-trait-value]");
       const chips = picker.querySelector("[data-ls-trait-chips]");
-      const options = [...picker.querySelectorAll("datalist option")].map((option) => ({
+      const options = [...picker.querySelectorAll("[data-ls-trait-search] option[data-value]")].map((option) => ({
         value: option.dataset.value,
-        label: option.value,
+        label: option.textContent.trim(),
       }));
       let selected = lsSplitTraits(hidden?.value);
       const redraw = () => {
