@@ -1878,6 +1878,21 @@ function lootFamilyKey(name) {
     .replace(/\+\d+/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function lootItemSourceKind(entry = {}) {
+  const type = String(entry.documentType ?? entry.type ?? "").toLowerCase();
+  const category = String(entry.category ?? entry.system?.category ?? "").toLowerCase();
+  const rawTraits = entry.traits ?? entry.system?.traits?.value ?? [];
+  const traitList = rawTraits instanceof Set ? [...rawTraits] : Array.isArray(rawTraits) ? rawTraits : rawTraits ? [rawTraits] : [];
+  const traits = new Set(traitList.map((trait) => String(trait).toLowerCase()));
+  if (type === "consumable" || type === "ammo" || category === "bomb" || traits.has("consumable") || traits.has("bomb")) return "consumable";
+  return "permanent";
+}
+
+function lootSourceAllowed(entry, includePermanent, includeConsumable) {
+  const sourceKind = lootItemSourceKind(entry);
+  return (sourceKind === "permanent" && includePermanent) || (sourceKind === "consumable" && includeConsumable);
+}
+
 async function resolveTableResultDocument(result) {
   const uuid = result.documentUuid || (result.documentCollection && result.documentId
     ? (game.packs.get(result.documentCollection) ? `Compendium.${result.documentCollection}.${result.documentId}` : `${result.documentCollection}.${result.documentId}`)
@@ -1916,21 +1931,21 @@ async function rollTreasureTable(kind, level) {
 }
 
 async function collectRoleLoot(minLevel, maxLevel, role, includePermanent, includeConsumable) {
-  const allowedTypes = new Set();
-  if (includePermanent) ["armor", "shield", "weapon", "equipment", "backpack", "kit", "book", "treasure"].forEach((type) => allowedTypes.add(type));
-  if (includeConsumable) ["consumable", "ammo"].forEach((type) => allowedTypes.add(type));
+  const supportedTypes = new Set(["armor", "shield", "weapon", "equipment", "backpack", "kit", "book", "treasure", "consumable", "ammo"]);
   const entries = [];
   for (const pack of game.packs.filter((candidate) => candidate.documentName === "Item")) {
-    const index = await pack.getIndex({ fields: ["name", "img", "type", "system.level.value", "system.description.value", "system.traits.value"] });
+    const index = await pack.getIndex({ fields: ["name", "img", "type", "system.level.value", "system.description.value", "system.traits.value", "system.category"] });
     for (const entry of index) {
-      if (!allowedTypes.has(entry.type)) continue;
+      if (!supportedTypes.has(entry.type)) continue;
       const itemLevel = numeric(entry.system?.level, 0);
       if (itemLevel < minLevel || itemLevel > maxLevel) continue;
       const candidate = {
         name: entry.name, img: entry.img, type: ITEM_TYPE_LABELS[entry.type] ?? entry.type, level: itemLevel,
         description: entry.system?.description?.value ?? "", traits: entry.system?.traits?.value ?? [],
+        category: entry.system?.category ?? "",
         uuid: entry.uuid ?? `Compendium.${pack.collection}.${entry._id}`, source: pack.metadata.label, documentType: entry.type,
       };
+      if (!lootSourceAllowed(candidate, includePermanent, includeConsumable)) continue;
       candidate.score = lootRoleScore(candidate, role);
       entries.push(candidate);
     }
@@ -3134,8 +3149,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       const tableLevel = minLevel + Math.floor(Math.random() * (maxLevel - minLevel + 1));
       const rolled = await rollTreasureTable(kind, tableLevel);
       if (!rolled?.document) continue;
+      const data = { name: rolled.document.name, img: rolled.document.img, type: ITEM_TYPE_LABELS[rolled.document.type] ?? rolled.document.type, documentType: rolled.document.type, level: numeric(rolled.document.system?.level, tableLevel), description: rolled.document.system?.description?.value ?? "", traits: rolled.document.system?.traits?.value ?? [], category: rolled.document.system?.category ?? "", uuid: rolled.document.uuid, source: rolled.table };
+      if (!lootSourceAllowed(data, permanent, consumable)) continue;
       tablesUsed += 1;
-      const data = { name: rolled.document.name, img: rolled.document.img, type: ITEM_TYPE_LABELS[rolled.document.type] ?? rolled.document.type, documentType: rolled.document.type, level: numeric(rolled.document.system?.level, tableLevel), description: rolled.document.system?.description?.value ?? "", traits: rolled.document.system?.traits?.value ?? [], uuid: rolled.document.uuid, source: rolled.table };
       data.score = lootRoleScore(data, role);
       if (data.score >= 5) results.push(data);
     }
