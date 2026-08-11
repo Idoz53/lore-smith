@@ -1694,10 +1694,9 @@ function normalizeSessionTextEntries(entries, fallback = "") {
 }
 
 const CAMPAIGN_LENGTHS = {
-  "one-shot": { label: "One-shot", scope: "One immediate problem, one primary location, and a conclusion." },
-  short: { label: "Short campaign", scope: "One central threat, a small recurring cast, and roughly three to five important locations." },
-  long: { label: "Long campaign", scope: "A central threat that can grow into several arcs, factions, and regions." },
-  open: { label: "Open-ended sandbox", scope: "A strong starting area with active people and threats instead of a predetermined ending." },
+  short: { label: "Short campaign", scope: "A focused campaign with one central conflict, 3–5 major milestones, a compact setting, and a clear range of possible endings.", structureLabel: "Campaign milestones", structureSingular: "Milestone", structureSummaryLabel: "Situation or turning point", structureOutcomeLabel: "Possible outcomes and transition", resolutionLabel: "Possible campaign endings", structureMin: 3, locationMin: 2, factionMin: 2, threatMin: 2, peopleMin: 3 },
+  long: { label: "Long campaign", scope: "A multi-arc campaign with evolving threats, several regions, recurring factions, character development, and 3 or more distinct story arcs.", structureLabel: "Story arcs", structureSingular: "Arc", structureSummaryLabel: "Central conflict and developments", structureOutcomeLabel: "How this reshapes later arcs", resolutionLabel: "Possible endings and lasting outcomes", structureMin: 3, locationMin: 4, factionMin: 4, threatMin: 3, peopleMin: 5 },
+  open: { label: "Open-ended sandbox", scope: "A reactive campaign built from locations, opportunities, faction agendas, and threat clocks rather than a predetermined sequence or ending.", structureLabel: "Active situations and opportunities", structureSingular: "Situation", structureSummaryLabel: "Who wants what, and what is happening now?", structureOutcomeLabel: "What advances or changes if ignored?", resolutionLabel: "Ways the world can change through play", structureMin: 4, locationMin: 4, factionMin: 4, threatMin: 4, peopleMin: 4 },
 };
 
 const CAMPAIGN_STYLES = {
@@ -1705,37 +1704,31 @@ const CAMPAIGN_STYLES = {
     label: "Adventure",
     guidance: "Keep the objective visible, make each location present a meaningful choice, and let success change the situation.",
     people: ["A capable ally who can point toward the first objective", "An opponent actively advancing the central problem", "A witness who knows where the danger began"],
-    session: ["Open with a problem that demands action", "Offer at least two practical approaches", "End with a result that changes the situation"],
   },
   mystery: {
     label: "Mystery",
     guidance: "Define the true answer privately, then make every essential conclusion discoverable through multiple clues.",
     people: ["A witness who wants the truth discovered", "A suspect or obstructive authority", "An informed person who is hiding part of the truth"],
-    session: ["Introduce one clear unanswered question", "Prepare at least three clues", "Use misleading interpretations, not mandatory false clues"],
   },
   exploration: {
     label: "Exploration",
     guidance: "Give places distinct identities, discoveries, routes, and risks. Travel should reveal choices rather than consume time by itself.",
     people: ["A guide, patron, or survivor", "A rival explorer or territorial resident", "A scholar who understands one part of the destination"],
-    session: ["Show a destination worth reaching", "Prepare a route choice or environmental obstacle", "Reward curiosity with useful discoveries"],
   },
   politics: {
     label: "Political intrigue",
     guidance: "Give every important person a public objective, a private need, and leverage that can change their position.",
     people: ["A potential ally with a price", "A rival representative with legitimate interests", "An intermediary who knows the relationships between factions"],
-    session: ["Present incompatible interests", "Give the party leverage to discover or earn", "Make alliances create visible consequences"],
   },
   horror: {
     label: "Horror",
     guidance: "Establish boundaries first, reveal the threat gradually, and preserve meaningful choices even when the characters feel vulnerable.",
     people: ["A survivor or protector", "A person influenced by the threat", "A witness who understands one disturbing sign"],
-    session: ["Establish normality before disrupting it", "Reveal one concrete sign of danger", "Give the party a costly but meaningful choice"],
   },
   sandbox: {
     label: "Sandbox",
     guidance: "Prepare active situations, not a sequence. The world should react consistently to whichever direction the party chooses.",
     people: ["A local contact offering an opportunity", "A rival pursuing their own objective", "A well-connected person who knows several possible directions"],
-    session: ["Offer at least three visible opportunities", "Show what may change if an opportunity is ignored", "Let the party choose the next commitment"],
   },
 };
 
@@ -1752,45 +1745,93 @@ function newCampaignPerson(slot, label) {
 }
 
 function newCampaignCharacter() {
-  return { id: foundry.utils.randomID(), name: "", involvement: "", npcConnection: "", desire: "", bond: "" };
+  return { id: foundry.utils.randomID(), name: "", involvement: "", npcConnection: "", desire: "", bond: "", complication: "", growth: "" };
+}
+
+function newCampaignStructure() {
+  return { id: foundry.utils.randomID(), name: "", summary: "", outcome: "" };
+}
+
+function newCampaignLocation() {
+  return { id: foundry.utils.randomID(), name: "", image: "", description: "", importance: "", secret: "" };
+}
+
+function newCampaignFaction() {
+  return { id: foundry.utils.randomID(), name: "", goal: "", methods: "", resources: "", relationship: "", ignored: "" };
+}
+
+function newCampaignThreat() {
+  return { id: foundry.utils.randomID(), name: "", goal: "", escalation: "", consequences: "" };
+}
+
+function newCampaignQuestion() {
+  return { id: foundry.utils.randomID(), text: "" };
+}
+
+function campaignScope(campaign) {
+  return CAMPAIGN_LENGTHS[campaign.length] ?? CAMPAIGN_LENGTHS.short;
+}
+
+function ensureCampaignScope(campaign) {
+  const scope = campaignScope(campaign);
+  const factories = { structure: newCampaignStructure, locations: newCampaignLocation, factions: newCampaignFaction, threats: newCampaignThreat };
+  const minimums = { structure: scope.structureMin, locations: scope.locationMin, factions: scope.factionMin, threats: scope.threatMin };
+  for (const [property, minimum] of Object.entries(minimums)) {
+    if (!Array.isArray(campaign[property])) campaign[property] = [];
+    while (campaign[property].length < minimum) campaign[property].push(factories[property]());
+  }
+  if (!Array.isArray(campaign.people)) campaign.people = [];
+  while (campaign.people.length < scope.peopleMin) campaign.people.push(newCampaignPerson("person", `Important person ${campaign.people.length + 1}`));
+  if (!Array.isArray(campaign.openQuestions) || !campaign.openQuestions.length) campaign.openQuestions = [newCampaignQuestion()];
+  return campaign;
 }
 
 function newCampaignBuild() {
-  return {
+  return ensureCampaignScope({
     journalId: "", name: "", premise: "", startingLevel: 1, finalLevel: 5,
     length: "short", style: "adventure", tone: "heroic",
-    problem: { wrong: "", cause: "", stakes: "" },
-    place: { name: "", image: "", description: "", interest: "", problem: "" },
+    identity: { themes: "", playerPromise: "", boundaries: "" },
+    problem: { wrong: "", cause: "", stakes: "", involvement: "", distinction: "", resolution: "" },
+    structure: [], locations: [], factions: [], threats: [],
+    setting: { history: "", cultures: "", magic: "", politics: "" },
     people: [
       newCampaignPerson("ally", "Someone who helps the party"),
       newCampaignPerson("opponent", "Someone who opposes the party"),
       newCampaignPerson("informant", "Someone who knows important information"),
     ],
     characters: [newCampaignCharacter()],
-    firstSession: {
-      opening: "", objective: "", locations: ["", ""], scenes: ["", ""],
-      encounter: "", clues: ["", "", ""], reward: "", failure: "",
-    },
-  };
+    progression: { leveling: "milestone", treasure: "", narrative: "", reputation: "", options: "" },
+    consistency: { imagery: "", naming: "", rules: "", timeline: "", travel: "" },
+    openQuestions: [newCampaignQuestion()],
+  });
 }
 
 function normalizeCampaignBuild(stored = {}) {
   const fresh = newCampaignBuild();
-  const people = Array.isArray(stored.people) ? stored.people : [];
+  const people = Array.isArray(stored.people) ? stored.people : fresh.people;
   const characters = Array.isArray(stored.characters) ? stored.characters : [];
-  return {
+  const oldPlace = stored.place && [stored.place.name, stored.place.description, stored.place.image].some(Boolean)
+    ? [{ ...newCampaignLocation(), name: stored.place.name ?? "", image: stored.place.image ?? "", description: stored.place.description ?? "", importance: stored.place.interest ?? "", secret: stored.place.problem ?? "" }]
+    : [];
+  const normalized = {
     ...fresh, ...stored,
+    length: stored.length === "one-shot" ? "short" : (stored.length ?? fresh.length),
+    identity: { ...fresh.identity, ...(stored.identity ?? {}) },
     problem: { ...fresh.problem, ...(stored.problem ?? {}) },
-    place: { ...fresh.place, ...(stored.place ?? {}) },
-    people: fresh.people.map((person, index) => ({ ...person, ...(people[index] ?? {}), id: people[index]?.id || person.id })),
+    structure: (Array.isArray(stored.structure) ? stored.structure : []).map((entry) => ({ ...newCampaignStructure(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    locations: (Array.isArray(stored.locations) && stored.locations.length ? stored.locations : oldPlace).map((entry) => ({ ...newCampaignLocation(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    factions: (Array.isArray(stored.factions) ? stored.factions : []).map((entry) => ({ ...newCampaignFaction(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    threats: (Array.isArray(stored.threats) ? stored.threats : []).map((entry) => ({ ...newCampaignThreat(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    setting: { ...fresh.setting, ...(stored.setting ?? {}) },
+    people: people.map((person, index) => ({ ...newCampaignPerson(person.slot ?? "person", person.label ?? `Important person ${index + 1}`), ...person, id: person.id || foundry.utils.randomID() })),
     characters: (characters.length ? characters : fresh.characters).map((character) => ({ ...newCampaignCharacter(), ...character, id: character.id || foundry.utils.randomID() })),
-    firstSession: {
-      ...fresh.firstSession, ...(stored.firstSession ?? {}),
-      locations: [...(Array.isArray(stored.firstSession?.locations) ? stored.firstSession.locations : fresh.firstSession.locations)].slice(0, 2).concat(["", ""]).slice(0, 2),
-      scenes: [...(Array.isArray(stored.firstSession?.scenes) ? stored.firstSession.scenes : fresh.firstSession.scenes)].slice(0, 2).concat(["", ""]).slice(0, 2),
-      clues: [...(Array.isArray(stored.firstSession?.clues) ? stored.firstSession.clues : fresh.firstSession.clues)].slice(0, 3).concat(["", "", ""]).slice(0, 3),
-    },
+    progression: { ...fresh.progression, ...(stored.progression ?? {}) },
+    consistency: { ...fresh.consistency, ...(stored.consistency ?? {}) },
+    openQuestions: (Array.isArray(stored.openQuestions) ? stored.openQuestions : []).map((entry) => typeof entry === "string" ? { ...newCampaignQuestion(), text: entry } : { ...newCampaignQuestion(), ...entry, id: entry.id || foundry.utils.randomID() }),
   };
+  delete normalized.firstSession;
+  delete normalized.place;
+  return ensureCampaignScope(normalized);
 }
 
 function campaignList(title, entries) {
@@ -1800,29 +1841,41 @@ function campaignList(title, entries) {
 
 function campaignJournalPages(campaign) {
   const style = CAMPAIGN_STYLES[campaign.style] ?? CAMPAIGN_STYLES.adventure;
-  const length = CAMPAIGN_LENGTHS[campaign.length] ?? CAMPAIGN_LENGTHS.short;
+  const length = campaignScope(campaign);
   const overview = [
     sessionBlock("Campaign premise", campaign.premise),
+    sessionBlock("Themes", campaign.identity.themes),
+    sessionBlock("What players can expect", campaign.identity.playerPromise),
+    sessionBlock("Content boundaries and table agreements", campaign.identity.boundaries),
     `<p><strong>Starting level</strong> ${Number(campaign.startingLevel) || 1}</p>`,
     `<p><strong>Expected final level</strong> ${Number(campaign.finalLevel) || Number(campaign.startingLevel) || 1}</p>`,
     `<p><strong>Format</strong> ${escapeHtml(length.label)}</p>`,
     `<p><strong>Primary style</strong> ${escapeHtml(style.label)}</p>`,
     `<p><strong>Tone</strong> ${escapeHtml(CAMPAIGN_TONES[campaign.tone] ?? campaign.tone)}</p>`,
   ].join("");
-  const threat = `${sessionBlock("What is going wrong?", campaign.problem.wrong)}${sessionBlock("Who or what is causing it?", campaign.problem.cause)}${sessionBlock("What happens if nobody intervenes?", campaign.problem.stakes)}`;
-  const placeImage = campaign.place.image ? `<figure><img src="${escapeHtml(campaign.place.image)}" alt="${escapeHtml(campaign.place.name)}"></figure>` : "";
-  const place = `${placeImage}${sessionBlock("Description", campaign.place.description)}${sessionBlock("What makes it interesting?", campaign.place.interest)}${sessionBlock("Immediate local problem", campaign.place.problem)}`;
-  const people = campaign.people.map((person) => `<section><h2>${escapeHtml(person.label)}</h2><h3>${escapeHtml(person.name || "Unnamed NPC")}</h3>${sessionBlock("Basic description", person.description)}${sessionBlock("What they want", person.wants)}${sessionBlock("What they know", person.knows)}${sessionBlock("Secret", person.secret)}</section>`).join("<hr>");
-  const characters = campaign.characters.filter((character) => [character.name, character.involvement, character.npcConnection, character.desire, character.bond].some((value) => String(value ?? "").trim())).map((character) => `<section><h2>${escapeHtml(character.name || "Unnamed character")}</h2>${sessionBlock("Why they are involved", character.involvement)}${sessionBlock("NPC connection", character.npcConnection)}${sessionBlock("What they want", character.desire)}${sessionBlock("Why they stay with the party", character.bond)}</section>`).join("<hr>") || "<p>Add player-character connections during Session Zero.</p>";
-  const first = campaign.firstSession;
-  const session = `${sessionBlock("Opening situation", first.opening)}${sessionBlock("First objective", first.objective)}${campaignList("Likely locations", first.locations)}${campaignList("Likely scenes", first.scenes)}${sessionBlock("Encounter", first.encounter)}${campaignList("Discoverable clues", first.clues)}${sessionBlock("Reward", first.reward)}${sessionBlock("If the party fails or refuses", first.failure)}`;
+  const direction = `${sessionBlock("What is going wrong?", campaign.problem.wrong)}${sessionBlock("Who or what is causing it?", campaign.problem.cause)}${sessionBlock("What happens if nobody intervenes?", campaign.problem.stakes)}${sessionBlock("Why the characters are involved", campaign.problem.involvement)}${sessionBlock("What makes this campaign distinctive", campaign.problem.distinction)}${sessionBlock(length.resolutionLabel, campaign.problem.resolution)}`;
+  const structure = campaign.structure.filter((entry) => [entry.name, entry.summary, entry.outcome].some((value) => String(value ?? "").trim())).map((entry) => `<section><h2>${escapeHtml(entry.name || length.structureSingular)}</h2>${sessionBlock(length.structureSummaryLabel, entry.summary)}${sessionBlock(length.structureOutcomeLabel, entry.outcome)}</section>`).join("<hr>") || `<p>Add ${escapeHtml(length.structureLabel.toLowerCase())} as the campaign develops.</p>`;
+  const settingOverview = `${sessionBlock("History that matters now", campaign.setting.history)}${sessionBlock("Cultures and communities", campaign.setting.cultures)}${sessionBlock("Magic, religion, and technology", campaign.setting.magic)}${sessionBlock("Political situation", campaign.setting.politics)}`;
+  const locations = campaign.locations.filter((entry) => [entry.name, entry.description, entry.importance, entry.secret, entry.image].some((value) => String(value ?? "").trim())).map((entry) => `<section><h2>${escapeHtml(entry.name || "Unnamed location")}</h2>${entry.image ? `<figure><img src="${escapeHtml(entry.image)}" alt="${escapeHtml(entry.name)}"></figure>` : ""}${sessionBlock("Description", entry.description)}${sessionBlock("Why it matters", entry.importance)}${sessionBlock("GM secret or unresolved detail", entry.secret)}</section>`).join("<hr>");
+  const factions = campaign.factions.filter((entry) => [entry.name, entry.goal, entry.methods, entry.resources, entry.relationship, entry.ignored].some((value) => String(value ?? "").trim())).map((entry) => `<section><h2>${escapeHtml(entry.name || "Unnamed faction")}</h2>${sessionBlock("Goal", entry.goal)}${sessionBlock("Methods", entry.methods)}${sessionBlock("Resources and influence", entry.resources)}${sessionBlock("Relationship with the party", entry.relationship)}${sessionBlock("What it does when ignored", entry.ignored)}</section>`).join("<hr>") || "<p>Add factions when their agendas become relevant.</p>";
+  const threats = campaign.threats.filter((entry) => [entry.name, entry.goal, entry.escalation, entry.consequences].some((value) => String(value ?? "").trim())).map((entry) => `<section><h2>${escapeHtml(entry.name || "Unnamed threat")}</h2>${sessionBlock("Goal", entry.goal)}${sessionBlock("Escalation or clock", entry.escalation)}${sessionBlock("Consequences", entry.consequences)}</section>`).join("<hr>") || "<p>Add active threats and problems here.</p>";
+  const people = campaign.people.filter((person) => [person.name, person.description, person.wants, person.knows, person.secret].some((value) => String(value ?? "").trim())).map((person) => `<section><h2>${escapeHtml(person.label)}</h2><h3>${escapeHtml(person.name || "Unnamed NPC")}</h3>${sessionBlock("Basic description", person.description)}${sessionBlock("What they want", person.wants)}${sessionBlock("What they know", person.knows)}${sessionBlock("Secret", person.secret)}</section>`).join("<hr>") || "<p>Add recurring NPCs when their roles become clear.</p>";
+  const characters = campaign.characters.filter((character) => [character.name, character.involvement, character.npcConnection, character.desire, character.bond, character.complication, character.growth].some((value) => String(value ?? "").trim())).map((character) => `<section><h2>${escapeHtml(character.name || "Unnamed character")}</h2>${sessionBlock("Why they are involved", character.involvement)}${sessionBlock("NPC or faction connection", character.npcConnection)}${sessionBlock("Personal goal", character.desire)}${sessionBlock("Why they stay with the party", character.bond)}${sessionBlock("Secret, debt, or complication", character.complication)}${sessionBlock("Possible development", character.growth)}</section>`).join("<hr>") || "<p>Add player-character connections during Session Zero.</p>";
+  const progression = `<p><strong>Leveling method</strong> ${escapeHtml(campaign.progression.leveling === "xp" ? "Experience Points" : "Milestone leveling")}</p>${sessionBlock("Important treasure", campaign.progression.treasure)}${sessionBlock("Narrative rewards", campaign.progression.narrative)}${sessionBlock("Reputation, allies, titles, or holdings", campaign.progression.reputation)}${sessionBlock("Campaign-specific character options", campaign.progression.options)}`;
+  const consistency = `${sessionBlock("Recurring themes and imagery", campaign.consistency.imagery)}${sessionBlock("Naming conventions and terminology", campaign.consistency.naming)}${sessionBlock("Rules variants and setting rules", campaign.consistency.rules)}${sessionBlock("Calendar and timeline", campaign.consistency.timeline)}${sessionBlock("Travel assumptions", campaign.consistency.travel)}`;
+  const openQuestions = campaignList("Questions deliberately left open", campaign.openQuestions.map((entry) => entry.text));
   return [
     { key: "overview", name: "Campaign Overview", content: overview },
-    { key: "problem", name: "Main Threat", content: threat || "<p>Define the campaign's central problem here.</p>" },
-    { key: "place", name: campaign.place.name || "Starting Location", content: place || "<p>Describe the campaign's starting location here.</p>" },
+    { key: "direction", name: "Premise, Direction, and Stakes", content: direction || "<p>Define the campaign's central problem here.</p>" },
+    { key: "structure", name: length.structureLabel, content: structure },
+    { key: "setting", name: "Setting and Regions", content: `${settingOverview}${locations ? `<hr>${locations}` : ""}` },
+    { key: "factions", name: "Factions", content: factions },
+    { key: "threats", name: "Threats and Conflicts", content: threats },
     { key: "people", name: "Important NPCs", content: people },
     { key: "characters", name: "Player Connections", content: characters },
-    { key: "session", name: "First Session", content: session || "<p>Prepare the campaign's opening session here.</p>" },
+    { key: "progression", name: "Progression and Rewards", content: progression },
+    { key: "consistency", name: "Timeline and Consistency", content: consistency },
+    { key: "questions", name: "Open Questions", content: openQuestions || "<p>Nothing is deliberately unresolved yet.</p>" },
   ];
 }
 
@@ -2202,7 +2255,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       previousCampaignStep: LoreSmithDashboard.previousCampaignStep,
       nextCampaignStep: LoreSmithDashboard.nextCampaignStep,
       goToCampaignStep: LoreSmithDashboard.goToCampaignStep,
-      browseCampaignPlaceImage: LoreSmithDashboard.browseCampaignPlaceImage,
+      browseCampaignLocationImage: LoreSmithDashboard.browseCampaignLocationImage,
+      addCampaignEntry: LoreSmithDashboard.addCampaignEntry,
+      removeCampaignEntry: LoreSmithDashboard.removeCampaignEntry,
       addCampaignCharacter: LoreSmithDashboard.addCampaignCharacter,
       removeCampaignCharacter: LoreSmithDashboard.removeCampaignCharacter,
       createCampaignJournal: LoreSmithDashboard.createCampaignJournal,
@@ -2311,7 +2366,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         const stored = rawDraft ? JSON.parse(rawDraft) : null;
         if (stored?.campaign || stored?.name) {
           this.campaign = normalizeCampaignBuild(stored.campaign ?? stored);
-          this.campaignStep = Math.max(0, Math.min(5, Number(stored.step) || 0));
+          this.campaignStep = Math.max(0, Math.min(7, Number(stored.step) || 0));
         }
       } catch (error) {
         console.warn("Lore Smith | Could not restore the Campaign Builder draft.", error);
@@ -2380,18 +2435,28 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     const sessionStepEntries = [["goal", "Goal"], ["locations", "Places"], ["people", "People"], ["music", "Music"], ["scenes", "Scenes"], ["review", "Review"]];
     const sessionSteps = Object.fromEntries(sessionStepEntries.map(([key, label], index) => [key, { index, number: index + 1, label, active: this.sessionStep === index }]));
-    const campaignStepEntries = [["idea", "Idea"], ["problem", "Problem"], ["place", "Place"], ["people", "People"], ["characters", "Characters"], ["session", "First Session"]];
+    ensureCampaignScope(this.campaign);
+    const campaignStepEntries = [["identity", "Identity"], ["direction", "Direction"], ["structure", "Structure"], ["setting", "Setting"], ["forces", "Factions & Threats"], ["people", "NPCs"], ["characters", "Characters"], ["review", "Progression & Review"]];
     const campaignSteps = Object.fromEntries(campaignStepEntries.map(([key, label], index) => [key, { index, number: index + 1, label, active: this.campaignStep === index }]));
     const campaignStyle = CAMPAIGN_STYLES[this.campaign.style] ?? CAMPAIGN_STYLES.adventure;
     const campaignLength = CAMPAIGN_LENGTHS[this.campaign.length] ?? CAMPAIGN_LENGTHS.short;
-    const campaignPeople = this.campaign.people.map((person, index) => ({ ...person, suggestion: campaignStyle.people[index] ?? "" }));
+    const campaignPeople = this.campaign.people.map((person, index) => ({ ...person, suggestion: campaignStyle.people[index % campaignStyle.people.length] ?? "" }));
     const campaignValidation = [];
     if (!this.campaign.name.trim()) campaignValidation.push("Name the campaign.");
     if (!this.campaign.premise.trim()) campaignValidation.push("Write the campaign premise.");
     if (!this.campaign.problem.wrong.trim()) campaignValidation.push("Describe what is going wrong.");
     if (!this.campaign.problem.cause.trim()) campaignValidation.push("Identify who or what is causing the problem.");
-    if (!this.campaign.place.name.trim()) campaignValidation.push("Name the starting place.");
-    if (!this.campaign.firstSession.objective.trim()) campaignValidation.push("Give the first session a clear objective.");
+    if (!this.campaign.identity.themes.trim()) campaignValidation.push("Name at least one campaign theme.");
+    if (!this.campaign.problem.stakes.trim()) campaignValidation.push("Describe what happens if nobody intervenes.");
+    if (!this.campaign.locations.some((entry) => entry.name.trim())) campaignValidation.push("Name at least one important location.");
+    if (!this.campaign.factions.some((entry) => entry.name.trim())) campaignValidation.push("Name at least one active faction.");
+    if (!this.campaign.threats.some((entry) => entry.name.trim())) campaignValidation.push("Name at least one threat or conflict.");
+    const campaignRecommendations = [];
+    const namedCount = (entries) => entries.filter((entry) => entry.name.trim()).length;
+    if (namedCount(this.campaign.structure) < campaignLength.structureMin) campaignRecommendations.push(`Prepare ${campaignLength.structureMin} ${campaignLength.structureLabel.toLowerCase()} for this format.`);
+    if (namedCount(this.campaign.locations) < campaignLength.locationMin) campaignRecommendations.push(`Prepare ${campaignLength.locationMin} important locations for this format.`);
+    if (namedCount(this.campaign.factions) < campaignLength.factionMin) campaignRecommendations.push(`Prepare ${campaignLength.factionMin} active factions for this format.`);
+    if (namedCount(this.campaign.threats) < campaignLength.threatMin) campaignRecommendations.push(`Prepare ${campaignLength.threatMin} threats or conflicts for this format.`);
     return {
       ...await super._prepareContext(options),
       tabs: { [this.activeTab]: true },
@@ -2442,8 +2507,17 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       campaignStyles: Object.entries(CAMPAIGN_STYLES).map(([value, data]) => ({ value, label: data.label, selected: value === this.campaign.style })),
       campaignLengths: Object.entries(CAMPAIGN_LENGTHS).map(([value, data]) => ({ value, label: data.label, selected: value === this.campaign.length })),
       campaignTones: Object.entries(CAMPAIGN_TONES).map(([value, label]) => ({ value, label, selected: value === this.campaign.tone })),
-      campaignGuidance: { style: campaignStyle.guidance, scope: campaignLength.scope, session: campaignStyle.session },
-      campaignValidation,
+      campaignLevelingOptions: [
+        { value: "milestone", label: "Milestone leveling", selected: this.campaign.progression.leveling === "milestone" },
+        { value: "xp", label: "Experience Points", selected: this.campaign.progression.leveling === "xp" },
+      ],
+      campaignGuidance: { style: campaignStyle.guidance, scope: campaignLength.scope },
+      campaignValidation, campaignRecommendations, campaignScope: campaignLength,
+      campaignStructure: this.campaign.structure.map((entry, index) => ({ ...entry, number: index + 1 })),
+      campaignLocations: this.campaign.locations.map((entry, index) => ({ ...entry, number: index + 1 })),
+      campaignFactions: this.campaign.factions.map((entry, index) => ({ ...entry, number: index + 1 })),
+      campaignThreats: this.campaign.threats.map((entry, index) => ({ ...entry, number: index + 1 })),
+      campaignQuestions: this.campaign.openQuestions.map((entry, index) => ({ ...entry, number: index + 1 })),
       canCampaignBack: this.campaignStep > 0,
       campaignJournalAvailable: Boolean(game.journal.get(this.campaign.journalId)),
     };
@@ -2705,14 +2779,45 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     assign(this.campaign, "length", "campaignLength");
     assign(this.campaign, "style", "campaignStyle");
     assign(this.campaign, "tone", "campaignTone");
+    assign(this.campaign.identity, "themes", "campaignThemes");
+    assign(this.campaign.identity, "playerPromise", "campaignPlayerPromise");
+    assign(this.campaign.identity, "boundaries", "campaignBoundaries");
     assign(this.campaign.problem, "wrong", "campaignProblemWrong");
     assign(this.campaign.problem, "cause", "campaignProblemCause");
     assign(this.campaign.problem, "stakes", "campaignProblemStakes");
-    assign(this.campaign.place, "name", "campaignPlaceName");
-    assign(this.campaign.place, "image", "campaignPlaceImage");
-    assign(this.campaign.place, "description", "campaignPlaceDescription");
-    assign(this.campaign.place, "interest", "campaignPlaceInterest");
-    assign(this.campaign.place, "problem", "campaignPlaceProblem");
+    assign(this.campaign.problem, "involvement", "campaignProblemInvolvement");
+    assign(this.campaign.problem, "distinction", "campaignProblemDistinction");
+    assign(this.campaign.problem, "resolution", "campaignProblemResolution");
+    assign(this.campaign.setting, "history", "campaignSettingHistory");
+    assign(this.campaign.setting, "cultures", "campaignSettingCultures");
+    assign(this.campaign.setting, "magic", "campaignSettingMagic");
+    assign(this.campaign.setting, "politics", "campaignSettingPolitics");
+    assign(this.campaign.progression, "leveling", "campaignLeveling");
+    assign(this.campaign.progression, "treasure", "campaignProgressionTreasure");
+    assign(this.campaign.progression, "narrative", "campaignProgressionNarrative");
+    assign(this.campaign.progression, "reputation", "campaignProgressionReputation");
+    assign(this.campaign.progression, "options", "campaignProgressionOptions");
+    assign(this.campaign.consistency, "imagery", "campaignConsistencyImagery");
+    assign(this.campaign.consistency, "naming", "campaignConsistencyNaming");
+    assign(this.campaign.consistency, "rules", "campaignConsistencyRules");
+    assign(this.campaign.consistency, "timeline", "campaignConsistencyTimeline");
+    assign(this.campaign.consistency, "travel", "campaignConsistencyTravel");
+    const collectionFields = {
+      structure: ["name", "summary", "outcome"], locations: ["name", "image", "description", "importance", "secret"],
+      factions: ["name", "goal", "methods", "resources", "relationship", "ignored"], threats: ["name", "goal", "escalation", "consequences"],
+      openQuestions: ["text"],
+    };
+    for (const [property, fields] of Object.entries(collectionFields)) {
+      const cards = [...root.querySelectorAll(`[data-campaign-entry-kind="${property}"]`)];
+      if (!cards.length) continue;
+      const existing = new Map(this.campaign[property].map((entry) => [entry.id, entry]));
+      this.campaign[property] = cards.map((card) => {
+        const id = card.dataset.campaignEntryId;
+        const entry = { ...(existing.get(id) ?? {}), id };
+        for (const field of fields) entry[field] = card.querySelector(`[data-campaign-field="${field}"]`)?.value.trim() ?? "";
+        return entry;
+      });
+    }
     const existingPeople = new Map(this.campaign.people.map((person) => [person.id, person]));
     const personCards = [...root.querySelectorAll("[data-campaign-person-id]")];
     if (personCards.length) this.campaign.people = personCards.map((card) => {
@@ -2725,24 +2830,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (characterCards.length) this.campaign.characters = characterCards.map((card) => {
       const character = existingCharacters.get(card.dataset.campaignCharacterId) ?? newCampaignCharacter();
       const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
-      return { ...character, name: field("campaignCharacterName"), involvement: field("campaignCharacterInvolvement"), npcConnection: field("campaignCharacterNpc"), desire: field("campaignCharacterDesire"), bond: field("campaignCharacterBond") };
+      return { ...character, name: field("campaignCharacterName"), involvement: field("campaignCharacterInvolvement"), npcConnection: field("campaignCharacterNpc"), desire: field("campaignCharacterDesire"), bond: field("campaignCharacterBond"), complication: field("campaignCharacterComplication"), growth: field("campaignCharacterGrowth") };
     });
-    const first = this.campaign.firstSession;
-    assign(first, "opening", "campaignFirstOpening");
-    assign(first, "objective", "campaignFirstObjective");
-    assign(first, "encounter", "campaignFirstEncounter");
-    assign(first, "reward", "campaignFirstReward");
-    assign(first, "failure", "campaignFirstFailure");
-    for (let index = 0; index < 2; index += 1) {
-      const location = value(`campaignFirstLocation${index}`);
-      const scene = value(`campaignFirstScene${index}`);
-      if (location !== undefined) first.locations[index] = location;
-      if (scene !== undefined) first.scenes[index] = scene;
-    }
-    for (let index = 0; index < 3; index += 1) {
-      const clue = value(`campaignFirstClue${index}`);
-      if (clue !== undefined) first.clues[index] = clue;
-    }
+    ensureCampaignScope(this.campaign);
     await this.saveCampaignDraft();
   }
 
@@ -2770,26 +2860,51 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async nextCampaignStep() {
     await this.syncCampaignForm();
-    this.campaignStep = Math.min(5, this.campaignStep + 1);
+    this.campaignStep = Math.min(7, this.campaignStep + 1);
     await this.saveCampaignDraft();
     await this.render();
   }
 
   static async goToCampaignStep(_event, target) {
     await this.syncCampaignForm();
-    this.campaignStep = Math.max(0, Math.min(5, Number(target.dataset.step) || 0));
+    this.campaignStep = Math.max(0, Math.min(7, Number(target.dataset.step) || 0));
     await this.saveCampaignDraft();
     await this.render();
   }
 
-  static async browseCampaignPlaceImage() {
+  static async browseCampaignLocationImage(_event, target) {
     await this.syncCampaignForm();
-    new FilePicker({ type: "imagevideo", current: this.campaign.place.image, callback: async (path) => {
-      this.campaign.place.image = path;
+    const entry = this.campaign.locations.find((location) => location.id === target.dataset.id);
+    if (!entry) return;
+    new FilePicker({ type: "imagevideo", current: entry.image, callback: async (path) => {
+      entry.image = path;
       await this.saveCampaignDraft();
-      const input = this.element?.querySelector('[name="campaignPlaceImage"]');
-      if (input) input.value = path;
+      await this.renderCampaignPreservingScroll();
     } }).browse();
+  }
+
+  static async addCampaignEntry(_event, target) {
+    await this.syncCampaignForm();
+    const kind = target.dataset.kind;
+    const factories = {
+      structure: newCampaignStructure, locations: newCampaignLocation, factions: newCampaignFaction,
+      threats: newCampaignThreat, openQuestions: newCampaignQuestion,
+      people: () => newCampaignPerson("person", `Important person ${this.campaign.people.length + 1}`),
+    };
+    if (!factories[kind] || !Array.isArray(this.campaign[kind])) return;
+    this.campaign[kind].push(factories[kind]());
+    await this.saveCampaignDraft();
+    await this.renderCampaignPreservingScroll();
+  }
+
+  static async removeCampaignEntry(_event, target) {
+    await this.syncCampaignForm();
+    const kind = target.dataset.kind;
+    if (!Array.isArray(this.campaign[kind])) return;
+    this.campaign[kind] = this.campaign[kind].filter((entry) => entry.id !== target.dataset.id);
+    ensureCampaignScope(this.campaign);
+    await this.saveCampaignDraft();
+    await this.renderCampaignPreservingScroll();
   }
 
   static async addCampaignCharacter() {
@@ -2809,10 +2924,12 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async createCampaignJournal() {
     await this.syncCampaignForm();
-    const invalid = !this.campaign.name.trim() || !this.campaign.premise.trim() || !this.campaign.problem.wrong.trim()
-      || !this.campaign.problem.cause.trim() || !this.campaign.place.name.trim() || !this.campaign.firstSession.objective.trim();
+    const invalid = !this.campaign.name.trim() || !this.campaign.premise.trim() || !this.campaign.identity.themes.trim()
+      || !this.campaign.problem.wrong.trim() || !this.campaign.problem.cause.trim() || !this.campaign.problem.stakes.trim()
+      || !this.campaign.locations.some((entry) => entry.name.trim()) || !this.campaign.factions.some((entry) => entry.name.trim())
+      || !this.campaign.threats.some((entry) => entry.name.trim());
     if (invalid) {
-      this.campaignStep = 5;
+      this.campaignStep = 7;
       await this.saveCampaignDraft();
       await this.render();
       return ui.notifications.warn("Complete the required Campaign Builder fields before creating the Journal.");
@@ -2829,6 +2946,12 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       await journal.update({ name: this.campaign.name.trim() });
     }
     const generated = campaignJournalPages(this.campaign);
+    const generatedKeys = new Set(generated.map((page) => page.key));
+    const obsoletePages = journal.pages.filter((page) => {
+      const key = page.getFlag(FLAG_SCOPE, "campaignSection");
+      return key && !generatedKeys.has(key);
+    });
+    if (obsoletePages.length) await journal.deleteEmbeddedDocuments("JournalEntryPage", obsoletePages.map((page) => page.id));
     for (const [index, pageData] of generated.entries()) {
       const existing = journal.pages.find((page) => page.getFlag(FLAG_SCOPE, "campaignSection") === pageData.key);
       if (existing) {
