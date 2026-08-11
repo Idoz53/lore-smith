@@ -5,6 +5,7 @@
       <div><strong>Lore Smith</strong><small>PF2e GM Workspace</small></div>
     </div>
     <nav>
+      <button type="button" data-action="dashboardTab" data-tab="campaign" class="{{#if tabs.campaign}}active{{/if}}"><i class="fa-solid fa-map"></i> Campaign Builder</button>
       <button type="button" data-action="dashboardTab" data-tab="session" class="{{#if tabs.session}}active{{/if}}"><i class="fa-solid fa-compass"></i> Session Prep</button>
       <button type="button" data-action="dashboardTab" data-tab="loot" class="{{#if tabs.loot}}active{{/if}}"><i class="fa-solid fa-gem"></i> Loot & Treasure</button>
     </nav>
@@ -12,6 +13,100 @@
   </aside>
 
   <main class="ls-main">
+    {{#if tabs.campaign}}
+      <section class="ls-panel ls-campaign-panel">
+        <header><div><span>Guided campaign foundation</span><h1>Campaign Builder</h1></div><div class="ls-header-actions"><button data-action="newCampaignBuild"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openCampaignJournal" {{#unless campaignJournalAvailable}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open campaign</button></div></header>
+        <p class="ls-lead">Build only what is needed to begin playing. The same six steps work for every campaign; your first choices change the guidance, not the workflow.</p>
+        <div class="ls-session-progress" aria-label="Campaign builder progress">
+          {{#each campaignSteps}}<button data-action="goToCampaignStep" data-step="{{index}}" class="{{#if active}}active{{/if}}"><span>{{number}}</span>{{label}}</button>{{/each}}
+        </div>
+
+        {{#if campaignSteps.idea.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 1 of 6</div><h2>Define the campaign</h2><p>Choose the experience you want to run. These answers only adjust suggestions, recommended scope, and readiness warnings.</p>
+            <div class="ls-session-form">
+              <label>Campaign name<input name="campaignName" value="{{campaign.name}}" placeholder="Dove Muoiono le Stelle"></label>
+              <label>Starting level<input type="number" name="campaignStartingLevel" min="1" max="20" value="{{campaign.startingLevel}}"></label>
+              <label class="wide">Campaign premise<textarea name="campaignPremise" rows="3" placeholder="The characters are local protectors who must discover why people are disappearing around the lake before the village is abandoned.">{{campaign.premise}}</textarea></label>
+              <label>Campaign length<select name="campaignLength">{{#each campaignLengths}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label>Expected final level<input type="number" name="campaignFinalLevel" min="1" max="20" value="{{campaign.finalLevel}}"></label>
+              <label>Primary style<select name="campaignStyle">{{#each campaignStyles}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <label>Tone<select name="campaignTone">{{#each campaignTones}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            </div>
+            <aside class="ls-campaign-guidance"><strong>Recommended scope</strong><p>{{campaignGuidance.scope}}</p><strong>Style guidance</strong><p>{{campaignGuidance.style}}</p></aside>
+          </section>
+        {{/if}}
+
+        {{#if campaignSteps.problem.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 2 of 6</div><h2>Define the main problem</h2><p>Describe the situation the characters can actually affect. You do not need the complete history of the world.</p>
+            <div class="ls-session-form">
+              <label class="wide">What is currently going wrong?<textarea name="campaignProblemWrong" rows="4" placeholder="People and fishing boats are disappearing from the lakeside village.">{{campaign.problem.wrong}}</textarea></label>
+              <label>Who or what is causing it?<textarea name="campaignProblemCause" rows="4" placeholder="The manor's owner is feeding captives to something beneath the lake.">{{campaign.problem.cause}}</textarea></label>
+              <label>What happens if nobody intervenes?<textarea name="campaignProblemStakes" rows="4" placeholder="The village is abandoned and the creature grows strong enough to leave the lake.">{{campaign.problem.stakes}}</textarea></label>
+            </div>
+          </section>
+        {{/if}}
+
+        {{#if campaignSteps.place.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 3 of 6</div><h2>Create the starting place</h2><p>Prepare the place where play begins. The rest of the world can remain undefined until the characters reach it.</p>
+            <div class="ls-campaign-place-layout">
+              <div class="ls-campaign-place-preview">{{#if campaign.place.image}}<img src="{{campaign.place.image}}" alt="{{campaign.place.name}}">{{else}}<i class="fa-solid fa-mountain-sun"></i><span>No image selected</span>{{/if}}</div>
+              <div class="ls-session-form">
+                <label>Place name<input name="campaignPlaceName" value="{{campaign.place.name}}" placeholder="Bigwick"></label>
+                <label>Image<span class="ls-inline-control"><input name="campaignPlaceImage" value="{{campaign.place.image}}" placeholder="Choose an image"><button type="button" data-action="browseCampaignPlaceImage">Browse</button></span></label>
+                <label class="wide">Short description<textarea name="campaignPlaceDescription" rows="3" placeholder="A timber village pressed between an old forest and a broad, unnaturally still lake.">{{campaign.place.description}}</textarea></label>
+                <label>What makes it interesting?<textarea name="campaignPlaceInterest" rows="3" placeholder="The village survives through fishing and service to the isolated manor.">{{campaign.place.interest}}</textarea></label>
+                <label>What immediate problem exists here?<textarea name="campaignPlaceProblem" rows="3" placeholder="Three boats have disappeared in the last ten days.">{{campaign.place.problem}}</textarea></label>
+              </div>
+            </div>
+          </section>
+        {{/if}}
+
+        {{#if campaignSteps.people.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 4 of 6</div><h2>Create three important people</h2><p>Three useful roles are enough to begin. They can become native PF2e Actors later if the campaign needs statistics.</p>
+            <div class="ls-campaign-people">{{#each campaign.people}}<article data-campaign-person-id="{{id}}"><header><div><span>{{label}}</span><small>{{suggestion}}</small></div></header><div class="ls-session-form">
+              <label>Name<input name="campaignPersonName" value="{{name}}" placeholder="NPC name"></label>
+              <label>Basic description<input name="campaignPersonDescription" value="{{description}}" placeholder="Appearance, position, and first impression"></label>
+              <label>What do they want?<textarea name="campaignPersonWants" rows="2">{{wants}}</textarea></label>
+              <label>What do they know?<textarea name="campaignPersonKnows" rows="2">{{knows}}</textarea></label>
+              <label class="wide">One secret<textarea name="campaignPersonSecret" rows="2">{{secret}}</textarea></label>
+            </div></article>{{/each}}</div>
+          </section>
+        {{/if}}
+
+        {{#if campaignSteps.characters.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 5 of 6</div><h2>Connect the player characters</h2><p>Do this after character creation or during Session Zero. A short personal reason is more useful than a complete backstory.</p>
+            <div class="ls-campaign-characters">{{#each campaign.characters}}<article data-campaign-character-id="{{id}}"><header><strong>{{#if name}}{{name}}{{else}}Player character{{/if}}</strong><button class="danger" data-action="removeCampaignCharacter" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></header><div class="ls-session-form">
+              <label>Character name<input name="campaignCharacterName" value="{{name}}"></label>
+              <label>Why are they involved?<input name="campaignCharacterInvolvement" value="{{involvement}}"></label>
+              <label>Which NPC do they know?<input name="campaignCharacterNpc" value="{{npcConnection}}"></label>
+              <label>What do they personally want?<input name="campaignCharacterDesire" value="{{desire}}"></label>
+              <label class="wide">Why do they remain with the party?<input name="campaignCharacterBond" value="{{bond}}"></label>
+            </div></article>{{/each}}</div>
+            <button data-action="addCampaignCharacter"><i class="fa-solid fa-plus"></i> Add character</button>
+          </section>
+        {{/if}}
+
+        {{#if campaignSteps.session.active}}
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 6 of 6</div><h2>Prepare the first session</h2><p>Prepare a strong beginning, not the entire campaign. The Session Prep tool can expand this material before play.</p>
+            <aside class="ls-campaign-guidance"><strong>{{campaignGuidance.style}} guidance</strong><ul>{{#each campaignGuidance.session}}<li>{{this}}</li>{{/each}}</ul></aside>
+            <div class="ls-session-form">
+              <label>Opening situation<textarea name="campaignFirstOpening" rows="3" placeholder="Where play begins and what immediately demands attention.">{{campaign.firstSession.opening}}</textarea></label>
+              <label>First objective<textarea name="campaignFirstObjective" rows="3" placeholder="A clear objective the party can complete or meaningfully advance.">{{campaign.firstSession.objective}}</textarea></label>
+              <label>Likely location 1<input name="campaignFirstLocation0" value="{{campaign.firstSession.locations.[0]}}"></label><label>Likely location 2<input name="campaignFirstLocation1" value="{{campaign.firstSession.locations.[1]}}"></label>
+              <label>Likely scene 1<textarea name="campaignFirstScene0" rows="2">{{campaign.firstSession.scenes.[0]}}</textarea></label><label>Likely scene 2<textarea name="campaignFirstScene1" rows="2">{{campaign.firstSession.scenes.[1]}}</textarea></label>
+              <label class="wide">Possible encounter<textarea name="campaignFirstEncounter" rows="3" placeholder="Participants, purpose, terrain, and alternatives to fighting.">{{campaign.firstSession.encounter}}</textarea></label>
+              <label>Clue 1<input name="campaignFirstClue0" value="{{campaign.firstSession.clues.[0]}}"></label><label>Clue 2<input name="campaignFirstClue1" value="{{campaign.firstSession.clues.[1]}}"></label><label>Clue 3<input name="campaignFirstClue2" value="{{campaign.firstSession.clues.[2]}}"></label>
+              <label>Meaningful reward<input name="campaignFirstReward" value="{{campaign.firstSession.reward}}"></label>
+              <label class="wide">What happens if the party fails or refuses?<textarea name="campaignFirstFailure" rows="3">{{campaign.firstSession.failure}}</textarea></label>
+            </div>
+            {{#if campaignValidation.length}}<div class="ls-warning"><strong>Before creating the campaign Journal:</strong>{{#each campaignValidation}}<div>{{this}}</div>{{/each}}</div>{{else}}<div class="ls-session-ready"><i class="fa-solid fa-circle-check"></i><span>The campaign foundation is ready.</span></div>{{/if}}
+          </section>
+        {{/if}}
+
+        <footer class="ls-session-navigation"><button data-action="previousCampaignStep" {{#unless canCampaignBack}}disabled{{/unless}}><i class="fa-solid fa-arrow-left"></i> Back</button><span>Your campaign draft is saved automatically. Existing Foundry Journals are never deleted.</span>{{#if campaignSteps.session.active}}<button data-action="createCampaignJournal" {{#if campaignValidation.length}}disabled{{/if}}>{{#if campaignJournalAvailable}}Update{{else}}Create{{/if}} campaign Journal <i class="fa-solid fa-book-sparkles"></i></button>{{else}}<button data-action="nextCampaignStep">Continue <i class="fa-solid fa-arrow-right"></i></button>{{/if}}</footer>
+      </section>
+    {{/if}}
+
     {{#if tabs.session}}
       <section class="ls-panel ls-session-panel">
         <header><div><span>Guided next-session preparation</span><h1>Session Prep</h1></div><div class="ls-header-actions"><button data-action="newSessionPrep"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openLastSessionJournal" {{#unless lastSessionJournalId}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open last session</button></div></header>

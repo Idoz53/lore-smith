@@ -1693,6 +1693,139 @@ function normalizeSessionTextEntries(entries, fallback = "") {
   return source.map((entry) => ({ ...newSessionTextEntry(), ...entry, id: entry.id || foundry.utils.randomID() }));
 }
 
+const CAMPAIGN_LENGTHS = {
+  "one-shot": { label: "One-shot", scope: "One immediate problem, one primary location, and a conclusion." },
+  short: { label: "Short campaign", scope: "One central threat, a small recurring cast, and roughly three to five important locations." },
+  long: { label: "Long campaign", scope: "A central threat that can grow into several arcs, factions, and regions." },
+  open: { label: "Open-ended sandbox", scope: "A strong starting area with active people and threats instead of a predetermined ending." },
+};
+
+const CAMPAIGN_STYLES = {
+  adventure: {
+    label: "Adventure",
+    guidance: "Keep the objective visible, make each location present a meaningful choice, and let success change the situation.",
+    people: ["A capable ally who can point toward the first objective", "An opponent actively advancing the central problem", "A witness who knows where the danger began"],
+    session: ["Open with a problem that demands action", "Offer at least two practical approaches", "End with a result that changes the situation"],
+  },
+  mystery: {
+    label: "Mystery",
+    guidance: "Define the true answer privately, then make every essential conclusion discoverable through multiple clues.",
+    people: ["A witness who wants the truth discovered", "A suspect or obstructive authority", "An informed person who is hiding part of the truth"],
+    session: ["Introduce one clear unanswered question", "Prepare at least three clues", "Use misleading interpretations, not mandatory false clues"],
+  },
+  exploration: {
+    label: "Exploration",
+    guidance: "Give places distinct identities, discoveries, routes, and risks. Travel should reveal choices rather than consume time by itself.",
+    people: ["A guide, patron, or survivor", "A rival explorer or territorial resident", "A scholar who understands one part of the destination"],
+    session: ["Show a destination worth reaching", "Prepare a route choice or environmental obstacle", "Reward curiosity with useful discoveries"],
+  },
+  politics: {
+    label: "Political intrigue",
+    guidance: "Give every important person a public objective, a private need, and leverage that can change their position.",
+    people: ["A potential ally with a price", "A rival representative with legitimate interests", "An intermediary who knows the relationships between factions"],
+    session: ["Present incompatible interests", "Give the party leverage to discover or earn", "Make alliances create visible consequences"],
+  },
+  horror: {
+    label: "Horror",
+    guidance: "Establish boundaries first, reveal the threat gradually, and preserve meaningful choices even when the characters feel vulnerable.",
+    people: ["A survivor or protector", "A person influenced by the threat", "A witness who understands one disturbing sign"],
+    session: ["Establish normality before disrupting it", "Reveal one concrete sign of danger", "Give the party a costly but meaningful choice"],
+  },
+  sandbox: {
+    label: "Sandbox",
+    guidance: "Prepare active situations, not a sequence. The world should react consistently to whichever direction the party chooses.",
+    people: ["A local contact offering an opportunity", "A rival pursuing their own objective", "A well-connected person who knows several possible directions"],
+    session: ["Offer at least three visible opportunities", "Show what may change if an opportunity is ignored", "Let the party choose the next commitment"],
+  },
+};
+
+const CAMPAIGN_TONES = {
+  heroic: "Heroic and hopeful",
+  "dark-heroic": "Dark but heroic",
+  lighthearted: "Lighthearted",
+  grim: "Grim and dangerous",
+  mythic: "Mythic and wondrous",
+};
+
+function newCampaignPerson(slot, label) {
+  return { id: foundry.utils.randomID(), slot, label, name: "", description: "", wants: "", knows: "", secret: "" };
+}
+
+function newCampaignCharacter() {
+  return { id: foundry.utils.randomID(), name: "", involvement: "", npcConnection: "", desire: "", bond: "" };
+}
+
+function newCampaignBuild() {
+  return {
+    journalId: "", name: "", premise: "", startingLevel: 1, finalLevel: 5,
+    length: "short", style: "adventure", tone: "heroic",
+    problem: { wrong: "", cause: "", stakes: "" },
+    place: { name: "", image: "", description: "", interest: "", problem: "" },
+    people: [
+      newCampaignPerson("ally", "Someone who helps the party"),
+      newCampaignPerson("opponent", "Someone who opposes the party"),
+      newCampaignPerson("informant", "Someone who knows important information"),
+    ],
+    characters: [newCampaignCharacter()],
+    firstSession: {
+      opening: "", objective: "", locations: ["", ""], scenes: ["", ""],
+      encounter: "", clues: ["", "", ""], reward: "", failure: "",
+    },
+  };
+}
+
+function normalizeCampaignBuild(stored = {}) {
+  const fresh = newCampaignBuild();
+  const people = Array.isArray(stored.people) ? stored.people : [];
+  const characters = Array.isArray(stored.characters) ? stored.characters : [];
+  return {
+    ...fresh, ...stored,
+    problem: { ...fresh.problem, ...(stored.problem ?? {}) },
+    place: { ...fresh.place, ...(stored.place ?? {}) },
+    people: fresh.people.map((person, index) => ({ ...person, ...(people[index] ?? {}), id: people[index]?.id || person.id })),
+    characters: (characters.length ? characters : fresh.characters).map((character) => ({ ...newCampaignCharacter(), ...character, id: character.id || foundry.utils.randomID() })),
+    firstSession: {
+      ...fresh.firstSession, ...(stored.firstSession ?? {}),
+      locations: [...(Array.isArray(stored.firstSession?.locations) ? stored.firstSession.locations : fresh.firstSession.locations)].slice(0, 2).concat(["", ""]).slice(0, 2),
+      scenes: [...(Array.isArray(stored.firstSession?.scenes) ? stored.firstSession.scenes : fresh.firstSession.scenes)].slice(0, 2).concat(["", ""]).slice(0, 2),
+      clues: [...(Array.isArray(stored.firstSession?.clues) ? stored.firstSession.clues : fresh.firstSession.clues)].slice(0, 3).concat(["", "", ""]).slice(0, 3),
+    },
+  };
+}
+
+function campaignList(title, entries) {
+  const values = entries.map((entry) => String(entry ?? "").trim()).filter(Boolean);
+  return values.length ? `<h2>${escapeHtml(title)}</h2><ul>${values.map((entry) => `<li>${sessionHtml(entry)}</li>`).join("")}</ul>` : "";
+}
+
+function campaignJournalPages(campaign) {
+  const style = CAMPAIGN_STYLES[campaign.style] ?? CAMPAIGN_STYLES.adventure;
+  const length = CAMPAIGN_LENGTHS[campaign.length] ?? CAMPAIGN_LENGTHS.short;
+  const overview = [
+    sessionBlock("Campaign premise", campaign.premise),
+    `<p><strong>Starting level</strong> ${Number(campaign.startingLevel) || 1}</p>`,
+    `<p><strong>Expected final level</strong> ${Number(campaign.finalLevel) || Number(campaign.startingLevel) || 1}</p>`,
+    `<p><strong>Format</strong> ${escapeHtml(length.label)}</p>`,
+    `<p><strong>Primary style</strong> ${escapeHtml(style.label)}</p>`,
+    `<p><strong>Tone</strong> ${escapeHtml(CAMPAIGN_TONES[campaign.tone] ?? campaign.tone)}</p>`,
+  ].join("");
+  const threat = `${sessionBlock("What is going wrong?", campaign.problem.wrong)}${sessionBlock("Who or what is causing it?", campaign.problem.cause)}${sessionBlock("What happens if nobody intervenes?", campaign.problem.stakes)}`;
+  const placeImage = campaign.place.image ? `<figure><img src="${escapeHtml(campaign.place.image)}" alt="${escapeHtml(campaign.place.name)}"></figure>` : "";
+  const place = `${placeImage}${sessionBlock("Description", campaign.place.description)}${sessionBlock("What makes it interesting?", campaign.place.interest)}${sessionBlock("Immediate local problem", campaign.place.problem)}`;
+  const people = campaign.people.map((person) => `<section><h2>${escapeHtml(person.label)}</h2><h3>${escapeHtml(person.name || "Unnamed NPC")}</h3>${sessionBlock("Basic description", person.description)}${sessionBlock("What they want", person.wants)}${sessionBlock("What they know", person.knows)}${sessionBlock("Secret", person.secret)}</section>`).join("<hr>");
+  const characters = campaign.characters.filter((character) => [character.name, character.involvement, character.npcConnection, character.desire, character.bond].some((value) => String(value ?? "").trim())).map((character) => `<section><h2>${escapeHtml(character.name || "Unnamed character")}</h2>${sessionBlock("Why they are involved", character.involvement)}${sessionBlock("NPC connection", character.npcConnection)}${sessionBlock("What they want", character.desire)}${sessionBlock("Why they stay with the party", character.bond)}</section>`).join("<hr>") || "<p>Add player-character connections during Session Zero.</p>";
+  const first = campaign.firstSession;
+  const session = `${sessionBlock("Opening situation", first.opening)}${sessionBlock("First objective", first.objective)}${campaignList("Likely locations", first.locations)}${campaignList("Likely scenes", first.scenes)}${sessionBlock("Encounter", first.encounter)}${campaignList("Discoverable clues", first.clues)}${sessionBlock("Reward", first.reward)}${sessionBlock("If the party fails or refuses", first.failure)}`;
+  return [
+    { key: "overview", name: "Campaign Overview", content: overview },
+    { key: "problem", name: "Main Threat", content: threat || "<p>Define the campaign's central problem here.</p>" },
+    { key: "place", name: campaign.place.name || "Starting Location", content: place || "<p>Describe the campaign's starting location here.</p>" },
+    { key: "people", name: "Important NPCs", content: people },
+    { key: "characters", name: "Player Connections", content: characters },
+    { key: "session", name: "First Session", content: session || "<p>Prepare the campaign's opening session here.</p>" },
+  ];
+}
+
 const LOOT_ROLES = {
   dps: { label: "DPS" }, tank: { label: "TANK" }, healer: { label: "HEALER" }, annoyer: { label: "ANNOYER" },
 };
@@ -1986,6 +2119,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       clearLoot: LoreSmithDashboard.clearLoot,
       addLootToRewards: LoreSmithDashboard.addLootToRewards,
       openLootDocument: LoreSmithDashboard.openLootDocument,
+      newCampaignBuild: LoreSmithDashboard.newCampaignBuild,
+      previousCampaignStep: LoreSmithDashboard.previousCampaignStep,
+      nextCampaignStep: LoreSmithDashboard.nextCampaignStep,
+      goToCampaignStep: LoreSmithDashboard.goToCampaignStep,
+      browseCampaignPlaceImage: LoreSmithDashboard.browseCampaignPlaceImage,
+      addCampaignCharacter: LoreSmithDashboard.addCampaignCharacter,
+      removeCampaignCharacter: LoreSmithDashboard.removeCampaignCharacter,
+      createCampaignJournal: LoreSmithDashboard.createCampaignJournal,
+      openCampaignJournal: LoreSmithDashboard.openCampaignJournal,
     },
   };
 
@@ -1993,7 +2135,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     dashboard: { template: `modules/${MODULE_ID}/templates/dashboard.hbs` },
   };
 
-  activeTab = "session";
+  activeTab = "campaign";
   activeNoteId = null;
   creatureSearch = "";
   itemSearch = "";
@@ -2017,6 +2159,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   lootRole = "dps";
   lootCount = 6;
   lootSources = { permanent: true, consumable: true, gems: false, art: false };
+  campaignStep = 0;
+  campaign = newCampaignBuild();
+  campaignDraftLoaded = false;
+  campaignSaveTimer = null;
+  campaignScrollTop = 0;
 
   async getNotebook(create = false) {
     let journal = game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "notebook"));
@@ -2073,6 +2220,19 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         }
       } catch (error) {
         console.warn("Lore Smith | Could not restore the Session Prep draft.", error);
+      }
+    }
+    if (!this.campaignDraftLoaded) {
+      this.campaignDraftLoaded = true;
+      try {
+        const rawDraft = game.settings.get(MODULE_ID, "campaignBuilderDraft");
+        const stored = rawDraft ? JSON.parse(rawDraft) : null;
+        if (stored?.campaign || stored?.name) {
+          this.campaign = normalizeCampaignBuild(stored.campaign ?? stored);
+          this.campaignStep = Math.max(0, Math.min(5, Number(stored.step) || 0));
+        }
+      } catch (error) {
+        console.warn("Lore Smith | Could not restore the Campaign Builder draft.", error);
       }
     }
     const sceneTokens = (canvas?.scene?.tokens?.contents ?? []).filter((token) => token.actor).map((token) => {
@@ -2138,6 +2298,18 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     const sessionStepEntries = [["goal", "Goal"], ["locations", "Places"], ["people", "People"], ["music", "Music"], ["scenes", "Scenes"], ["review", "Review"]];
     const sessionSteps = Object.fromEntries(sessionStepEntries.map(([key, label], index) => [key, { index, number: index + 1, label, active: this.sessionStep === index }]));
+    const campaignStepEntries = [["idea", "Idea"], ["problem", "Problem"], ["place", "Place"], ["people", "People"], ["characters", "Characters"], ["session", "First Session"]];
+    const campaignSteps = Object.fromEntries(campaignStepEntries.map(([key, label], index) => [key, { index, number: index + 1, label, active: this.campaignStep === index }]));
+    const campaignStyle = CAMPAIGN_STYLES[this.campaign.style] ?? CAMPAIGN_STYLES.adventure;
+    const campaignLength = CAMPAIGN_LENGTHS[this.campaign.length] ?? CAMPAIGN_LENGTHS.short;
+    const campaignPeople = this.campaign.people.map((person, index) => ({ ...person, suggestion: campaignStyle.people[index] ?? "" }));
+    const campaignValidation = [];
+    if (!this.campaign.name.trim()) campaignValidation.push("Name the campaign.");
+    if (!this.campaign.premise.trim()) campaignValidation.push("Write the campaign premise.");
+    if (!this.campaign.problem.wrong.trim()) campaignValidation.push("Describe what is going wrong.");
+    if (!this.campaign.problem.cause.trim()) campaignValidation.push("Identify who or what is causing the problem.");
+    if (!this.campaign.place.name.trim()) campaignValidation.push("Name the starting place.");
+    if (!this.campaign.firstSession.objective.trim()) campaignValidation.push("Give the first session a clear objective.");
     return {
       ...await super._prepareContext(options),
       tabs: { [this.activeTab]: true },
@@ -2169,6 +2341,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       lootRoles: Object.entries(LOOT_ROLES).map(([value, data]) => ({ value, label: data.label, selected: value === this.lootRole })),
       lootResults: this.lootResults, lootStatus: this.lootStatus,
       lootMinLevel: this.lootMinLevel, lootMaxLevel: this.lootMaxLevel, lootCount: this.lootCount, lootSources: this.lootSources,
+      campaign: { ...this.campaign, people: campaignPeople },
+      campaignSteps,
+      campaignStyles: Object.entries(CAMPAIGN_STYLES).map(([value, data]) => ({ value, label: data.label, selected: value === this.campaign.style })),
+      campaignLengths: Object.entries(CAMPAIGN_LENGTHS).map(([value, data]) => ({ value, label: data.label, selected: value === this.campaign.length })),
+      campaignTones: Object.entries(CAMPAIGN_TONES).map(([value, label]) => ({ value, label, selected: value === this.campaign.tone })),
+      campaignGuidance: { style: campaignStyle.guidance, scope: campaignLength.scope, session: campaignStyle.session },
+      campaignValidation,
+      canCampaignBack: this.campaignStep > 0,
+      campaignJournalAvailable: Boolean(game.journal.get(this.campaign.journalId)),
     };
   }
 
@@ -2176,6 +2357,23 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     super._onRender(context, options);
     const main = this.element?.querySelector(".ls-main");
     if (main && this.sessionScrollTop) main.scrollTop = this.sessionScrollTop;
+    if (main && this.activeTab === "campaign" && this.campaignScrollTop) main.scrollTop = this.campaignScrollTop;
+    if (this.activeTab === "campaign") {
+      for (const field of this.element?.querySelectorAll(".ls-campaign-panel input, .ls-campaign-panel textarea, .ls-campaign-panel select") ?? []) {
+        const eventName = field.matches("select") ? "change" : "input";
+        field.addEventListener(eventName, () => {
+          clearTimeout(this.campaignSaveTimer);
+          this.campaignSaveTimer = setTimeout(() => void this.syncCampaignForm(), 300);
+        });
+      }
+      for (const select of this.element?.querySelectorAll('[name="campaignStyle"], [name="campaignLength"]') ?? []) {
+        select.addEventListener("change", async () => {
+          await this.syncCampaignForm();
+          await this.renderCampaignPreservingScroll();
+        });
+      }
+      return;
+    }
     if (this.activeTab === "session") {
       for (const field of this.element?.querySelectorAll(".ls-session-panel input, .ls-session-panel textarea, .ls-session-panel select") ?? []) {
         const eventName = field.matches("select") ? "change" : "input";
@@ -2378,10 +2576,186 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.saveSessionPrepDraft();
   }
 
+  async saveCampaignDraft() {
+    await game.settings.set(MODULE_ID, "campaignBuilderDraft", JSON.stringify({ step: this.campaignStep, campaign: this.campaign }));
+  }
+
+  async renderCampaignPreservingScroll() {
+    this.campaignScrollTop = this.element?.querySelector(".ls-main")?.scrollTop ?? this.campaignScrollTop;
+    await this.render();
+  }
+
+  async syncCampaignForm() {
+    const root = this.element;
+    if (!root || this.activeTab !== "campaign") return;
+    const value = (name) => root.querySelector(`[name="${name}"]`)?.value?.trim();
+    const assign = (target, property, name, transform = (entry) => entry) => {
+      const fieldValue = value(name);
+      if (fieldValue !== undefined) target[property] = transform(fieldValue);
+    };
+    assign(this.campaign, "name", "campaignName");
+    assign(this.campaign, "premise", "campaignPremise");
+    assign(this.campaign, "startingLevel", "campaignStartingLevel", (entry) => Math.max(1, Math.min(20, Number(entry) || 1)));
+    assign(this.campaign, "finalLevel", "campaignFinalLevel", (entry) => Math.max(1, Math.min(20, Number(entry) || 1)));
+    assign(this.campaign, "length", "campaignLength");
+    assign(this.campaign, "style", "campaignStyle");
+    assign(this.campaign, "tone", "campaignTone");
+    assign(this.campaign.problem, "wrong", "campaignProblemWrong");
+    assign(this.campaign.problem, "cause", "campaignProblemCause");
+    assign(this.campaign.problem, "stakes", "campaignProblemStakes");
+    assign(this.campaign.place, "name", "campaignPlaceName");
+    assign(this.campaign.place, "image", "campaignPlaceImage");
+    assign(this.campaign.place, "description", "campaignPlaceDescription");
+    assign(this.campaign.place, "interest", "campaignPlaceInterest");
+    assign(this.campaign.place, "problem", "campaignPlaceProblem");
+    const existingPeople = new Map(this.campaign.people.map((person) => [person.id, person]));
+    const personCards = [...root.querySelectorAll("[data-campaign-person-id]")];
+    if (personCards.length) this.campaign.people = personCards.map((card) => {
+      const person = existingPeople.get(card.dataset.campaignPersonId) ?? newCampaignPerson("person", "Important person");
+      const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
+      return { ...person, name: field("campaignPersonName"), description: field("campaignPersonDescription"), wants: field("campaignPersonWants"), knows: field("campaignPersonKnows"), secret: field("campaignPersonSecret") };
+    });
+    const existingCharacters = new Map(this.campaign.characters.map((character) => [character.id, character]));
+    const characterCards = [...root.querySelectorAll("[data-campaign-character-id]")];
+    if (characterCards.length) this.campaign.characters = characterCards.map((card) => {
+      const character = existingCharacters.get(card.dataset.campaignCharacterId) ?? newCampaignCharacter();
+      const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
+      return { ...character, name: field("campaignCharacterName"), involvement: field("campaignCharacterInvolvement"), npcConnection: field("campaignCharacterNpc"), desire: field("campaignCharacterDesire"), bond: field("campaignCharacterBond") };
+    });
+    const first = this.campaign.firstSession;
+    assign(first, "opening", "campaignFirstOpening");
+    assign(first, "objective", "campaignFirstObjective");
+    assign(first, "encounter", "campaignFirstEncounter");
+    assign(first, "reward", "campaignFirstReward");
+    assign(first, "failure", "campaignFirstFailure");
+    for (let index = 0; index < 2; index += 1) {
+      const location = value(`campaignFirstLocation${index}`);
+      const scene = value(`campaignFirstScene${index}`);
+      if (location !== undefined) first.locations[index] = location;
+      if (scene !== undefined) first.scenes[index] = scene;
+    }
+    for (let index = 0; index < 3; index += 1) {
+      const clue = value(`campaignFirstClue${index}`);
+      if (clue !== undefined) first.clues[index] = clue;
+    }
+    await this.saveCampaignDraft();
+  }
+
+  static async newCampaignBuild() {
+    await this.syncCampaignForm();
+    const confirmed = await foundry.applications.api.DialogV2.confirm({
+      window: { title: "Start a new campaign?" },
+      content: "<p>This clears the current Campaign Builder draft. Existing Foundry Journals are not deleted.</p>",
+      yes: { label: "Start new campaign", icon: "fa-solid fa-rotate-left" },
+      no: { label: "Cancel" },
+    });
+    if (!confirmed) return;
+    this.campaign = newCampaignBuild();
+    this.campaignStep = 0;
+    await this.saveCampaignDraft();
+    await this.render();
+  }
+
+  static async previousCampaignStep() {
+    await this.syncCampaignForm();
+    this.campaignStep = Math.max(0, this.campaignStep - 1);
+    await this.saveCampaignDraft();
+    await this.render();
+  }
+
+  static async nextCampaignStep() {
+    await this.syncCampaignForm();
+    this.campaignStep = Math.min(5, this.campaignStep + 1);
+    await this.saveCampaignDraft();
+    await this.render();
+  }
+
+  static async goToCampaignStep(_event, target) {
+    await this.syncCampaignForm();
+    this.campaignStep = Math.max(0, Math.min(5, Number(target.dataset.step) || 0));
+    await this.saveCampaignDraft();
+    await this.render();
+  }
+
+  static async browseCampaignPlaceImage() {
+    await this.syncCampaignForm();
+    new FilePicker({ type: "imagevideo", current: this.campaign.place.image, callback: async (path) => {
+      this.campaign.place.image = path;
+      await this.saveCampaignDraft();
+      const input = this.element?.querySelector('[name="campaignPlaceImage"]');
+      if (input) input.value = path;
+    } }).browse();
+  }
+
+  static async addCampaignCharacter() {
+    await this.syncCampaignForm();
+    this.campaign.characters.push(newCampaignCharacter());
+    await this.saveCampaignDraft();
+    await this.renderCampaignPreservingScroll();
+  }
+
+  static async removeCampaignCharacter(_event, target) {
+    await this.syncCampaignForm();
+    this.campaign.characters = this.campaign.characters.filter((character) => character.id !== target.dataset.id);
+    if (!this.campaign.characters.length) this.campaign.characters.push(newCampaignCharacter());
+    await this.saveCampaignDraft();
+    await this.renderCampaignPreservingScroll();
+  }
+
+  static async createCampaignJournal() {
+    await this.syncCampaignForm();
+    const invalid = !this.campaign.name.trim() || !this.campaign.premise.trim() || !this.campaign.problem.wrong.trim()
+      || !this.campaign.problem.cause.trim() || !this.campaign.place.name.trim() || !this.campaign.firstSession.objective.trim();
+    if (invalid) {
+      this.campaignStep = 5;
+      await this.saveCampaignDraft();
+      await this.render();
+      return ui.notifications.warn("Complete the required Campaign Builder fields before creating the Journal.");
+    }
+    let journal = game.journal.get(this.campaign.journalId);
+    if (!journal) {
+      journal = await JournalEntry.create({
+        name: this.campaign.name.trim(),
+        flags: { [FLAG_SCOPE]: { campaignBuilder: true, createdAt: new Date().toISOString() } },
+        pages: [],
+      });
+      this.campaign.journalId = journal.id;
+    } else {
+      await journal.update({ name: this.campaign.name.trim() });
+    }
+    const generated = campaignJournalPages(this.campaign);
+    for (const [index, pageData] of generated.entries()) {
+      const existing = journal.pages.find((page) => page.getFlag(FLAG_SCOPE, "campaignSection") === pageData.key);
+      if (existing) {
+        await existing.update({ name: pageData.name, "text.content": pageData.content, sort: (index + 1) * 100000 });
+      } else {
+        await journal.createEmbeddedDocuments("JournalEntryPage", [{
+          name: pageData.name, type: "text", text: { content: pageData.content }, sort: (index + 1) * 100000,
+          flags: { [FLAG_SCOPE]: { campaignSection: pageData.key } },
+        }]);
+      }
+    }
+    await journal.setFlag(FLAG_SCOPE, "campaignConfig", {
+      length: this.campaign.length, style: this.campaign.style, tone: this.campaign.tone,
+      startingLevel: this.campaign.startingLevel, finalLevel: this.campaign.finalLevel,
+    });
+    await this.saveCampaignDraft();
+    ui.notifications.info(`${journal.name} is ready in Foundry Journals.`);
+    journal.sheet.render(true);
+    await this.render();
+  }
+
+  static async openCampaignJournal() {
+    const journal = game.journal.get(this.campaign.journalId);
+    if (!journal) return ui.notifications.warn("Create the campaign Journal first.");
+    journal.sheet.render(true);
+  }
+
   static async changeTab(event, target) {
     const tab = target?.dataset?.tab || event?.currentTarget?.dataset?.tab;
     if (!tab) return;
     await this.syncSessionPrepForm();
+    await this.syncCampaignForm();
     this.activeTab = tab;
     await this.render();
   }
@@ -2885,6 +3259,14 @@ Hooks.once("init", () => {
   game.settings.register(MODULE_ID, "sessionPrepDraft", {
     name: "Session Prep Draft",
     hint: "Automatically stores the current guided session-preparation draft.",
+    scope: "client",
+    config: false,
+    type: String,
+    default: "",
+  });
+  game.settings.register(MODULE_ID, "campaignBuilderDraft", {
+    name: "Campaign Builder Draft",
+    hint: "Automatically stores the current guided campaign-building draft.",
     scope: "client",
     config: false,
     type: String,

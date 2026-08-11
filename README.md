@@ -5,6 +5,12 @@ Pathfinder Second Edition system.
 
 The module provides:
 
+- a simple six-step Campaign Builder for the campaign idea, central problem,
+  starting place, three important people, player-character connections, and the
+  first session; campaign style, length, and tone adjust data-driven guidance
+  without changing the workflow, drafts save automatically, and the finished
+  foundation becomes a six-page native Foundry Journal that can be reopened or
+  updated from Lore Smith;
 - a six-step Session Prep dashboard that turns a session goal, two or more
   image-backed locations, sensory descriptions, structured people and factions,
   dropped hazards and encounter actors, scenes, clues, rewards, consequences, and GM
