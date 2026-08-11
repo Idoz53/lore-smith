@@ -1826,49 +1826,107 @@ function campaignJournalPages(campaign) {
   ];
 }
 
-const LOOT_ROLES = {
-  dps: { label: "DPS" }, tank: { label: "TANK" }, healer: { label: "HEALER" }, annoyer: { label: "ANNOYER" },
+const LOOT_FILTER_MODES = {
+  required: "Required", preferred: "Preferred", excluded: "Excluded",
 };
 
-function lootText(entry) {
-  return `${entry.name ?? ""} ${entry.description ?? ""} ${(entry.traits ?? []).join(" ")}`.replace(/<[^>]+>/g, " ").toLowerCase();
+const LOOT_DAMAGE_TYPES = ["acid", "bleed", "bludgeoning", "cold", "electricity", "fire", "force", "mental", "piercing", "poison", "slashing", "sonic", "spirit", "vitality", "void"];
+const LOOT_CONDITIONS = ["blinded", "clumsy", "concealed", "confused", "dazzled", "deafened", "doomed", "drained", "dying", "encumbered", "enfeebled", "fascinated", "fatigued", "fleeing", "frightened", "grabbed", "immobilized", "off-guard", "paralyzed", "persistent damage", "prone", "quickened", "restrained", "sickened", "slowed", "stunned", "stupefied", "unconscious", "wounded"];
+
+const LOOT_MECHANICS = {
+  resistance: { label: "Resistance", detailLabel: "Damage type", details: LOOT_DAMAGE_TYPES },
+  "ac-bonus": { label: "AC bonus" },
+  "saving-throw": { label: "Saving throw bonus", detailLabel: "Save", details: ["fortitude", "reflex", "will"] },
+  healing: { label: "Healing" },
+  vitality: { label: "Vitality" },
+  "temporary-hp": { label: "Temporary Hit Points" },
+  "condition-removal": { label: "Condition removal", detailLabel: "Condition", details: LOOT_CONDITIONS },
+  counteract: { label: "Counteract or affliction protection" },
+  "attack-bonus": { label: "Attack bonus" },
+  "additional-damage": { label: "Additional damage", detailLabel: "Damage type", details: LOOT_DAMAGE_TYPES },
+  "persistent-damage": { label: "Persistent damage", detailLabel: "Damage type", details: LOOT_DAMAGE_TYPES },
+  "applies-condition": { label: "Applies a condition", detailLabel: "Condition", details: LOOT_CONDITIONS },
+  "forced-movement": { label: "Forced movement" },
+  "difficult-terrain": { label: "Difficult terrain" },
+  "speed-bonus": { label: "Speed or movement" },
+  "skill-bonus": { label: "Skill bonus" },
+  perception: { label: "Perception or special senses" },
+  shield: { label: "Shield, Hardness, or Shield Block" },
+};
+
+function newLootFilter() {
+  return { id: foundry.utils.randomID(), mechanic: "resistance", detail: "", mode: "required" };
 }
 
-function weightedMatches(text, patterns, weight) {
-  return patterns.reduce((score, pattern) => score + (text.includes(pattern) ? weight : 0), 0);
+function lootPlainText(value) {
+  return String(value ?? "").replace(/<[^>]+>/g, " ").replace(/&(?:nbsp|amp|lt|gt|quot|#39);/gi, " ").toLowerCase().replace(/[^a-z0-9+]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function lootRoleScore(entry, role) {
-  const text = lootText(entry);
-  const name = String(entry.name ?? "").toLowerCase();
-  const type = String(entry.documentType ?? entry.type ?? "").toLowerCase();
-  if (role === "tank") {
-    let score = type === "shield" ? 18 : type === "armor" ? 16 : 0;
-    score += weightedMatches(text, ["item bonus to ac", "status bonus to ac", "circumstance bonus to ac", "resilient rune", "fortification rune", "raise a shield", "shield block", "shield hardness", "reduces the damage", "resistance to", "bonus to saving throws"], 8);
-    score += weightedMatches(name, ["resilient", "fortification", "defender", "barricade", "lifting belt"], 7);
-    score += weightedMatches(text, ["increase your maximum bulk", "increases your maximum bulk", "bulk limits are increased", "carry more bulk", "lifting belt"], 6);
-    if (["book", "kit", "treasure"].includes(type)) score -= 20;
-    return score;
+function lootFilterCorpus(entry) {
+  const traits = Array.isArray(entry.traits) ? entry.traits : entry.traits instanceof Set ? [...entry.traits] : [];
+  const structured = lootPlainText(`${entry.documentType ?? entry.type ?? ""} ${entry.category ?? ""} ${traits.join(" ")} ${JSON.stringify(entry.rules ?? [])}`);
+  const prose = lootPlainText(`${entry.name ?? ""} ${entry.description ?? ""}`);
+  return { structured, prose, combined: `${structured} ${prose}`.trim() };
+}
+
+function lootMechanicPatterns(mechanic) {
+  return {
+    resistance: ["resistance", "resistant"],
+    "ac-bonus": ["selector ac", "armor class", "bonus to ac", "bonus to your ac", " ac by"],
+    "saving-throw": ["saving throw", "fortitude", "reflex", "will save", "saves against"],
+    healing: ["healing", "restore hit points", "restores hit points", "regain hit points", "regains hit points", "recover hit points"],
+    vitality: ["vitality"],
+    "temporary-hp": ["temporary hit points", "temporary hp"],
+    "condition-removal": ["remove the condition", "reduces the value", "reduce the value", "recover from", "end the condition", "counteract"],
+    counteract: ["counteract", "antidote", "antiplague", "affliction"],
+    "attack-bonus": ["attack roll", "bonus to attack", "item bonus to attack", "selector attack"],
+    "additional-damage": ["damage dice", "additional damage", "extra damage", "damage die", "bonus to damage", "key damagedice"],
+    "persistent-damage": ["persistent damage", "persistent"],
+    "applies-condition": ["becomes", "is frightened", "is clumsy", "is enfeebled", "is stupefied", "is slowed", "is stunned", "is sickened", "knocked prone", "grantitem"],
+    "forced-movement": ["forced movement", "push the target", "pull the target", "shove", "moves the target"],
+    "difficult-terrain": ["difficult terrain", "greater difficult terrain"],
+    "speed-bonus": ["speed bonus", "land speed", "fly speed", "swim speed", "climb speed", "burrow speed", "teleport"],
+    "skill-bonus": ["skill check", "item bonus to", "bonus to checks"],
+    perception: ["perception", "darkvision", "low light vision", "scent", "tremorsense", "echolocation"],
+    shield: ["shield", "hardness", "shield block"],
+  }[mechanic] ?? [];
+}
+
+function lootFilterMatch(entry, filter, flexible = true) {
+  const definition = LOOT_MECHANICS[filter.mechanic];
+  if (!definition) return { matched: false, reason: "", native: false };
+  const corpus = lootFilterCorpus(entry);
+  const patterns = lootMechanicPatterns(filter.mechanic);
+  const type = String(entry.documentType ?? "").toLowerCase();
+  const nativeTypeMatch = filter.mechanic === "shield" && type === "shield";
+  const structuredMatch = nativeTypeMatch || patterns.some((pattern) => corpus.structured.includes(pattern));
+  const proseMatch = flexible && patterns.some((pattern) => corpus.prose.includes(pattern));
+  let matched = structuredMatch || proseMatch;
+  const detail = lootPlainText(filter.detail);
+  if (matched && detail) {
+    const detailCorpus = structuredMatch ? corpus.structured : corpus.combined;
+    matched = detailCorpus.includes(detail);
   }
-  if (role === "dps") {
-    let score = type === "weapon" ? 14 : type === "ammo" ? 10 : 0;
-    score += weightedMatches(text, ["item bonus to attack", "weapon potency", "striking rune", "additional damage", "extra damage", "damage die", "critical specialization", "persistent damage"], 7);
-    score += weightedMatches(name, ["striking", "potency", "bomb", "ammunition"], 5);
-    return score;
-  }
-  if (role === "healer") {
-    let score = type === "consumable" ? 2 : 0;
-    score += weightedMatches(text, ["restore hit points", "regains hit points", "healing effect", "medicine checks", "treat wounds", "remove the condition", "counteract", "recovery check"], 8);
-    score += weightedMatches(name, ["healing", "elixir of life", "healer", "antidote", "antiplague", "restoration", "medic"], 7);
-    return score;
-  }
-  if (role === "annoyer") {
-    let score = 0;
-    score += weightedMatches(text, ["frightened", "slowed", "stunned", "sickened", "clumsy", "enfeebled", "stupefied", "off-guard", "prone", "restrained", "immobilized", "dazzled", "blinded", "difficult terrain", "forced movement", "penalty to"], 7);
-    score += weightedMatches(name, ["snare", "tangle", "dazzling", "fear", "bottled", "binding", "restraining"], 5);
-    return score;
-  }
-  return 0;
+  const detailLabel = detail ? `: ${detail}` : "";
+  return {
+    matched,
+    native: matched && structuredMatch,
+    reason: matched ? `${structuredMatch ? "Native" : "Description"}: ${definition.label}${detailLabel}` : "",
+  };
+}
+
+function applyLootFilters(entry, filters, matchMode = "all", flexible = true) {
+  const evaluations = filters.map((filter) => ({ filter, ...lootFilterMatch(entry, filter, flexible) }));
+  if (evaluations.some((evaluation) => evaluation.filter.mode === "excluded" && evaluation.matched)) return null;
+  const required = evaluations.filter((evaluation) => evaluation.filter.mode === "required");
+  const requiredPass = !required.length || (matchMode === "any" ? required.some((evaluation) => evaluation.matched) : required.every((evaluation) => evaluation.matched));
+  if (!requiredPass) return null;
+  const preferredMatches = evaluations.filter((evaluation) => evaluation.filter.mode === "preferred" && evaluation.matched);
+  const reasons = evaluations.filter((evaluation) => evaluation.filter.mode !== "excluded" && evaluation.matched).map((evaluation) => evaluation.reason);
+  return {
+    filterScore: preferredMatches.length * 10 + required.filter((evaluation) => evaluation.matched).length * 2,
+    reasons: [...new Set(reasons)],
+  };
 }
 
 function lootFamilyKey(name) {
@@ -1930,11 +1988,11 @@ async function rollTreasureTable(kind, level) {
   return { text: result.text || result.name || "Treasure result", img: result.img || "icons/commodities/gems/gem-faceted-round-white.webp", table: table.name };
 }
 
-async function collectRoleLoot(minLevel, maxLevel, role, includePermanent, includeConsumable) {
+async function collectFilteredLoot(minLevel, maxLevel, { includePermanent, includeConsumable, rarities, filters, matchMode, flexible }) {
   const supportedTypes = new Set(["armor", "shield", "weapon", "equipment", "backpack", "kit", "book", "treasure", "consumable", "ammo"]);
   const entries = [];
   for (const pack of game.packs.filter((candidate) => candidate.documentName === "Item")) {
-    const index = await pack.getIndex({ fields: ["name", "img", "type", "system.level.value", "system.description.value", "system.traits.value", "system.category"] });
+    const index = await pack.getIndex({ fields: ["name", "img", "type", "system.level.value", "system.description.value", "system.traits.value", "system.traits.rarity", "system.category", "system.rules"] });
     for (const entry of index) {
       if (!supportedTypes.has(entry.type)) continue;
       const itemLevel = numeric(entry.system?.level, 0);
@@ -1942,15 +2000,19 @@ async function collectRoleLoot(minLevel, maxLevel, role, includePermanent, inclu
       const candidate = {
         name: entry.name, img: entry.img, type: ITEM_TYPE_LABELS[entry.type] ?? entry.type, level: itemLevel,
         description: entry.system?.description?.value ?? "", traits: entry.system?.traits?.value ?? [],
-        category: entry.system?.category ?? "",
+        rarity: String(entry.system?.traits?.rarity ?? "common").toLowerCase(), category: entry.system?.category ?? "", rules: entry.system?.rules ?? [],
         uuid: entry.uuid ?? `Compendium.${pack.collection}.${entry._id}`, source: pack.metadata.label, documentType: entry.type,
       };
       if (!lootSourceAllowed(candidate, includePermanent, includeConsumable)) continue;
-      candidate.score = lootRoleScore(candidate, role);
+      if (!rarities[candidate.rarity]) continue;
+      const filterResult = applyLootFilters(candidate, filters, matchMode, flexible);
+      if (!filterResult) continue;
+      candidate.filterScore = filterResult.filterScore;
+      candidate.matchReasons = filterResult.reasons;
       entries.push(candidate);
     }
   }
-  const roleMatches = entries.filter((entry) => entry.score >= 5).sort((left, right) => right.score - left.score || Math.random() - 0.5);
+  const roleMatches = entries.sort((left, right) => right.filterScore - left.filterScore || Math.random() - 0.5);
   const unique = new Map();
   for (const entry of roleMatches) {
     const key = lootFamilyKey(entry.name);
@@ -2131,6 +2193,8 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       runEstimate: LoreSmithDashboard.runEstimate,
       runLive: LoreSmithDashboard.runLive,
       generateLoot: LoreSmithDashboard.generateLoot,
+      addLootFilter: LoreSmithDashboard.addLootFilter,
+      removeLootFilter: LoreSmithDashboard.removeLootFilter,
       clearLoot: LoreSmithDashboard.clearLoot,
       addLootToRewards: LoreSmithDashboard.addLootToRewards,
       openLootDocument: LoreSmithDashboard.openLootDocument,
@@ -2171,9 +2235,12 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   lootStatus = "";
   lootMinLevel = 1;
   lootMaxLevel = 1;
-  lootRole = "dps";
   lootCount = 6;
   lootSources = { permanent: true, consumable: true, gems: false, art: false };
+  lootRarities = { common: true, uncommon: true, rare: false, unique: false };
+  lootFilters = [];
+  lootMatchMode = "all";
+  lootFlexible = true;
   campaignStep = 0;
   campaign = newCampaignBuild();
   campaignDraftLoaded = false;
@@ -2353,9 +2420,23 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       encounterEntries: (this.sessionPrep.encounterEntries ?? []).map((entry, index) => ({ ...entry, number: index + 1, social: entry.type === "social", combat: entry.type === "combat" })),
       sceneEntries: this.sessionPrep.sceneEntries ?? [], clueEntries: this.sessionPrep.clueEntries ?? [],
       rewardItems: this.sessionPrep.rewardItems ?? [], consequenceEntries: this.sessionPrep.consequenceEntries ?? [], changeEntries: this.sessionPrep.changeEntries ?? [],
-      lootRoles: Object.entries(LOOT_ROLES).map(([value, data]) => ({ value, label: data.label, selected: value === this.lootRole })),
       lootResults: this.lootResults, lootStatus: this.lootStatus,
       lootMinLevel: this.lootMinLevel, lootMaxLevel: this.lootMaxLevel, lootCount: this.lootCount, lootSources: this.lootSources,
+      lootRarities: this.lootRarities, lootMatchMode: this.lootMatchMode, lootFlexible: this.lootFlexible,
+      lootMatchModes: [
+        { value: "all", label: "Match every required filter", selected: this.lootMatchMode === "all" },
+        { value: "any", label: "Match at least one required filter", selected: this.lootMatchMode === "any" },
+      ],
+      lootFilters: this.lootFilters.map((filter) => {
+        const definition = LOOT_MECHANICS[filter.mechanic] ?? LOOT_MECHANICS.resistance;
+        return {
+          ...filter,
+          modes: Object.entries(LOOT_FILTER_MODES).map(([value, label]) => ({ value, label, selected: filter.mode === value })),
+          mechanics: Object.entries(LOOT_MECHANICS).map(([value, data]) => ({ value, label: data.label, selected: filter.mechanic === value })),
+          hasDetails: Boolean(definition.details?.length), detailLabel: definition.detailLabel ?? "Detail",
+          details: (definition.details ?? []).map((value) => ({ value, label: value.replace(/\b\w/g, (letter) => letter.toUpperCase()), selected: filter.detail === value })),
+        };
+      }),
       campaign: { ...this.campaign, people: campaignPeople },
       campaignSteps,
       campaignStyles: Object.entries(CAMPAIGN_STYLES).map(([value, data]) => ({ value, label: data.label, selected: value === this.campaign.style })),
@@ -2412,6 +2493,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         zone.addEventListener("dragover", (event) => { event.preventDefault(); zone.classList.add("dragover"); });
         zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
         zone.addEventListener("drop", (event) => void this.handleSessionDrop(event, zone));
+      }
+      return;
+    }
+    if (this.activeTab === "loot") {
+      for (const select of this.element?.querySelectorAll('[name="lootFilterMechanic"]') ?? []) {
+        select.addEventListener("change", async () => {
+          this.syncLootForm();
+          await this.render();
+        });
       }
       return;
     }
@@ -3128,49 +3218,75 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     else item.sheet.render(true);
   }
 
-  static async generateLoot() {
+  syncLootForm() {
     const root = this.element;
+    if (!root) return;
     const enteredMin = Math.max(0, Math.min(30, Number(root.querySelector('[name="lootMinLevel"]')?.value) || 0));
     const enteredMax = Math.max(0, Math.min(30, Number(root.querySelector('[name="lootMaxLevel"]')?.value) || 0));
-    const minLevel = Math.min(enteredMin, enteredMax);
-    const maxLevel = Math.max(enteredMin, enteredMax);
-    const role = root.querySelector('[name="lootRole"]')?.value || "dps";
-    const count = Math.max(1, Math.min(100, Number(root.querySelector('[name="lootCount"]')?.value) || 6));
-    const permanent = Boolean(root.querySelector('[name="lootPermanent"]')?.checked);
-    const consumable = Boolean(root.querySelector('[name="lootConsumable"]')?.checked);
-    const gems = Boolean(root.querySelector('[name="lootGems"]')?.checked);
-    const art = Boolean(root.querySelector('[name="lootArt"]')?.checked);
-    Object.assign(this, { lootMinLevel: minLevel, lootMaxLevel: maxLevel, lootRole: role, lootCount: count, lootSources: { permanent, consumable, gems, art } });
+    this.lootMinLevel = Math.min(enteredMin, enteredMax);
+    this.lootMaxLevel = Math.max(enteredMin, enteredMax);
+    this.lootCount = Math.max(1, Math.min(100, Number(root.querySelector('[name="lootCount"]')?.value) || 6));
+    this.lootSources = {
+      permanent: Boolean(root.querySelector('[name="lootPermanent"]')?.checked), consumable: Boolean(root.querySelector('[name="lootConsumable"]')?.checked),
+      gems: Boolean(root.querySelector('[name="lootGems"]')?.checked), art: Boolean(root.querySelector('[name="lootArt"]')?.checked),
+    };
+    this.lootRarities = {
+      common: Boolean(root.querySelector('[name="lootRarityCommon"]')?.checked), uncommon: Boolean(root.querySelector('[name="lootRarityUncommon"]')?.checked),
+      rare: Boolean(root.querySelector('[name="lootRarityRare"]')?.checked), unique: Boolean(root.querySelector('[name="lootRarityUnique"]')?.checked),
+    };
+    this.lootMatchMode = root.querySelector('[name="lootMatchMode"]')?.value === "any" ? "any" : "all";
+    this.lootFlexible = Boolean(root.querySelector('[name="lootFlexible"]')?.checked);
+    this.lootFilters = [...root.querySelectorAll("[data-loot-filter-id]")].map((row) => ({
+      id: row.dataset.lootFilterId, mode: row.querySelector('[name="lootFilterMode"]')?.value ?? "required",
+      mechanic: row.querySelector('[name="lootFilterMechanic"]')?.value ?? "resistance", detail: row.querySelector('[name="lootFilterDetail"]')?.value ?? "",
+    }));
+  }
+
+  static async addLootFilter() { this.syncLootForm(); this.lootFilters.push(newLootFilter()); await this.render(); }
+
+  static async removeLootFilter(_event, target) {
+    this.syncLootForm();
+    const row = target.closest("[data-loot-filter-id]");
+    this.lootFilters = this.lootFilters.filter((filter) => filter.id !== row?.dataset.lootFilterId);
+    await this.render();
+  }
+
+  static async generateLoot() {
+    this.syncLootForm();
+    const { lootMinLevel: minLevel, lootMaxLevel: maxLevel, lootCount: count } = this;
+    const { permanent, consumable, gems, art } = this.lootSources;
     if (!permanent && !consumable && !gems && !art) return ui.notifications.warn("Choose at least one treasure source.");
+    if ((permanent || consumable) && !Object.values(this.lootRarities).some(Boolean)) return ui.notifications.warn("Choose at least one item rarity.");
     const results = [];
-    const tableKinds = [...(permanent ? ["permanent"] : []), ...(consumable ? ["consumable"] : [])];
-    let tablesUsed = 0;
-    for (const kind of tableKinds) {
-      const tableLevel = minLevel + Math.floor(Math.random() * (maxLevel - minLevel + 1));
-      const rolled = await rollTreasureTable(kind, tableLevel);
-      if (!rolled?.document) continue;
-      const data = { name: rolled.document.name, img: rolled.document.img, type: ITEM_TYPE_LABELS[rolled.document.type] ?? rolled.document.type, documentType: rolled.document.type, level: numeric(rolled.document.system?.level, tableLevel), description: rolled.document.system?.description?.value ?? "", traits: rolled.document.system?.traits?.value ?? [], category: rolled.document.system?.category ?? "", uuid: rolled.document.uuid, source: rolled.table };
-      if (!lootSourceAllowed(data, permanent, consumable)) continue;
-      tablesUsed += 1;
-      data.score = lootRoleScore(data, role);
-      if (data.score >= 5) results.push(data);
-    }
-    const candidates = await collectRoleLoot(minLevel, maxLevel, role, permanent, consumable);
-    const usedFamilies = new Set(results.map((entry) => lootFamilyKey(entry.name)));
+    const candidates = await collectFilteredLoot(minLevel, maxLevel, {
+      includePermanent: permanent, includeConsumable: consumable, rarities: this.lootRarities,
+      filters: this.lootFilters, matchMode: this.lootMatchMode, flexible: this.lootFlexible,
+    });
+    const usedFamilies = new Set();
+    const tableKinds = [...(gems ? ["gems"] : []), ...(art ? ["art"] : [])];
+    const itemTarget = Math.max(0, count - Math.min(count, tableKinds.length));
     for (const candidate of candidates) {
-      if (results.length >= count) break;
+      if (results.length >= itemTarget) break;
       const family = lootFamilyKey(candidate.name);
       if (!results.some((entry) => entry.uuid === candidate.uuid) && !usedFamilies.has(family)) {
         results.push(candidate); usedFamilies.add(family);
       }
     }
-    for (const kind of [...(gems ? ["gems"] : []), ...(art ? ["art"] : [])]) {
+    let tablesUsed = 0;
+    const maxTableAttempts = Math.max(tableKinds.length, count * 4);
+    for (let attempt = 0; tableKinds.length && results.length < count && attempt < maxTableAttempts; attempt += 1) {
+      const kind = tableKinds[attempt % tableKinds.length];
       const tableLevel = minLevel + Math.floor(Math.random() * (maxLevel - minLevel + 1));
       const rolled = await rollTreasureTable(kind, tableLevel);
       if (!rolled) continue;
       tablesUsed += 1;
-      if (rolled.document) results.push({ name: rolled.document.name, img: rolled.document.img, type: ITEM_TYPE_LABELS[rolled.document.type] ?? rolled.document.type, documentType: rolled.document.type, level: numeric(rolled.document.system?.level, tableLevel), uuid: rolled.document.uuid, source: rolled.table, score: 0 });
-      else results.push({ name: rolled.text, img: rolled.img, type: kind === "gems" ? "Precious stone" : "Art object", level: tableLevel, uuid: "", source: rolled.table, score: 0 });
+      const tableResult = rolled.document
+        ? { name: rolled.document.name, img: rolled.document.img, type: ITEM_TYPE_LABELS[rolled.document.type] ?? rolled.document.type, documentType: rolled.document.type, level: numeric(rolled.document.system?.level, tableLevel), uuid: rolled.document.uuid, source: rolled.table, matchReasons: ["Treasure table result"] }
+        : { name: rolled.text, img: rolled.img, type: kind === "gems" ? "Precious stone" : "Art object", level: tableLevel, uuid: "", source: rolled.table, matchReasons: ["Treasure table result"] };
+      const family = lootFamilyKey(tableResult.name);
+      if (family && usedFamilies.has(family)) continue;
+      if (family) usedFamilies.add(family);
+      results.push(tableResult);
     }
     const uniqueResults = [];
     const finalFamilies = new Set();
@@ -3182,11 +3298,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     this.lootResults = uniqueResults.slice(0, count).map((entry) => ({
       ...entry, id: foundry.utils.randomID(),
-      reason: entry.score >= 14 ? `Strong ${LOOT_ROLES[role].label} match` : entry.score >= 8 ? `Good ${LOOT_ROLES[role].label} match` : entry.score > 0 ? `${LOOT_ROLES[role].label} utility` : `Treasure table result`,
+      reason: entry.matchReasons?.length ? entry.matchReasons.join(" · ") : "Matches selected level, rarity, and source",
     }));
-    this.lootStatus = tablesUsed
-      ? `Used ${tablesUsed} installed PF2e treasure table${tablesUsed === 1 ? "" : "s"}; role matching was completed from installed item compendia for levels ${minLevel}–${maxLevel}.`
-      : `No matching installed treasure table was found, so Lore Smith used installed PF2e items from levels ${minLevel}–${maxLevel} directly.`;
+    const itemCount = this.lootResults.filter((entry) => entry.uuid).length;
+    const shortfall = this.lootResults.length < count ? ` Requested ${count}; found ${this.lootResults.length} unique matches.` : "";
+    this.lootStatus = `Found ${itemCount} installed PF2e item${itemCount === 1 ? "" : "s"} matching the selected source, rarity, level, and mechanical filters${tablesUsed ? `, plus results from ${tablesUsed} treasure table${tablesUsed === 1 ? "" : "s"}` : ""}.${shortfall}`;
     await this.render();
   }
 

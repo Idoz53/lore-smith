@@ -26,9 +26,9 @@ The module provides:
   selection inside a Foundry Playlist, direct audio files, mood, timing, and playback notes; audio cues are
   added as native Playlist tracks, with a session Playlist created automatically
   when one is not available; generated Journal controls play only the selected song;
-- a role-aware Loot & Treasure Generator for DPS, tank, healer, and battlefield-control
-  characters, with minimum/maximum item levels, family-level duplicate removal, strict
-  mechanical role matching, installed PF2e permanent/consumable treasure RollTables,
+- an explainable Loot & Treasure Generator with required, preferred, and excluded mechanical filters,
+  rarity controls, minimum/maximum item levels, family-level duplicate removal, native-data and
+  optional description-assisted matching, installed PF2e permanent/consumable item compendia,
   gem and art-object tables, and direct links back to native compendium items;
 - standard Foundry Journal sheets and page editors, without replacing or
   intercepting Foundry's native Journal interface;

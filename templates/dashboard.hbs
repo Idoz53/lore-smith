@@ -184,17 +184,32 @@
     {{#if tabs.loot}}
       <section class="ls-panel ls-loot-panel">
         <header><div><span>PF2e native treasure workspace</span><h1>Loot & Treasure Generator</h1></div><button data-action="clearLoot"><i class="fa-solid fa-broom"></i> Clear</button></header>
-        <p class="ls-lead">Choose an item level and a party role. Lore Smith searches the installed PF2e treasure tables and item compendia, then favours rewards that support that role without ignoring useful secondary benefits.</p>
+        <p class="ls-lead">Choose exactly what the reward should do. Required mechanics must match, preferred mechanics improve ranking, and excluded mechanics are rejected. Every result explains why it was selected.</p>
         <div class="ls-loot-controls">
           <label>Minimum level<input type="number" name="lootMinLevel" min="0" max="30" value="{{lootMinLevel}}"></label>
           <label>Maximum level<input type="number" name="lootMaxLevel" min="0" max="30" value="{{lootMaxLevel}}"></label>
-          <label>Party role<select name="lootRole">{{#each lootRoles}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
           <label>Number of results<input type="number" name="lootCount" min="1" max="100" value="{{lootCount}}"></label>
           <fieldset><legend>Treasure sources</legend><label><input type="checkbox" name="lootPermanent" {{#if lootSources.permanent}}checked{{/if}}> Permanent items</label><label><input type="checkbox" name="lootConsumable" {{#if lootSources.consumable}}checked{{/if}}> Consumables</label><label><input type="checkbox" name="lootGems" {{#if lootSources.gems}}checked{{/if}}> Precious stones</label><label><input type="checkbox" name="lootArt" {{#if lootSources.art}}checked{{/if}}> Art objects</label></fieldset>
+          <fieldset><legend>Item rarity</legend><label><input type="checkbox" name="lootRarityCommon" {{#if lootRarities.common}}checked{{/if}}> Common</label><label><input type="checkbox" name="lootRarityUncommon" {{#if lootRarities.uncommon}}checked{{/if}}> Uncommon</label><label><input type="checkbox" name="lootRarityRare" {{#if lootRarities.rare}}checked{{/if}}> Rare</label><label><input type="checkbox" name="lootRarityUnique" {{#if lootRarities.unique}}checked{{/if}}> Unique</label></fieldset>
+          <section class="ls-loot-filter-builder">
+            <header><div><strong>Mechanical filters</strong><small>Use Required for necessities, Preferred for useful extras, and Excluded for effects you do not want.</small></div><button type="button" data-action="addLootFilter"><i class="fa-solid fa-plus"></i> Add filter</button></header>
+            <div class="ls-loot-filter-list">
+              {{#each lootFilters}}
+                <div class="ls-loot-filter-row" data-loot-filter-id="{{id}}">
+                  <label>Rule<select name="lootFilterMode">{{#each modes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                  <label>Mechanic<select name="lootFilterMechanic">{{#each mechanics}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                  {{#if hasDetails}}<label>{{detailLabel}}<select name="lootFilterDetail"><option value="">Any</option>{{#each details}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{else}}<div class="ls-loot-no-detail"><span>No extra detail needed</span></div>{{/if}}
+                  <button type="button" data-action="removeLootFilter" data-tooltip="Remove filter"><i class="fa-solid fa-trash"></i></button>
+                </div>
+              {{else}}<div class="ls-loot-filter-empty">No mechanical filters: results will only use source, rarity, and level.</div>{{/each}}
+            </div>
+            <div class="ls-loot-match-options"><label>Required-filter logic<select name="lootMatchMode">{{#each lootMatchModes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label class="ls-check-row"><input type="checkbox" name="lootFlexible" {{#if lootFlexible}}checked{{/if}}> Include description-assisted matches</label></div>
+            <p>Strict matches use PF2e item types, traits, and rule elements. Description-assisted matching also recognizes mechanics stated in official rules text. Gem and art-object tables ignore item-mechanic filters.</p>
+          </section>
           <button data-action="generateLoot"><i class="fa-solid fa-dice"></i> Generate treasure</button>
         </div>
         {{#if lootStatus}}<div class="ls-loot-status">{{lootStatus}}</div>{{/if}}
-        <div class="ls-loot-results">{{#each lootResults}}<article><img src="{{img}}"><div><strong>{{name}}</strong><span>Level {{level}} · {{type}} · {{source}}</span><small>{{reason}}</small></div>{{#if uuid}}<button data-action="openLootDocument" data-uuid="{{uuid}}" data-tooltip="Open item"><i class="fa-solid fa-up-right-from-square"></i></button><button data-action="addLootToRewards" data-id="{{id}}" data-tooltip="Add to Session Prep rewards"><i class="fa-solid fa-gift"></i></button>{{/if}}</article>{{else}}<div class="ls-empty">Generate treasure to see role-aware PF2e rewards.</div>{{/each}}</div>
+        <div class="ls-loot-results">{{#each lootResults}}<article><img src="{{img}}"><div><strong>{{name}}</strong><span>Level {{level}} · {{type}} · {{source}}</span><small>{{reason}}</small></div>{{#if uuid}}<button data-action="openLootDocument" data-uuid="{{uuid}}" data-tooltip="Open item"><i class="fa-solid fa-up-right-from-square"></i></button><button data-action="addLootToRewards" data-id="{{id}}" data-tooltip="Add to Session Prep rewards"><i class="fa-solid fa-gift"></i></button>{{/if}}</article>{{else}}<div class="ls-empty">Choose filters and generate explainable PF2e rewards.</div>{{/each}}</div>
       </section>
     {{/if}}
 
