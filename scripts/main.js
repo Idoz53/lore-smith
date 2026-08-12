@@ -1898,12 +1898,16 @@ function campaignMapView(campaign) {
     image: campaign.map?.image ?? "", hasImage: Boolean(campaign.map?.image), startLocationId: campaign.map?.startLocationId ?? "",
     focusX, focusY, radius, aspect, focusLeft: `${focusX * 100}%`, focusTop: `${focusY * 100}%`,
     focusSize: `${radius * 200}%`, focusHeight: `${radius * 200 * aspect}%`, startName: start?.name || "No starting point selected",
+    zoom: Math.max(1, Math.min(5, Number(campaign.map?.view?.zoom) || 1)),
+    panX: Number(campaign.map?.view?.panX) || 0,
+    panY: Number(campaign.map?.view?.panY) || 0,
   };
 }
 
-function ensureCampaignScope(campaign) {
-  if (!campaign.map || typeof campaign.map !== "object") campaign.map = { image: "", startLocationId: "", focus: { x: 0.5, y: 0.5, radius: 0.25, aspect: 2 } };
+function ensureCampaignMapScope(campaign) {
+  if (!campaign.map || typeof campaign.map !== "object") campaign.map = { image: "", startLocationId: "", focus: { x: 0.5, y: 0.5, radius: 0.25, aspect: 2 }, view: { zoom: 1, panX: 0, panY: 0 } };
   campaign.map.focus = { x: 0.5, y: 0.5, radius: 0.25, aspect: 2, ...(campaign.map.focus ?? {}) };
+  campaign.map.view = { zoom: 1, panX: 0, panY: 0, ...(campaign.map.view ?? {}) };
   if (!Array.isArray(campaign.routes)) campaign.routes = [];
   for (const property of ["structure", "locations", "factions", "threats"]) if (!Array.isArray(campaign[property])) campaign[property] = [];
   if (!Array.isArray(campaign.people)) campaign.people = [];
@@ -1912,10 +1916,10 @@ function ensureCampaignScope(campaign) {
   return ensureCampaignPlan(campaign);
 }
 
-function newCampaignBuild() {
-  return ensureCampaignScope({
+function newCampaignMapBuild() {
+  return ensureCampaignMapScope({
     journalId: "", name: "", premise: "", startingLevel: 1, finalLevel: 5, sessionCount: 10, sessionHours: 4,
-    map: { image: "", startLocationId: "", focus: { x: 0.5, y: 0.5, radius: 0.25, aspect: 2 } }, routes: [],
+    map: { image: "", startLocationId: "", focus: { x: 0.5, y: 0.5, radius: 0.25, aspect: 2 }, view: { zoom: 1, panX: 0, panY: 0 } }, routes: [],
     length: "short", style: "adventure", tone: "heroic",
     identity: { themes: "", playerPromise: "", boundaries: "" }, background: "", characterHooks: "",
     problem: { wrong: "", cause: "", stakes: "", involvement: "", distinction: "", resolution: "" },
@@ -1933,8 +1937,8 @@ function newCampaignBuild() {
   });
 }
 
-function normalizeCampaignBuild(stored = {}) {
-  const fresh = newCampaignBuild();
+function normalizeCampaignMapBuild(stored = {}) {
+  const fresh = newCampaignMapBuild();
   const people = Array.isArray(stored.people) ? stored.people : fresh.people;
   const characters = Array.isArray(stored.characters) ? stored.characters : [];
   const oldPlace = stored.place && [stored.place.name, stored.place.description, stored.place.image].some(Boolean)
@@ -1964,6 +1968,55 @@ function normalizeCampaignBuild(stored = {}) {
   };
   delete normalized.firstSession;
   delete normalized.place;
+  return ensureCampaignMapScope(normalized);
+}
+
+function ensureCampaignScope(campaign) {
+  const targets = campaignPlanTargets(campaign);
+  const factories = { structure: newCampaignStructure, locations: newCampaignLocation, factions: newCampaignFaction, threats: newCampaignThreat };
+  const minimums = { structure: targets.structure, locations: targets.locations, factions: targets.factions, threats: targets.threats };
+  for (const [property, minimum] of Object.entries(minimums)) {
+    if (!Array.isArray(campaign[property])) campaign[property] = [];
+    while (campaign[property].length < minimum) campaign[property].push(factories[property]());
+  }
+  if (!Array.isArray(campaign.people)) campaign.people = [];
+  while (campaign.people.length < targets.people) campaign.people.push(newCampaignPerson("person", `Important person ${campaign.people.length + 1}`));
+  if (!Array.isArray(campaign.openQuestions) || !campaign.openQuestions.length) campaign.openQuestions = [newCampaignQuestion()];
+  if (!Array.isArray(campaign.secrets) || !campaign.secrets.length) campaign.secrets = [newCampaignSecret()];
+  return ensureCampaignPlan(campaign);
+}
+
+function newCampaignBuild() {
+  return ensureCampaignScope({
+    journalId: "", name: "", premise: "", startingLevel: 1, finalLevel: 5, sessionCount: 10, sessionHours: 4,
+    length: "short", style: "adventure", tone: "heroic", identity: { themes: "", playerPromise: "", boundaries: "" },
+    background: "", characterHooks: "", problem: { wrong: "", cause: "", stakes: "", involvement: "", distinction: "", resolution: "" },
+    structure: [], locations: [], factions: [], threats: [], chapters: [], rumors: [], worldEvents: [], secrets: [newCampaignSecret()],
+    setting: { history: "", cultures: "", magic: "", politics: "" },
+    people: [newCampaignPerson("ally", "Someone who helps the party"), newCampaignPerson("opponent", "Someone who opposes the party"), newCampaignPerson("informant", "Someone who knows important information")],
+    characters: [newCampaignCharacter()], progression: { leveling: "milestone", treasure: "", narrative: "", reputation: "", options: "" },
+    consistency: { imagery: "", naming: "", rules: "", timeline: "", travel: "" }, openQuestions: [newCampaignQuestion()],
+  });
+}
+
+function normalizeCampaignBuild(stored = {}) {
+  const fresh = newCampaignBuild();
+  const normalized = {
+    ...fresh, ...stored, length: stored.length === "one-shot" ? "short" : (stored.length ?? fresh.length),
+    identity: { ...fresh.identity, ...(stored.identity ?? {}) }, problem: { ...fresh.problem, ...(stored.problem ?? {}) },
+    setting: { ...fresh.setting, ...(stored.setting ?? {}) }, progression: { ...fresh.progression, ...(stored.progression ?? {}) }, consistency: { ...fresh.consistency, ...(stored.consistency ?? {}) },
+    structure: (Array.isArray(stored.structure) ? stored.structure : []).map((entry) => ({ ...newCampaignStructure(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    locations: (Array.isArray(stored.locations) ? stored.locations : []).map((entry) => ({ ...newCampaignLocation(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    factions: (Array.isArray(stored.factions) ? stored.factions : []).map((entry) => ({ ...newCampaignFaction(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    threats: (Array.isArray(stored.threats) ? stored.threats : []).map((entry) => ({ ...newCampaignThreat(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    chapters: (Array.isArray(stored.chapters) ? stored.chapters : []).map((entry, index) => ({ ...newCampaignChapter(index + 1), ...entry, number: index + 1, id: entry.id || foundry.utils.randomID() })),
+    rumors: (Array.isArray(stored.rumors) ? stored.rumors : []).map((entry) => ({ ...newCampaignRumor(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    worldEvents: (Array.isArray(stored.worldEvents) ? stored.worldEvents : []).map((entry) => ({ ...newCampaignWorldEvent(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    secrets: (Array.isArray(stored.secrets) ? stored.secrets : []).map((entry) => ({ ...newCampaignSecret(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    people: (Array.isArray(stored.people) ? stored.people : fresh.people).map((entry, index) => ({ ...newCampaignPerson(entry.slot ?? "person", entry.label ?? `Important person ${index + 1}`), ...entry, id: entry.id || foundry.utils.randomID() })),
+    characters: (Array.isArray(stored.characters) && stored.characters.length ? stored.characters : fresh.characters).map((entry) => ({ ...newCampaignCharacter(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    openQuestions: (Array.isArray(stored.openQuestions) ? stored.openQuestions : []).map((entry) => typeof entry === "string" ? { ...newCampaignQuestion(), text: entry } : { ...newCampaignQuestion(), ...entry, id: entry.id || foundry.utils.randomID() }),
+  };
   return ensureCampaignScope(normalized);
 }
 
@@ -2021,7 +2074,7 @@ function legacyCampaignJournalPages(campaign) {
 }
 
 function campaignJournalPages(campaign) {
-  ensureCampaignScope(campaign);
+  ensureCampaignMapScope(campaign);
   const map = campaignMapView(campaign);
   const positioned = campaign.locations.filter((entry) => Number.isFinite(Number(entry.x)) && Number.isFinite(Number(entry.y)));
   const byBand = (band) => positioned.filter((entry) => campaignLocationBand(campaign, entry) === band);
@@ -2045,6 +2098,31 @@ function campaignJournalPages(campaign) {
     { key: "regional-connections", name: "6. Routes and Connections", content: routes },
     { key: "outside-focus", name: "7. Beyond the Current Focus", content: outside ? `<p>These places exist on the map but deliberately require no preparation yet.</p><ul>${outside}</ul>` : "<p>No marked points lie outside the current focus.</p>" },
   ];
+}
+
+function adventureCampaignJournalPages(campaign) {
+  ensureCampaignScope(campaign);
+  const length = campaignScope(campaign); const targets = campaignPlanTargets(campaign);
+  const pages = [
+    { key: "overview", name: "1. Adventure Overview", content: `${sessionBlock("Adventure summary", campaign.premise)}<p><strong>Format</strong> ${escapeHtml(length.label)}</p><p><strong>Expected length</strong> ${targets.sessions} sessions of about ${Number(campaign.sessionHours) || 4} hours</p><p><strong>Level range</strong> ${Number(campaign.startingLevel) || 1}-${Number(campaign.finalLevel) || Number(campaign.startingLevel) || 1}</p>${sessionBlock("What makes this campaign distinctive", campaign.problem.distinction)}` },
+    { key: "background", name: "2. Background", content: `${sessionBlock("Background", campaign.background)}${sessionBlock("History that matters now", campaign.setting.history)}${sessionBlock("Cultures and communities", campaign.setting.cultures)}${sessionBlock("Magic, religion, and technology", campaign.setting.magic)}${sessionBlock("Political situation", campaign.setting.politics)}` },
+    { key: "conflict", name: "3. Central Conflict", content: `${sessionBlock("What is happening now", campaign.problem.wrong)}${sessionBlock("Who or what is causing it", campaign.problem.cause)}${sessionBlock("What happens without intervention", campaign.problem.stakes)}${sessionBlock("Why the characters become involved", campaign.problem.involvement)}${sessionBlock("Possible endings", campaign.problem.resolution)}` },
+    { key: "factions", name: "4. Factions", content: campaign.factions.map((entry) => `<h2>${escapeHtml(entry.name || "Unnamed faction")}</h2>${sessionBlock("Goal", entry.goal)}${sessionBlock("Methods", entry.methods)}${sessionBlock("Resources", entry.resources)}${sessionBlock("Relationship with the party", entry.relationship)}${sessionBlock("What happens if ignored", entry.ignored)}`).join("<hr>") },
+    { key: "people", name: "5. Important NPCs", content: campaign.people.map((entry) => `<h2>${escapeHtml(entry.name || entry.label || "Unnamed NPC")}</h2>${sessionBlock("Description", entry.description)}${sessionBlock("What they want", entry.wants)}${sessionBlock("What they know", entry.knows)}${sessionBlock("Secret or complication", entry.secret)}`).join("<hr>") },
+    { key: "locations", name: "6. Important Locations", content: campaign.locations.map((entry) => `<h2>${escapeHtml(entry.name || "Unnamed location")}</h2>${entry.image ? `<figure><img src="${escapeHtml(entry.image)}" alt="${escapeHtml(entry.name)}"></figure>` : ""}${sessionBlock("Description", entry.description)}${sessionBlock("Purpose in the adventure", entry.importance)}${sessionBlock("Secret or revelation", entry.secret)}`).join("<hr>") },
+    { key: "secrets", name: "7. Secrets and Revelations", content: campaign.secrets.map((entry, index) => `<h2>Revelation ${index + 1}</h2>${sessionBlock("Truth", entry.secret)}${sessionBlock("Clues that reveal it", entry.clues)}${sessionBlock("Who already knows", entry.knownBy)}`).join("<hr>") },
+    { key: "threats", name: "8. Threats and Conflicts", content: campaign.threats.map((entry) => `<h2>${escapeHtml(entry.name || "Unnamed threat")}</h2>${sessionBlock("Goal", entry.goal)}${sessionBlock("Escalation", entry.escalation)}${sessionBlock("Consequences", entry.consequences)}`).join("<hr>") },
+    { key: "structure", name: "9. Adventure Structure", content: campaign.structure.map((entry, index) => `<h2>${escapeHtml(entry.name || `${length.structureSingular} ${index + 1}`)}</h2>${sessionBlock(length.structureSummaryLabel, entry.summary)}${sessionBlock(length.structureOutcomeLabel, entry.outcome)}`).join("<hr>") },
+  ];
+  if (campaign.length === "open") {
+    pages.push({ key: "sandbox-rumors", name: "10. Rumors and Leads", content: campaign.rumors.map((entry, index) => `<h2>Rumor ${index + 1}</h2>${sessionBlock("What people say", entry.text)}${sessionBlock("What is actually true", entry.truth)}`).join("<hr>") });
+    pages.push({ key: "sandbox-events", name: "11. World Event Timeline", content: campaign.worldEvents.map((entry, index) => `<h2>Event ${index + 1}</h2>${sessionBlock("Trigger or timing", entry.trigger)}${sessionBlock("What happens", entry.event)}${sessionBlock("How the world changes", entry.consequence)}`).join("<hr>") });
+  } else {
+    for (const [index, chapter] of campaign.chapters.slice(0, targets.sessions).entries()) pages.push({ key: `chapter-${index + 1}`, name: `Session ${index + 1} - ${chapter.title || "Untitled Chapter"}`, content: `${sessionBlock("Purpose", chapter.purpose)}${sessionBlock("Opening situation", chapter.opening)}${sessionBlock("Information the GM needs", chapter.information)}${sessionBlock("Locations", chapter.locations)}${sessionBlock("NPCs and factions", chapter.npcs)}${sessionBlock("Likely scenes", chapter.scenes)}${sessionBlock("Revelations and clues", chapter.revelations)}${sessionBlock("Encounters and hazards", chapter.encounters)}${sessionBlock("Rewards", chapter.rewards)}${sessionBlock("Meaningful choices", chapter.choices)}${sessionBlock("Consequences", chapter.consequences)}${sessionBlock("Transition to the next chapter", chapter.transition)}` });
+  }
+  pages.push({ key: "progression", name: "Progression and Rewards", content: `<p><strong>Leveling</strong> ${campaign.progression.leveling === "xp" ? "Experience Points" : "Milestone leveling"}</p>${sessionBlock("Important treasure", campaign.progression.treasure)}${sessionBlock("Narrative rewards", campaign.progression.narrative)}${sessionBlock("Reputation, allies, titles, or holdings", campaign.progression.reputation)}${sessionBlock("Campaign-specific character options", campaign.progression.options)}` });
+  pages.push({ key: "reference", name: "GM Reference", content: `${sessionBlock("Rules and setting conventions", campaign.consistency.rules)}${sessionBlock("Timeline", campaign.consistency.timeline)}${sessionBlock("Travel assumptions", campaign.consistency.travel)}${campaignList("Open questions", campaign.openQuestions.map((entry) => entry.text))}` });
+  return pages;
 }
 
 const LOOT_FILTER_MODES = {
@@ -2425,6 +2503,8 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       goToCampaignStep: LoreSmithDashboard.goToCampaignStep,
       browseCampaignMap: LoreSmithDashboard.browseCampaignMap,
       activateCampaignMapTool: LoreSmithDashboard.activateCampaignMapTool,
+      cancelCampaignMapTool: LoreSmithDashboard.cancelCampaignMapTool,
+      resetCampaignMapView: LoreSmithDashboard.resetCampaignMapView,
       selectCampaignMarker: LoreSmithDashboard.selectCampaignMarker,
       removeCampaignMarker: LoreSmithDashboard.removeCampaignMarker,
       browseCampaignLocationImage: LoreSmithDashboard.browseCampaignLocationImage,
@@ -2470,6 +2550,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   lootFlexible = true;
   campaignStep = 0;
   campaign = newCampaignBuild();
+  adventureCampaign = this.campaign;
+  mapCampaign = newCampaignMapBuild();
+  adventureCampaignStep = 0;
+  mapCampaignStep = 0;
   campaignDraftLoaded = false;
   campaignSaveTimer = null;
   campaignScrollTop = 0;
@@ -2537,10 +2621,21 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       try {
         const rawDraft = game.settings.get(MODULE_ID, "campaignBuilderDraft");
         const stored = rawDraft ? JSON.parse(rawDraft) : null;
+        const rawMapDraft = game.settings.get(MODULE_ID, "campaignMapBuilderDraft");
+        const storedMap = rawMapDraft ? JSON.parse(rawMapDraft) : null;
         if (stored?.campaign || stored?.name) {
-          this.campaign = normalizeCampaignBuild(stored.campaign ?? stored);
-          this.campaignStep = Math.max(0, Math.min(7, Number(stored.step) || 0));
+          this.adventureCampaign = normalizeCampaignBuild(stored.campaign ?? stored);
+          this.adventureCampaignStep = Math.max(0, Math.min(7, Number(stored.step) || 0));
         }
+        if (storedMap?.campaign || storedMap?.name) {
+          this.mapCampaign = normalizeCampaignMapBuild(storedMap.campaign ?? storedMap);
+          this.mapCampaignStep = Math.max(0, Math.min(7, Number(storedMap.step) || 0));
+        } else if (stored?.campaign?.map || stored?.map) {
+          this.mapCampaign = normalizeCampaignMapBuild(stored.campaign ?? stored);
+          this.mapCampaignStep = Math.max(0, Math.min(7, Number(stored.step) || 0));
+        }
+        this.campaign = this.activeTab === "campaignMap" ? this.mapCampaign : this.adventureCampaign;
+        this.campaignStep = this.activeTab === "campaignMap" ? this.mapCampaignStep : this.adventureCampaignStep;
       } catch (error) {
         console.warn("Lore Smith | Could not restore the Campaign Builder draft.", error);
       }
@@ -2608,8 +2703,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     const sessionStepEntries = [["goal", "Goal"], ["locations", "Places"], ["people", "People"], ["music", "Music"], ["scenes", "Scenes"], ["review", "Review"]];
     const sessionSteps = Object.fromEntries(sessionStepEntries.map(([key, label], index) => [key, { index, number: index + 1, label, active: this.sessionStep === index }]));
-    ensureCampaignScope(this.campaign);
-    const campaignStepEntries = [["map", "Map"], ["focus", "Starting Area"], ["center", "Center"], ["nearby", "Nearby"], ["distant", "Distant"], ["routes", "Connections"], ["opening", "Opening"], ["review", "Review"]];
+    const mapBuilderActive = this.activeTab === "campaignMap";
+    if (mapBuilderActive) ensureCampaignMapScope(this.campaign); else ensureCampaignScope(this.campaign);
+    const campaignStepEntries = mapBuilderActive
+      ? [["map", "Map"], ["focus", "Starting Area"], ["center", "Center"], ["nearby", "Nearby"], ["distant", "Distant"], ["routes", "Connections"], ["opening", "Opening"], ["review", "Review"]]
+      : [["scope", "Scope"], ["conflict", "Conflict"], ["cast", "Cast"], ["locations", "Locations"], ["secrets", "Secrets"], ["structure", "Structure"], ["chapters", "Chapters"], ["review", "Review"]];
     const campaignSteps = Object.fromEntries(campaignStepEntries.map(([key, label], index) => [key, { index, number: index + 1, label, active: this.campaignStep === index }]));
     const campaignStyle = CAMPAIGN_STYLES[this.campaign.style] ?? CAMPAIGN_STYLES.adventure;
     const campaignLength = CAMPAIGN_LENGTHS[this.campaign.length] ?? CAMPAIGN_LENGTHS.short;
@@ -2622,7 +2720,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       previousChapterGroup = grouping.group;
       return { ...chapter, ...grouping, firstInGroup, number: index + 1 };
     });
-    const campaignMap = campaignMapView(this.campaign);
+    const campaignMap = mapBuilderActive ? campaignMapView(this.campaign) : campaignMapView({ locations: [], map: {} });
     const startOptions = [{ value: "", label: "Choose the starting point", selected: !campaignMap.startLocationId }, ...this.campaign.locations.map((location) => ({ value: location.id, label: location.name || "Unnamed point", selected: location.id === campaignMap.startLocationId }))];
     const markerViews = this.campaign.locations.map((location, index) => {
       const band = campaignLocationBand(this.campaign, location);
@@ -2638,7 +2736,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     });
     const markerByBand = (band) => markerViews.filter((entry) => entry.band === band);
     const locationOptions = [{ value: "", label: "Choose a point", selected: false }, ...this.campaign.locations.map((location) => ({ value: location.id, label: location.name || "Unnamed point" }))];
-    const campaignRoutes = this.campaign.routes.map((route, index) => ({
+    const campaignRoutes = (this.campaign.routes ?? []).map((route, index) => ({
       ...route, number: index + 1,
       fromOptions: locationOptions.map((option) => ({ ...option, selected: option.value === route.fromId })),
       toOptions: locationOptions.map((option) => ({ ...option, selected: option.value === route.toId })),
@@ -2646,13 +2744,22 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     }));
     const campaignValidation = [];
     if (!this.campaign.name.trim()) campaignValidation.push("Name the campaign.");
-    if (!campaignMap.image) campaignValidation.push("Upload a regional map.");
-    if (!campaignMap.startLocationId) campaignValidation.push("Choose a starting point.");
-    if (!this.campaign.problem.wrong.trim()) campaignValidation.push("Describe the opening problem.");
+    if (mapBuilderActive) {
+      if (!campaignMap.image) campaignValidation.push("Upload a regional map.");
+      if (!campaignMap.startLocationId) campaignValidation.push("Choose a starting point.");
+      if (!this.campaign.problem.wrong.trim()) campaignValidation.push("Describe the opening problem.");
+    } else {
+      if (!this.campaign.problem.wrong.trim()) campaignValidation.push("Describe what is happening now.");
+      if (!this.campaign.problem.cause.trim()) campaignValidation.push("Describe who or what is causing the problem.");
+      if (!this.campaign.problem.stakes.trim()) campaignValidation.push("Describe what happens without intervention.");
+      if (!this.campaign.locations.some((entry) => entry.name.trim())) campaignValidation.push("Name at least one important location.");
+      if (!this.campaign.factions.some((entry) => entry.name.trim())) campaignValidation.push("Name at least one faction.");
+      if (!this.campaign.threats.some((entry) => entry.name.trim())) campaignValidation.push("Name at least one threat.");
+    }
     const campaignRecommendations = [];
     const namedCount = (entries) => entries.filter((entry) => entry.name.trim()).length;
-    if (!markerViews.some((entry) => entry.isNearby)) campaignRecommendations.push("Place at least one nearby point to give the players an immediate direction beyond the starting location.");
-    if (!markerViews.some((entry) => entry.isDistant)) campaignRecommendations.push("Include one distant point inside the focus circle to suggest a wider region without preparing it deeply.");
+    if (mapBuilderActive && !markerViews.some((entry) => entry.isNearby)) campaignRecommendations.push("Place at least one nearby point to give the players an immediate direction beyond the starting location.");
+    if (mapBuilderActive && !markerViews.some((entry) => entry.isDistant)) campaignRecommendations.push("Include one distant point inside the focus circle to suggest a wider region without preparing it deeply.");
     return {
       ...await super._prepareContext(options),
       tabs: { [this.activeTab]: true },
@@ -2730,10 +2837,14 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onRender(context, options) {
     super._onRender(context, options);
+    if (this._campaignMapEscape) {
+      window.removeEventListener("keydown", this._campaignMapEscape);
+      this._campaignMapEscape = null;
+    }
     const main = this.element?.querySelector(".ls-main");
     if (main && this.sessionScrollTop) main.scrollTop = this.sessionScrollTop;
-    if (main && this.activeTab === "campaign" && this.campaignScrollTop) main.scrollTop = this.campaignScrollTop;
-    if (this.activeTab === "campaign") {
+    if (main && ["campaign", "campaignMap"].includes(this.activeTab) && this.campaignScrollTop) main.scrollTop = this.campaignScrollTop;
+    if (["campaign", "campaignMap"].includes(this.activeTab)) {
       for (const field of this.element?.querySelectorAll(".ls-campaign-panel input, .ls-campaign-panel textarea, .ls-campaign-panel select") ?? []) {
         const eventName = field.matches("select") ? "change" : "input";
         field.addEventListener(eventName, () => {
@@ -2747,49 +2858,163 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
           await this.renderCampaignPreservingScroll();
         });
       }
-      const campaignMap = this.element?.querySelector("[data-campaign-map]");
+      const campaignMap = this.activeTab === "campaignMap" ? this.element?.querySelector("[data-campaign-map]") : null;
       if (campaignMap) {
-        let focusStart = null;
+        const stage = campaignMap.querySelector("[data-campaign-map-stage]");
+        const image = campaignMap.querySelector("[data-campaign-map-image]");
+        if (!stage || !image) return;
+        let focusDrawing = false;
+        let markerDrag = null;
+        let panDrag = null;
+        let movedMarker = false;
+        const view = this.campaign.map.view;
+        const applyView = () => {
+          stage.style.transform = `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`;
+        };
         const point = (event) => {
-          const rect = campaignMap.getBoundingClientRect();
+          const rect = image.getBoundingClientRect();
           return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) };
         };
+        const focusAnchor = () => {
+          const selected = this.campaign.locations.find((entry) => entry.id === this.campaign.map.startLocationId);
+          if (!selected || !Number.isFinite(Number(selected.x)) || !Number.isFinite(Number(selected.y))) return null;
+          return { x: Number(selected.x), y: Number(selected.y) };
+        };
+        campaignMap.addEventListener("contextmenu", (event) => event.preventDefault());
+        campaignMap.addEventListener("wheel", (event) => {
+          event.preventDefault();
+          const rect = campaignMap.getBoundingClientRect();
+          const cursorX = event.clientX - rect.left;
+          const cursorY = event.clientY - rect.top;
+          const oldZoom = view.zoom;
+          const nextZoom = Math.max(1, Math.min(5, oldZoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15)));
+          const localX = (cursorX - view.panX) / oldZoom;
+          const localY = (cursorY - view.panY) / oldZoom;
+          view.zoom = nextZoom;
+          view.panX = cursorX - localX * nextZoom;
+          view.panY = cursorY - localY * nextZoom;
+          if (nextZoom === 1) { view.panX = 0; view.panY = 0; }
+          applyView();
+          clearTimeout(this.campaignSaveTimer);
+          this.campaignSaveTimer = setTimeout(() => void this.saveCampaignDraft(), 250);
+        }, { passive: false });
         campaignMap.addEventListener("pointerdown", (event) => {
-          if (event.target.closest("[data-campaign-marker-id]") || this.campaignMapTool !== "focus") return;
-          focusStart = point(event);
+          const marker = event.target.closest("[data-campaign-marker-id]");
+          if (event.button === 2) {
+            panDrag = { x: event.clientX, y: event.clientY, panX: view.panX, panY: view.panY };
+            campaignMap.classList.add("panning");
+            campaignMap.setPointerCapture?.(event.pointerId);
+            return;
+          }
+          if (event.button !== 0) return;
+          if (marker && !this.campaignMapTool) {
+            const location = this.campaign.locations.find((entry) => entry.id === marker.dataset.campaignMarkerId);
+            if (!location) return;
+            markerDrag = { location, startX: event.clientX, startY: event.clientY };
+            movedMarker = false;
+            campaignMap.setPointerCapture?.(event.pointerId);
+            event.preventDefault();
+            return;
+          }
+          if (marker || this.campaignMapTool !== "focus") return;
+          if (!focusAnchor()) {
+            ui.notifications.warn("Choose a starting point before drawing the starting area.");
+            return;
+          }
+          focusDrawing = true;
           campaignMap.setPointerCapture?.(event.pointerId);
         });
         campaignMap.addEventListener("pointermove", (event) => {
-          if (!focusStart) return;
+          if (panDrag) {
+            view.panX = panDrag.panX + event.clientX - panDrag.x;
+            view.panY = panDrag.panY + event.clientY - panDrag.y;
+            applyView();
+            return;
+          }
+          if (markerDrag) {
+            const position = point(event);
+            markerDrag.location.x = position.x;
+            markerDrag.location.y = position.y;
+            movedMarker ||= Math.hypot(event.clientX - markerDrag.startX, event.clientY - markerDrag.startY) > 3;
+            const marker = stage.querySelector(`[data-campaign-marker-id="${markerDrag.location.id}"]`);
+            if (marker) { marker.style.left = `${position.x * 100}%`; marker.style.top = `${position.y * 100}%`; }
+            if (this.campaign.map.startLocationId === markerDrag.location.id) {
+              this.campaign.map.focus.x = position.x;
+              this.campaign.map.focus.y = position.y;
+              const circle = stage.querySelector(".ls-map-focus-circle");
+              if (circle) { circle.style.left = `${position.x * 100}%`; circle.style.top = `${position.y * 100}%`; }
+            }
+            return;
+          }
+          if (!focusDrawing) return;
+          const anchor = focusAnchor();
+          if (!anchor) return;
           const current = point(event);
-          const rect = campaignMap.getBoundingClientRect();
+          const rect = image.getBoundingClientRect();
           const aspect = Math.max(0.1, rect.width / rect.height);
-          const radius = Math.min(1, Math.hypot(current.x - focusStart.x, (current.y - focusStart.y) / aspect));
-          const circle = campaignMap.querySelector(".ls-map-focus-circle");
+          const radius = Math.min(1, Math.hypot(current.x - anchor.x, (current.y - anchor.y) / aspect));
+          const circle = stage.querySelector(".ls-map-focus-circle");
           if (circle) {
-            circle.style.left = `${focusStart.x * 100}%`; circle.style.top = `${focusStart.y * 100}%`;
+            circle.style.left = `${anchor.x * 100}%`; circle.style.top = `${anchor.y * 100}%`;
             circle.style.width = `${radius * 200}%`; circle.style.height = `${radius * 200 * aspect}%`;
           }
         });
         campaignMap.addEventListener("pointerup", async (event) => {
-          if (focusStart) {
+          if (panDrag) {
+            panDrag = null;
+            campaignMap.classList.remove("panning");
+            await this.saveCampaignDraft();
+            return;
+          }
+          if (markerDrag) {
+            const location = markerDrag.location;
+            markerDrag = null;
+            this._campaignMarkerWasDragged = movedMarker;
+            if (!movedMarker) {
+              this.campaign.map.startLocationId = location.id;
+              this.campaign.map.focus.x = Number(location.x);
+              this.campaign.map.focus.y = Number(location.y);
+            }
+            await this.saveCampaignDraft();
+            await this.renderCampaignPreservingScroll();
+            return;
+          }
+          if (focusDrawing) {
+            const anchor = focusAnchor();
+            focusDrawing = false;
+            if (!anchor) return;
             const current = point(event);
-            const rect = campaignMap.getBoundingClientRect();
+            const rect = image.getBoundingClientRect();
             const aspect = Math.max(0.1, rect.width / rect.height);
-            const radius = Math.max(0.02, Math.min(1, Math.hypot(current.x - focusStart.x, (current.y - focusStart.y) / aspect)));
-            this.campaign.map.focus = { x: focusStart.x, y: focusStart.y, radius, aspect };
-            const nearest = this.campaign.locations.filter((entry) => Number.isFinite(Number(entry.x)) && Number.isFinite(Number(entry.y)))
-              .sort((left, right) => Math.hypot(left.x - focusStart.x, (left.y - focusStart.y) / aspect) - Math.hypot(right.x - focusStart.x, (right.y - focusStart.y) / aspect))[0];
-            if (nearest) this.campaign.map.startLocationId = nearest.id;
-            this.campaignMapTool = ""; focusStart = null;
+            const radius = Math.max(0.02, Math.min(1, Math.hypot(current.x - anchor.x, (current.y - anchor.y) / aspect)));
+            this.campaign.map.focus = { x: anchor.x, y: anchor.y, radius, aspect };
+            this.campaignMapTool = "";
             await this.saveCampaignDraft(); await this.renderCampaignPreservingScroll();
             return;
           }
           if (event.target.closest("[data-campaign-marker-id]") || this.campaignMapTool !== "marker") return;
           const position = point(event);
-          this.campaign.locations.push({ ...newCampaignLocation(), x: position.x, y: position.y });
+          const location = { ...newCampaignLocation(), x: position.x, y: position.y };
+          this.campaign.locations.push(location);
+          this.pendingCampaignMarkerId = location.id;
           await this.saveCampaignDraft(); await this.renderCampaignPreservingScroll();
         });
+        campaignMap.addEventListener("pointercancel", () => { focusDrawing = false; markerDrag = null; panDrag = null; campaignMap.classList.remove("panning"); });
+        this._campaignMapEscape = (event) => {
+          if (event.key !== "Escape" || !this.campaignMapTool) return;
+          this.campaignMapTool = "";
+          void this.renderCampaignPreservingScroll();
+        };
+        window.addEventListener("keydown", this._campaignMapEscape);
+        if (this.pendingCampaignMarkerId) {
+          const input = this.element?.querySelector(`[data-campaign-entry-id="${this.pendingCampaignMarkerId}"] [data-campaign-field="name"]`);
+          if (input) {
+            this.pendingCampaignMarkerId = null;
+            input.scrollIntoView({ block: "nearest" });
+            input.focus();
+            input.select();
+          }
+        }
       }
       return;
     }
@@ -3005,7 +3230,13 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async saveCampaignDraft() {
-    await game.settings.set(MODULE_ID, "campaignBuilderDraft", JSON.stringify({ step: this.campaignStep, campaign: this.campaign }));
+    if (this.activeTab === "campaignMap") {
+      this.mapCampaign = this.campaign; this.mapCampaignStep = this.campaignStep;
+      await game.settings.set(MODULE_ID, "campaignMapBuilderDraft", JSON.stringify({ step: this.campaignStep, campaign: this.campaign }));
+    } else {
+      this.adventureCampaign = this.campaign; this.adventureCampaignStep = this.campaignStep;
+      await game.settings.set(MODULE_ID, "campaignBuilderDraft", JSON.stringify({ step: this.campaignStep, campaign: this.campaign }));
+    }
   }
 
   async renderCampaignPreservingScroll() {
@@ -3015,7 +3246,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async syncCampaignForm() {
     const root = this.element;
-    if (!root || this.activeTab !== "campaign") return;
+    if (!root || !["campaign", "campaignMap"].includes(this.activeTab)) return;
     const value = (name) => root.querySelector(`[name="${name}"]`)?.value?.trim();
     const assign = (target, property, name, transform = (entry) => entry) => {
       const fieldValue = value(name);
@@ -3028,13 +3259,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     assign(this.campaign, "sessionCount", "campaignSessionCount", (entry) => Math.max(1, Math.min(100, Number(entry) || 10)));
     assign(this.campaign, "sessionHours", "campaignSessionHours", (entry) => Math.max(1, Math.min(12, Number(entry) || 4)));
     assign(this.campaign, "length", "campaignLength");
-    const previousStart = this.campaign.map.startLocationId;
-    assign(this.campaign.map, "startLocationId", "campaignStartLocation");
-    if (this.campaign.map.startLocationId && this.campaign.map.startLocationId !== previousStart) {
-      const start = this.campaign.locations.find((entry) => entry.id === this.campaign.map.startLocationId);
-      if (start && Number.isFinite(Number(start.x)) && Number.isFinite(Number(start.y))) {
-        this.campaign.map.focus.x = Number(start.x);
-        this.campaign.map.focus.y = Number(start.y);
+    if (this.activeTab === "campaignMap") {
+      const previousStart = this.campaign.map.startLocationId;
+      assign(this.campaign.map, "startLocationId", "campaignStartLocation");
+      if (this.campaign.map.startLocationId && this.campaign.map.startLocationId !== previousStart) {
+        const start = this.campaign.locations.find((entry) => entry.id === this.campaign.map.startLocationId);
+        if (start && Number.isFinite(Number(start.x)) && Number.isFinite(Number(start.y))) {
+          this.campaign.map.focus.x = Number(start.x);
+          this.campaign.map.focus.y = Number(start.y);
+        }
       }
     }
     assign(this.campaign, "style", "campaignStyle");
@@ -3097,7 +3330,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
       return { ...character, name: field("campaignCharacterName"), involvement: field("campaignCharacterInvolvement"), npcConnection: field("campaignCharacterNpc"), desire: field("campaignCharacterDesire"), bond: field("campaignCharacterBond"), complication: field("campaignCharacterComplication"), growth: field("campaignCharacterGrowth") };
     });
-    ensureCampaignScope(this.campaign);
+    if (this.activeTab === "campaignMap") ensureCampaignMapScope(this.campaign); else ensureCampaignScope(this.campaign);
     await this.saveCampaignDraft();
   }
 
@@ -3110,7 +3343,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       no: { label: "Cancel" },
     });
     if (!confirmed) return;
-    this.campaign = newCampaignBuild();
+    this.campaign = this.activeTab === "campaignMap" ? newCampaignMapBuild() : newCampaignBuild();
     this.campaignStep = 0;
     await this.saveCampaignDraft();
     await this.render();
@@ -3163,7 +3396,23 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.renderCampaignPreservingScroll();
   }
 
+  static async cancelCampaignMapTool() {
+    this.campaignMapTool = "";
+    await this.renderCampaignPreservingScroll();
+  }
+
+  static async resetCampaignMapView() {
+    ensureCampaignMapScope(this.campaign);
+    this.campaign.map.view = { zoom: 1, panX: 0, panY: 0 };
+    await this.saveCampaignDraft();
+    await this.renderCampaignPreservingScroll();
+  }
+
   static async selectCampaignMarker(_event, target) {
+    if (this._campaignMarkerWasDragged) {
+      this._campaignMarkerWasDragged = false;
+      return;
+    }
     await this.syncCampaignForm();
     const location = this.campaign.locations.find((entry) => entry.id === target.dataset.id);
     if (!location) return;
@@ -3204,7 +3453,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     const kind = target.dataset.kind;
     if (!Array.isArray(this.campaign[kind])) return;
     this.campaign[kind] = this.campaign[kind].filter((entry) => entry.id !== target.dataset.id);
-    ensureCampaignScope(this.campaign);
+    if (this.activeTab === "campaignMap") ensureCampaignMapScope(this.campaign); else ensureCampaignScope(this.campaign);
     await this.saveCampaignDraft();
     await this.renderCampaignPreservingScroll();
   }
@@ -3226,7 +3475,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async createCampaignJournal() {
     await this.syncCampaignForm();
-    const invalid = !this.campaign.name.trim() || !this.campaign.map.image || !this.campaign.map.startLocationId || !this.campaign.problem.wrong.trim();
+    const mapBuilder = this.activeTab === "campaignMap";
+    const invalid = mapBuilder
+      ? !this.campaign.name.trim() || !this.campaign.map.image || !this.campaign.map.startLocationId || !this.campaign.problem.wrong.trim()
+      : !this.campaign.name.trim() || !this.campaign.problem.wrong.trim() || !this.campaign.problem.cause.trim() || !this.campaign.problem.stakes.trim()
+        || !this.campaign.locations.some((entry) => entry.name.trim()) || !this.campaign.factions.some((entry) => entry.name.trim()) || !this.campaign.threats.some((entry) => entry.name.trim());
     if (invalid) {
       this.campaignStep = 7;
       await this.saveCampaignDraft();
@@ -3244,7 +3497,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     } else {
       await journal.update({ name: this.campaign.name.trim() });
     }
-    const generated = campaignJournalPages(this.campaign);
+    const generated = mapBuilder ? campaignJournalPages(this.campaign) : adventureCampaignJournalPages(this.campaign);
     const generatedKeys = new Set(generated.map((page) => page.key));
     const obsoletePages = journal.pages.filter((page) => {
       const key = page.getFlag(FLAG_SCOPE, "campaignSection");
@@ -3262,12 +3515,13 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         }]);
       }
     }
-    await journal.setFlag(FLAG_SCOPE, "campaignConfig", {
+    const campaignConfig = {
       length: this.campaign.length, style: this.campaign.style, tone: this.campaign.tone,
       startingLevel: this.campaign.startingLevel, finalLevel: this.campaign.finalLevel,
       sessionCount: this.campaign.sessionCount, sessionHours: this.campaign.sessionHours,
-      map: foundry.utils.deepClone(this.campaign.map),
-    });
+    };
+    if (mapBuilder) campaignConfig.map = foundry.utils.deepClone(this.campaign.map);
+    await journal.setFlag(FLAG_SCOPE, "campaignConfig", campaignConfig);
     await this.saveCampaignDraft();
     ui.notifications.info(`${journal.name} is ready in Foundry Journals.`);
     journal.sheet.render(true);
@@ -3286,6 +3540,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.syncSessionPrepForm();
     await this.syncCampaignForm();
     this.activeTab = tab;
+    if (tab === "campaignMap") {
+      this.campaign = this.mapCampaign; this.campaignStep = this.mapCampaignStep;
+    } else if (tab === "campaign") {
+      this.campaign = this.adventureCampaign; this.campaignStep = this.adventureCampaignStep;
+    }
     await this.render();
   }
 
@@ -3827,6 +4086,10 @@ Hooks.once("init", () => {
     config: false,
     type: String,
     default: "",
+  });
+  game.settings.register(MODULE_ID, "campaignMapBuilderDraft", {
+    name: "Campaign Map Builder Draft", hint: "Automatically stores the progressive regional map preparation wizard.",
+    scope: "client", config: false, type: String, default: "",
   });
   game.settings.registerMenu(MODULE_ID, "openDashboard", {
     name: "Open Lore Smith",

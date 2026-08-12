@@ -5,11 +5,17 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- an eight-step regional Campaign Builder: upload a real map, mark points of
+- the original guided adventure-book Campaign Builder remains available as its
+  own workspace and keeps a separate automatically saved draft;
+- a separate eight-step Campaign Map Builder: upload a real map, mark points of
   interest, draw the party's starting area, and prepare outward by distance;
   the center receives full playable detail, nearby places receive practical
   visit preparation, distant places receive only a light sketch, and places
   beyond the circle remain deliberately unprepared until the campaign expands;
+- a Foundry-style regional map viewport that preserves the source image's
+  proportions, supports wheel zoom and right-drag panning, draggable and
+  nameable points, cancellable placement tools, and a selected-point starting
+  area drawn by dragging its radius;
 - regional connections for roads, waterways, mountain passes, trade, conflict,
   and mysteries, followed by an opening situation that points from the starting
   location toward several plausible player-chosen directions;
