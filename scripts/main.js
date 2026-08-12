@@ -2545,6 +2545,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       activateCampaignMapTool: LoreSmithDashboard.activateCampaignMapTool,
       cancelCampaignMapTool: LoreSmithDashboard.cancelCampaignMapTool,
       resetCampaignMapView: LoreSmithDashboard.resetCampaignMapView,
+      toggleLoreSmithFullscreen: LoreSmithDashboard.toggleLoreSmithFullscreen,
       selectCampaignMarker: LoreSmithDashboard.selectCampaignMarker,
       removeCampaignMarker: LoreSmithDashboard.removeCampaignMarker,
       browseCampaignLocationImage: LoreSmithDashboard.browseCampaignLocationImage,
@@ -2601,6 +2602,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   campaignDeletedLocationIds = new Set();
   campaignScrollTop = 0;
   campaignMapTool = "";
+  dashboardFullscreen = false;
 
   async getNotebook(create = false) {
     let journal = game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "notebook"));
@@ -2788,6 +2790,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         distancePercent: distance === null ? "" : Math.round(distance * 100), isCenter: band === "center",
         isNearby: band === "nearby", isDistant: band === "distant", isOutside: band === "outside",
         icon: CAMPAIGN_POINT_ICONS[location.type] ?? CAMPAIGN_POINT_ICONS.custom,
+        markerScale: Math.max(0.55, Math.min(1.35, 1 / (Number(campaignMap.zoom) || 1))),
         typeOptions: Object.entries(CAMPAIGN_POINT_TYPES).map(([value, label]) => ({ value, label, selected: value === location.type })),
       };
     });
@@ -2894,6 +2897,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onRender(context, options) {
     super._onRender(context, options);
+    this.element?.classList.toggle("ls-dashboard-fullscreen", this.dashboardFullscreen);
+    const fullscreenButton = this.element?.querySelector('[data-action="toggleLoreSmithFullscreen"]');
+    if (fullscreenButton && this.dashboardFullscreen) fullscreenButton.innerHTML = '<i class="fa-solid fa-compress"></i> Exit full screen';
     if (this._campaignMapEscape) {
       window.removeEventListener("keydown", this._campaignMapEscape);
       this._campaignMapEscape = null;
@@ -2927,8 +2933,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         let panDrag = null;
         let movedMarker = false;
         const view = this.campaign.map.view;
+        const markerScale = () => Math.max(0.55, Math.min(1.35, 1 / (Number(view.zoom) || 1)));
         const applyView = () => {
           stage.style.transform = `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`;
+          for (const marker of stage.querySelectorAll("[data-campaign-marker-id]")) marker.style.setProperty("--marker-scale", markerScale());
         };
         const point = (event) => {
           const rect = image.getBoundingClientRect();
@@ -2952,6 +2960,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
           for (const eventName of ["pointerdown", "pointerup", "click", "contextmenu"]) {
             editor.addEventListener(eventName, (event) => event.stopPropagation());
           }
+          editor.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
           const showNameEditor = () => {
             editor.innerHTML = `<strong>${CAMPAIGN_POINT_TYPES[location.type] ?? "Point"}</strong><label>Name<input type="text" value="${escapeHtml(location.name)}" placeholder="Name this place"></label><div><button type="button" data-save-name><i class="fa-solid fa-check"></i> Save</button><button type="button" data-delete-point class="danger"><i class="fa-solid fa-trash"></i></button></div>`;
             const input = editor.querySelector("input");
@@ -3001,8 +3010,40 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
             showNameEditor();
           });
         };
-        campaignMap.addEventListener("contextmenu", (event) => event.preventDefault());
+        campaignMap.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.target.closest(".ls-map-point-editor")) return;
+          const existingMarker = event.target.closest("[data-campaign-marker-id]");
+          if (existingMarker) {
+            const location = this.campaign.locations.find((entry) => entry.id === existingMarker.dataset.campaignMarkerId);
+            if (location) openPointEditor(location, existingMarker, event.clientX, event.clientY);
+            return;
+          }
+          const position = point(event);
+          const location = { ...newCampaignLocation(), x: position.x, y: position.y };
+          this.campaign.locations.push(location);
+          const marker = document.createElement("button");
+          marker.type = "button";
+          marker.dataset.action = "selectCampaignMarker";
+          marker.dataset.id = location.id;
+          marker.dataset.campaignMarkerId = location.id;
+          marker.className = "ls-map-marker outside";
+          marker.style.left = `${position.x * 100}%`;
+          marker.style.top = `${position.y * 100}%`;
+          marker.style.setProperty("--marker-scale", markerScale());
+          marker.title = "Left-drag to move; right-click to edit";
+          marker.innerHTML = `<i class="fa-solid ${CAMPAIGN_POINT_ICONS.custom}"></i><span>Unnamed point</span>`;
+          stage.append(marker);
+          this.writeCampaignRecoverySnapshot();
+          void this.saveCampaignDraft();
+          openPointEditor(location, marker, event.clientX, event.clientY);
+        });
+        campaignMap.addEventListener("auxclick", (event) => {
+          if (event.button === 1) event.preventDefault();
+        });
         campaignMap.addEventListener("wheel", (event) => {
+          if (event.target.closest(".ls-map-point-editor")) return;
           event.preventDefault();
           const rect = campaignMap.getBoundingClientRect();
           const cursorX = event.clientX - rect.left;
@@ -3021,13 +3062,8 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         }, { passive: false });
         campaignMap.addEventListener("pointerdown", (event) => {
           const marker = event.target.closest("[data-campaign-marker-id]");
-          if (event.button === 2) {
-            if (marker) {
-              const location = this.campaign.locations.find((entry) => entry.id === marker.dataset.campaignMarkerId);
-              if (location) openPointEditor(location, marker, event.clientX, event.clientY);
-              event.preventDefault(); event.stopPropagation();
-              return;
-            }
+          if (event.button === 1) {
+            event.preventDefault();
             closePointEditor();
             panDrag = { x: event.clientX, y: event.clientY, panX: view.panX, panY: view.panY };
             campaignMap.classList.add("panning");
@@ -3036,7 +3072,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
           }
           if (event.button !== 0) return;
           if (!event.target.closest(".ls-map-point-editor")) closePointEditor();
-          if (marker && !this.campaignMapTool) {
+          if (marker) {
             const location = this.campaign.locations.find((entry) => entry.id === marker.dataset.campaignMarkerId);
             if (!location) return;
             markerDrag = { location, startX: event.clientX, startY: event.clientY };
@@ -3122,11 +3158,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
             await this.saveCampaignDraft(); await this.renderCampaignPreservingScroll();
             return;
           }
-          if (event.target.closest("[data-campaign-marker-id]") || this.campaignMapTool !== "marker") return;
-          const position = point(event);
-          const location = { ...newCampaignLocation(), x: position.x, y: position.y };
-          this.campaign.locations.push(location);
-          await this.saveCampaignDraft(); await this.renderCampaignPreservingScroll();
+          // Points are created with right-click; an ordinary left-click never creates one.
         });
         campaignMap.addEventListener("pointercancel", () => { focusDrawing = false; markerDrag = null; panDrag = null; campaignMap.classList.remove("panning"); });
         this._campaignMapEscape = (event) => {
@@ -3582,6 +3614,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     this.campaign.map.view = { zoom: 1, panX: 0, panY: 0 };
     await this.saveCampaignDraft();
     await this.renderCampaignPreservingScroll();
+  }
+
+  static toggleLoreSmithFullscreen() {
+    this.dashboardFullscreen = !this.dashboardFullscreen;
+    this.element?.classList.toggle("ls-dashboard-fullscreen", this.dashboardFullscreen);
+    const button = this.element?.querySelector('[data-action="toggleLoreSmithFullscreen"]');
+    if (button) button.innerHTML = this.dashboardFullscreen
+      ? '<i class="fa-solid fa-compress"></i> Exit full screen'
+      : '<i class="fa-solid fa-expand"></i> Full screen';
   }
 
   static async selectCampaignMarker(_event, target) {
