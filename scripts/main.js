@@ -1778,6 +1778,38 @@ const CAMPAIGN_POINT_ICONS = {
   pass: "fa-mountain-sun", custom: "fa-location-dot",
 };
 
+function campaignMapRecoveryKey() {
+  return `${MODULE_ID}.campaign-map-recovery.${game.world?.id ?? "world"}.${game.user?.id ?? "user"}`;
+}
+
+function readCampaignMapRecovery() {
+  try {
+    const raw = globalThis.localStorage?.getItem(campaignMapRecoveryKey());
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.warn("Lore Smith | Could not read the emergency campaign-map recovery copy.", error);
+    return null;
+  }
+}
+
+function writeCampaignMapRecovery(serialized) {
+  try {
+    globalThis.localStorage?.setItem(campaignMapRecoveryKey(), serialized);
+  } catch (error) {
+    console.warn("Lore Smith | Could not write the emergency campaign-map recovery copy.", error);
+  }
+}
+
+function parseStoredDraft(raw, label) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn(`Lore Smith | Could not read the ${label} campaign-map draft.`, error);
+    return null;
+  }
+}
+
 const CAMPAIGN_ROUTE_TYPES = {
   road: "Road", trail: "Trail", river: "River route", ferry: "Ferry or sea route", pass: "Mountain pass",
   trade: "Trade connection", political: "Political relationship", conflict: "Conflict", mystery: "Shared mystery",
@@ -2566,6 +2598,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   campaignSaveTimer = null;
   campaignSavePromise = Promise.resolve();
   campaignSaveRevision = 0;
+  campaignDeletedLocationIds = new Set();
   campaignScrollTop = 0;
   campaignMapTool = "";
 
@@ -2633,11 +2666,18 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         const stored = rawDraft ? JSON.parse(rawDraft) : null;
         const rawWorldMapDraft = game.settings.get(MODULE_ID, "campaignMapBuilderWorldDraft");
         const rawClientMapDraft = game.settings.get(MODULE_ID, "campaignMapBuilderDraft");
-        const worldMapDraft = rawWorldMapDraft ? JSON.parse(rawWorldMapDraft) : null;
-        const clientMapDraft = rawClientMapDraft ? JSON.parse(rawClientMapDraft) : null;
-        const worldUpdated = Number(worldMapDraft?.updatedAt) || 0;
-        const clientUpdated = Number(clientMapDraft?.updatedAt) || 0;
-        const storedMap = clientMapDraft && (!worldMapDraft || clientUpdated >= worldUpdated) ? clientMapDraft : worldMapDraft;
+        const worldMapDraft = parseStoredDraft(rawWorldMapDraft, "world");
+        const clientMapDraft = parseStoredDraft(rawClientMapDraft, "Foundry browser");
+        const recoveryMapDraft = readCampaignMapRecovery();
+        const storedMap = [
+          { draft: worldMapDraft, priority: 0 },
+          { draft: clientMapDraft, priority: 1 },
+          { draft: recoveryMapDraft, priority: 2 },
+        ].filter(({ draft }) => draft?.campaign || draft?.name).sort((left, right) =>
+          (Number(left.draft.updatedAt) || 0) - (Number(right.draft.updatedAt) || 0)
+          || (Number(left.draft.revision) || 0) - (Number(right.draft.revision) || 0)
+          || left.priority - right.priority
+        ).at(-1)?.draft ?? null;
         if (stored?.campaign || stored?.name) {
           this.adventureCampaign = normalizeCampaignBuild(stored.campaign ?? stored);
           this.adventureCampaignStep = Math.max(0, Math.min(7, Number(stored.step) || 0));
@@ -2645,7 +2685,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         if (storedMap?.campaign || storedMap?.name) {
           this.mapCampaign = normalizeCampaignMapBuild(storedMap.campaign ?? storedMap);
           this.mapCampaignStep = Math.max(0, Math.min(7, Number(storedMap.step) || 0));
-          this.campaignSaveRevision = Math.max(Number(storedMap.revision) || 0, Number(worldMapDraft?.revision) || 0, Number(clientMapDraft?.revision) || 0);
+          this.campaignSaveRevision = Math.max(Number(storedMap.revision) || 0, Number(worldMapDraft?.revision) || 0, Number(clientMapDraft?.revision) || 0, Number(recoveryMapDraft?.revision) || 0);
         } else if (stored?.campaign?.map || stored?.map) {
           this.mapCampaign = normalizeCampaignMapBuild(stored.campaign ?? stored);
           this.mapCampaignStep = Math.max(0, Math.min(7, Number(stored.step) || 0));
@@ -2865,6 +2905,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       for (const field of this.element?.querySelectorAll(".ls-campaign-panel input, .ls-campaign-panel textarea, .ls-campaign-panel select") ?? []) {
         const eventName = field.matches("select") ? "change" : "input";
         field.addEventListener(eventName, () => {
+          void this.syncCampaignForm({ persist: false });
           clearTimeout(this.campaignSaveTimer);
           this.campaignSaveTimer = setTimeout(() => void this.syncCampaignForm(), 300);
         });
@@ -2918,6 +2959,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
               location.name = input.value;
               const label = marker.querySelector("span");
               if (label) label.textContent = location.name.trim() || "Unnamed point";
+              this.writeCampaignRecoverySnapshot();
               clearTimeout(this.campaignSaveTimer);
               this.campaignSaveTimer = setTimeout(() => void this.saveCampaignDraft(), 200);
             });
@@ -2932,10 +2974,18 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
               if (event.key === "Enter") { event.preventDefault(); void save(); }
               if (event.key === "Escape") closePointEditor();
             });
-            editor.querySelector("[data-delete-point]")?.addEventListener("click", async () => {
+            const deleteButton = editor.querySelector("[data-delete-point]");
+            deleteButton?.addEventListener("pointerdown", (event) => event.preventDefault());
+            deleteButton?.addEventListener("click", async () => {
+              clearTimeout(this.campaignSaveTimer);
+              this.campaignDeletedLocationIds.add(location.id);
               this.campaign.locations = this.campaign.locations.filter((entry) => entry.id !== location.id);
+              if (this.mapCampaign !== this.campaign) this.mapCampaign.locations = this.mapCampaign.locations.filter((entry) => entry.id !== location.id);
               this.campaign.routes = this.campaign.routes.filter((entry) => entry.fromId !== location.id && entry.toId !== location.id);
               if (this.campaign.map.startLocationId === location.id) this.campaign.map.startLocationId = "";
+              marker.remove();
+              closePointEditor();
+              this.writeCampaignRecoverySnapshot();
               await this.saveCampaignDraft(); await this.renderCampaignPreservingScroll();
             });
             input.focus(); input.select();
@@ -3308,6 +3358,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async saveCampaignDraft() {
     if (this.activeTab === "campaignMap") {
+      if (this.campaignDeletedLocationIds.size) {
+        this.campaign.locations = this.campaign.locations.filter((entry) => !this.campaignDeletedLocationIds.has(entry.id));
+        this.campaign.routes = this.campaign.routes.filter((entry) => !this.campaignDeletedLocationIds.has(entry.fromId) && !this.campaignDeletedLocationIds.has(entry.toId));
+      }
       this.mapCampaign = this.campaign; this.mapCampaignStep = this.campaignStep;
       const serialized = JSON.stringify({
         step: this.campaignStep,
@@ -3315,6 +3369,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         updatedAt: Date.now(),
         revision: ++this.campaignSaveRevision,
       });
+      writeCampaignMapRecovery(serialized);
       const persist = async () => {
         await game.settings.set(MODULE_ID, "campaignMapBuilderDraft", serialized);
         if (!game.user?.isGM) return;
@@ -3332,12 +3387,23 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
+  writeCampaignRecoverySnapshot() {
+    if (this.activeTab !== "campaignMap") return;
+    this.mapCampaign = this.campaign; this.mapCampaignStep = this.campaignStep;
+    writeCampaignMapRecovery(JSON.stringify({
+      step: this.campaignStep,
+      campaign: foundry.utils.deepClone(this.campaign),
+      updatedAt: Date.now(),
+      revision: ++this.campaignSaveRevision,
+    }));
+  }
+
   async renderCampaignPreservingScroll() {
     this.campaignScrollTop = this.element?.querySelector(".ls-main")?.scrollTop ?? this.campaignScrollTop;
     await this.render();
   }
 
-  async syncCampaignForm() {
+  async syncCampaignForm({ persist = true } = {}) {
     const root = this.element;
     if (!root || !["campaign", "campaignMap"].includes(this.activeTab)) return;
     const value = (name) => root.querySelector(`[name="${name}"]`)?.value?.trim();
@@ -3433,8 +3499,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
       return { ...character, name: field("campaignCharacterName"), involvement: field("campaignCharacterInvolvement"), npcConnection: field("campaignCharacterNpc"), desire: field("campaignCharacterDesire"), bond: field("campaignCharacterBond"), complication: field("campaignCharacterComplication"), growth: field("campaignCharacterGrowth") };
     });
+    if (this.activeTab === "campaignMap" && this.campaignDeletedLocationIds.size) {
+      this.campaign.locations = this.campaign.locations.filter((entry) => !this.campaignDeletedLocationIds.has(entry.id));
+      this.campaign.routes = this.campaign.routes.filter((entry) => !this.campaignDeletedLocationIds.has(entry.fromId) && !this.campaignDeletedLocationIds.has(entry.toId));
+    }
     if (this.activeTab === "campaignMap") ensureCampaignMapScope(this.campaign); else ensureCampaignScope(this.campaign);
-    await this.saveCampaignDraft();
+    if (this.activeTab === "campaignMap" && !persist) {
+      this.writeCampaignRecoverySnapshot();
+    }
+    if (persist) await this.saveCampaignDraft();
   }
 
   static async newCampaignBuild() {
@@ -3529,9 +3602,13 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   static async removeCampaignMarker(_event, target) {
     await this.syncCampaignForm();
     const id = target.dataset.id;
+    clearTimeout(this.campaignSaveTimer);
+    this.campaignDeletedLocationIds.add(id);
     this.campaign.locations = this.campaign.locations.filter((entry) => entry.id !== id);
+    if (this.mapCampaign !== this.campaign) this.mapCampaign.locations = this.mapCampaign.locations.filter((entry) => entry.id !== id);
     this.campaign.routes = this.campaign.routes.filter((entry) => entry.fromId !== id && entry.toId !== id);
     if (this.campaign.map.startLocationId === id) this.campaign.map.startLocationId = "";
+    this.writeCampaignRecoverySnapshot();
     await this.saveCampaignDraft();
     await this.renderCampaignPreservingScroll();
   }
