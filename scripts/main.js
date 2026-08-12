@@ -1753,8 +1753,27 @@ function newCampaignStructure() {
 }
 
 function newCampaignLocation() {
-  return { id: foundry.utils.randomID(), name: "", image: "", description: "", importance: "", secret: "" };
+  return {
+    id: foundry.utils.randomID(), name: "", type: "settlement", x: null, y: null, image: "",
+    description: "", importance: "", secret: "", currentSituation: "", people: "", services: "",
+    reasonToLeave: "", ignored: "", relationship: "", reasonToVisit: "", opportunity: "",
+    danger: "", lead: "", travel: "", knownFor: "", rumor: "", futureUse: "",
+  };
 }
+
+function newCampaignRoute() {
+  return { id: foundry.utils.randomID(), fromId: "", toId: "", type: "road", travel: "", feature: "", complication: "" };
+}
+
+const CAMPAIGN_POINT_TYPES = {
+  settlement: "Settlement", landmark: "Landmark", ruin: "Ruins", dungeon: "Dungeon", lake: "Lake",
+  river: "River", mountains: "Mountains", forest: "Forest", road: "Road", pass: "Mountain pass", custom: "Custom",
+};
+
+const CAMPAIGN_ROUTE_TYPES = {
+  road: "Road", trail: "Trail", river: "River route", ferry: "Ferry or sea route", pass: "Mountain pass",
+  trade: "Trade connection", political: "Political relationship", conflict: "Conflict", mystery: "Shared mystery",
+};
 
 function newCampaignFaction() {
   return { id: foundry.utils.randomID(), name: "", goal: "", methods: "", resources: "", relationship: "", ignored: "" };
@@ -1846,16 +1865,48 @@ function ensureCampaignPlan(campaign) {
   return campaign;
 }
 
+function campaignMarkerDistance(campaign, location) {
+  const focus = campaign.map?.focus;
+  if (!focus || !Number.isFinite(Number(location.x)) || !Number.isFinite(Number(location.y))) return null;
+  const aspect = Math.max(0.1, Number(focus.aspect) || 1);
+  return Math.hypot(Number(location.x) - Number(focus.x), (Number(location.y) - Number(focus.y)) / aspect);
+}
+
+function campaignLocationBand(campaign, location) {
+  if (location.id === campaign.map?.startLocationId) return "center";
+  const distance = campaignMarkerDistance(campaign, location);
+  const radius = Math.max(0.02, Number(campaign.map?.focus?.radius) || 0.25);
+  if (distance === null || distance > radius) return "outside";
+  return distance <= radius * 0.6 ? "nearby" : "distant";
+}
+
+function campaignLocationGuidance(location, band) {
+  const type = CAMPAIGN_POINT_TYPES[location.type] ?? "Location";
+  if (band === "center") return `Prepare ${location.name || "the starting location"} deeply. Establish what is happening now, who matters, what the characters can do here, and what pushes them toward the surrounding region.`;
+  if (band === "nearby") return `Prepare this nearby ${type.toLowerCase()} enough to support a visit: its relationship with the starting area, a reason to travel there, an opportunity or danger, and a lead pointing toward it.`;
+  if (band === "distant") return `Keep this distant ${type.toLowerCase()} light. Give it one memorable identity, one rumor, and one reason it might matter later. Expand it only when play moves toward it.`;
+  return "This point is outside the current campaign focus. Name it for map context, but do not prepare it yet.";
+}
+
+function campaignMapView(campaign) {
+  const start = campaign.locations.find((location) => location.id === campaign.map?.startLocationId);
+  const focusX = Number(campaign.map?.focus?.x) || 0.5;
+  const focusY = Number(campaign.map?.focus?.y) || 0.5;
+  const radius = Math.max(0.02, Number(campaign.map?.focus?.radius) || 0.25);
+  const aspect = Math.max(0.1, Number(campaign.map?.focus?.aspect) || 1);
+  return {
+    image: campaign.map?.image ?? "", hasImage: Boolean(campaign.map?.image), startLocationId: campaign.map?.startLocationId ?? "",
+    focusX, focusY, radius, aspect, focusLeft: `${focusX * 100}%`, focusTop: `${focusY * 100}%`,
+    focusSize: `${radius * 200}%`, focusHeight: `${radius * 200 * aspect}%`, startName: start?.name || "No starting point selected",
+  };
+}
+
 function ensureCampaignScope(campaign) {
-  const targets = campaignPlanTargets(campaign);
-  const factories = { structure: newCampaignStructure, locations: newCampaignLocation, factions: newCampaignFaction, threats: newCampaignThreat };
-  const minimums = { structure: targets.structure, locations: targets.locations, factions: targets.factions, threats: targets.threats };
-  for (const [property, minimum] of Object.entries(minimums)) {
-    if (!Array.isArray(campaign[property])) campaign[property] = [];
-    while (campaign[property].length < minimum) campaign[property].push(factories[property]());
-  }
+  if (!campaign.map || typeof campaign.map !== "object") campaign.map = { image: "", startLocationId: "", focus: { x: 0.5, y: 0.5, radius: 0.25, aspect: 2 } };
+  campaign.map.focus = { x: 0.5, y: 0.5, radius: 0.25, aspect: 2, ...(campaign.map.focus ?? {}) };
+  if (!Array.isArray(campaign.routes)) campaign.routes = [];
+  for (const property of ["structure", "locations", "factions", "threats"]) if (!Array.isArray(campaign[property])) campaign[property] = [];
   if (!Array.isArray(campaign.people)) campaign.people = [];
-  while (campaign.people.length < targets.people) campaign.people.push(newCampaignPerson("person", `Important person ${campaign.people.length + 1}`));
   if (!Array.isArray(campaign.openQuestions) || !campaign.openQuestions.length) campaign.openQuestions = [newCampaignQuestion()];
   if (!Array.isArray(campaign.secrets) || !campaign.secrets.length) campaign.secrets = [newCampaignSecret()];
   return ensureCampaignPlan(campaign);
@@ -1864,6 +1915,7 @@ function ensureCampaignScope(campaign) {
 function newCampaignBuild() {
   return ensureCampaignScope({
     journalId: "", name: "", premise: "", startingLevel: 1, finalLevel: 5, sessionCount: 10, sessionHours: 4,
+    map: { image: "", startLocationId: "", focus: { x: 0.5, y: 0.5, radius: 0.25, aspect: 2 } }, routes: [],
     length: "short", style: "adventure", tone: "heroic",
     identity: { themes: "", playerPromise: "", boundaries: "" }, background: "", characterHooks: "",
     problem: { wrong: "", cause: "", stakes: "", involvement: "", distinction: "", resolution: "" },
@@ -1897,6 +1949,8 @@ function normalizeCampaignBuild(stored = {}) {
     locations: (Array.isArray(stored.locations) && stored.locations.length ? stored.locations : oldPlace).map((entry) => ({ ...newCampaignLocation(), ...entry, id: entry.id || foundry.utils.randomID() })),
     factions: (Array.isArray(stored.factions) ? stored.factions : []).map((entry) => ({ ...newCampaignFaction(), ...entry, id: entry.id || foundry.utils.randomID() })),
     threats: (Array.isArray(stored.threats) ? stored.threats : []).map((entry) => ({ ...newCampaignThreat(), ...entry, id: entry.id || foundry.utils.randomID() })),
+    map: { ...fresh.map, ...(stored.map ?? {}), focus: { ...fresh.map.focus, ...(stored.map?.focus ?? {}) } },
+    routes: (Array.isArray(stored.routes) ? stored.routes : []).map((entry) => ({ ...newCampaignRoute(), ...entry, id: entry.id || foundry.utils.randomID() })),
     chapters: (Array.isArray(stored.chapters) ? stored.chapters : []).map((entry, index) => ({ ...newCampaignChapter(index + 1), ...entry, number: index + 1, id: entry.id || foundry.utils.randomID() })),
     rumors: (Array.isArray(stored.rumors) ? stored.rumors : []).map((entry) => ({ ...newCampaignRumor(), ...entry, id: entry.id || foundry.utils.randomID() })),
     worldEvents: (Array.isArray(stored.worldEvents) ? stored.worldEvents : []).map((entry) => ({ ...newCampaignWorldEvent(), ...entry, id: entry.id || foundry.utils.randomID() })),
@@ -1918,7 +1972,7 @@ function campaignList(title, entries) {
   return values.length ? `<h2>${escapeHtml(title)}</h2><ul>${values.map((entry) => `<li>${sessionHtml(entry)}</li>`).join("")}</ul>` : "";
 }
 
-function campaignJournalPages(campaign) {
+function legacyCampaignJournalPages(campaign) {
   ensureCampaignScope(campaign);
   const length = campaignScope(campaign);
   const targets = campaignPlanTargets(campaign);
@@ -1964,6 +2018,33 @@ function campaignJournalPages(campaign) {
   pages.push({ key: "progression", name: "Progression and Rewards", content: progression });
   pages.push({ key: "reference", name: "GM Reference", content: reference });
   return pages;
+}
+
+function campaignJournalPages(campaign) {
+  ensureCampaignScope(campaign);
+  const map = campaignMapView(campaign);
+  const positioned = campaign.locations.filter((entry) => Number.isFinite(Number(entry.x)) && Number.isFinite(Number(entry.y)));
+  const byBand = (band) => positioned.filter((entry) => campaignLocationBand(campaign, entry) === band);
+  const center = byBand("center")[0];
+  const locationSection = (entry, fields) => `<section><h2>${escapeHtml(entry.name || "Unnamed location")}</h2><p><em>${escapeHtml(CAMPAIGN_POINT_TYPES[entry.type] ?? "Location")}</em></p>${entry.image ? `<figure><img src="${escapeHtml(entry.image)}" alt="${escapeHtml(entry.name)}"></figure>` : ""}${fields.map(([label, key]) => sessionBlock(label, entry[key])).join("")}</section>`;
+  const markers = positioned.map((entry) => `<span class="ls-journal-map-marker ${campaignLocationBand(campaign, entry)}" style="left:${Number(entry.x) * 100}%;top:${Number(entry.y) * 100}%" title="${escapeHtml(entry.name || "Unnamed point")}"></span>`).join("");
+  const mapPage = `<div class="ls-journal-region-map"><img src="${escapeHtml(map.image)}" alt="${escapeHtml(campaign.name)} regional map"><span class="ls-journal-focus" style="left:${map.focusX * 100}%;top:${map.focusY * 100}%;width:${map.radius * 200}%;height:${map.radius * 200 * map.aspect}%"></span>${markers}</div><p><strong>Starting point:</strong> ${escapeHtml(map.startName)}</p><p>The focus circle records the region currently prepared for play. Center locations receive full detail, nearby locations are ready to visit, and distant locations remain light until the party travels toward them.</p>`;
+  const overview = `${sessionBlock("Opening problem", campaign.problem.wrong)}${sessionBlock("Cause", campaign.problem.cause)}${sessionBlock("Stakes", campaign.problem.stakes)}${sessionBlock("Why the characters become involved", campaign.problem.involvement)}${sessionBlock("Sign that the problem reaches beyond the starting point", campaign.problem.distinction)}${sessionBlock("Rumor of the wider world", campaign.premise)}`;
+  const centerPage = center ? locationSection(center, [["Description", "description"], ["What is happening now", "currentSituation"], ["Why the characters are here", "importance"], ["People who matter", "people"], ["Help, services, and resources", "services"], ["Immediate danger", "danger"], ["Reason to leave and explore", "reasonToLeave"], ["What happens if ignored", "ignored"]]) : "<p>No starting point has been prepared.</p>";
+  const nearby = byBand("nearby").map((entry) => locationSection(entry, [[`Relationship with ${map.startName}`, "relationship"], ["Reason to travel here", "reasonToVisit"], ["Opportunity or useful resource", "opportunity"], ["Danger or mystery", "danger"], ["Lead pointing here", "lead"], ["Travel and route", "travel"]])).join("<hr>") || "<p>No nearby locations are currently inside the focus.</p>";
+  const distant = byBand("distant").map((entry) => locationSection(entry, [["One-sentence identity", "description"], ["Known for", "knownFor"], ["Rumor or visible sign", "rumor"], ["Possible future use", "futureUse"]])).join("<hr>") || "<p>No distant locations are currently inside the focus.</p>";
+  const nameFor = (id) => campaign.locations.find((entry) => entry.id === id)?.name || "Unnamed point";
+  const routes = campaign.routes.map((route) => `<section><h2>${escapeHtml(nameFor(route.fromId))} to ${escapeHtml(nameFor(route.toId))}</h2><p><strong>Connection:</strong> ${escapeHtml(CAMPAIGN_ROUTE_TYPES[route.type] ?? "Route")}</p>${sessionBlock("Travel time", route.travel)}${sessionBlock("Memorable feature", route.feature)}${sessionBlock("Travel complication", route.complication)}</section>`).join("<hr>") || "<p>No regional connections have been prepared yet.</p>";
+  const outside = campaign.locations.filter((entry) => campaignLocationBand(campaign, entry) === "outside").map((entry) => `<li>${escapeHtml(entry.name || "Unnamed point")} <em>(${escapeHtml(CAMPAIGN_POINT_TYPES[entry.type] ?? "location")})</em></li>`).join("");
+  return [
+    { key: "regional-map", name: "1. Regional Map", content: mapPage },
+    { key: "opening-situation", name: "2. Opening Situation", content: overview },
+    { key: "starting-point", name: `3. Starting Point - ${center?.name || "Unprepared"}`, content: centerPage },
+    { key: "nearby-places", name: "4. Nearby Places", content: nearby },
+    { key: "distant-places", name: "5. Distant Gazetteer", content: distant },
+    { key: "regional-connections", name: "6. Routes and Connections", content: routes },
+    { key: "outside-focus", name: "7. Beyond the Current Focus", content: outside ? `<p>These places exist on the map but deliberately require no preparation yet.</p><ul>${outside}</ul>` : "<p>No marked points lie outside the current focus.</p>" },
+  ];
 }
 
 const LOOT_FILTER_MODES = {
@@ -2342,6 +2423,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       previousCampaignStep: LoreSmithDashboard.previousCampaignStep,
       nextCampaignStep: LoreSmithDashboard.nextCampaignStep,
       goToCampaignStep: LoreSmithDashboard.goToCampaignStep,
+      browseCampaignMap: LoreSmithDashboard.browseCampaignMap,
+      activateCampaignMapTool: LoreSmithDashboard.activateCampaignMapTool,
+      selectCampaignMarker: LoreSmithDashboard.selectCampaignMarker,
+      removeCampaignMarker: LoreSmithDashboard.removeCampaignMarker,
       browseCampaignLocationImage: LoreSmithDashboard.browseCampaignLocationImage,
       addCampaignEntry: LoreSmithDashboard.addCampaignEntry,
       removeCampaignEntry: LoreSmithDashboard.removeCampaignEntry,
@@ -2388,6 +2473,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   campaignDraftLoaded = false;
   campaignSaveTimer = null;
   campaignScrollTop = 0;
+  campaignMapTool = "";
 
   async getNotebook(create = false) {
     let journal = game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "notebook"));
@@ -2523,7 +2609,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     const sessionStepEntries = [["goal", "Goal"], ["locations", "Places"], ["people", "People"], ["music", "Music"], ["scenes", "Scenes"], ["review", "Review"]];
     const sessionSteps = Object.fromEntries(sessionStepEntries.map(([key, label], index) => [key, { index, number: index + 1, label, active: this.sessionStep === index }]));
     ensureCampaignScope(this.campaign);
-    const campaignStepEntries = [["scope", "Scope"], ["conflict", "Conflict"], ["cast", "Cast"], ["locations", "Locations"], ["secrets", "Secrets"], ["structure", "Structure"], ["chapters", this.campaign.length === "open" ? "Sandbox Kit" : "Chapters"], ["review", "Review"]];
+    const campaignStepEntries = [["map", "Map"], ["focus", "Starting Area"], ["center", "Center"], ["nearby", "Nearby"], ["distant", "Distant"], ["routes", "Connections"], ["opening", "Opening"], ["review", "Review"]];
     const campaignSteps = Object.fromEntries(campaignStepEntries.map(([key, label], index) => [key, { index, number: index + 1, label, active: this.campaignStep === index }]));
     const campaignStyle = CAMPAIGN_STYLES[this.campaign.style] ?? CAMPAIGN_STYLES.adventure;
     const campaignLength = CAMPAIGN_LENGTHS[this.campaign.length] ?? CAMPAIGN_LENGTHS.short;
@@ -2536,24 +2622,37 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       previousChapterGroup = grouping.group;
       return { ...chapter, ...grouping, firstInGroup, number: index + 1 };
     });
+    const campaignMap = campaignMapView(this.campaign);
+    const startOptions = [{ value: "", label: "Choose the starting point", selected: !campaignMap.startLocationId }, ...this.campaign.locations.map((location) => ({ value: location.id, label: location.name || "Unnamed point", selected: location.id === campaignMap.startLocationId }))];
+    const markerViews = this.campaign.locations.map((location, index) => {
+      const band = campaignLocationBand(this.campaign, location);
+      const distance = campaignMarkerDistance(this.campaign, location);
+      return {
+        ...location, number: index + 1, band, guidance: campaignLocationGuidance(location, band),
+        positioned: Number.isFinite(Number(location.x)) && Number.isFinite(Number(location.y)),
+        left: `${(Number(location.x) || 0) * 100}%`, top: `${(Number(location.y) || 0) * 100}%`,
+        distancePercent: distance === null ? "" : Math.round(distance * 100), isCenter: band === "center",
+        isNearby: band === "nearby", isDistant: band === "distant", isOutside: band === "outside",
+        typeOptions: Object.entries(CAMPAIGN_POINT_TYPES).map(([value, label]) => ({ value, label, selected: value === location.type })),
+      };
+    });
+    const markerByBand = (band) => markerViews.filter((entry) => entry.band === band);
+    const locationOptions = [{ value: "", label: "Choose a point", selected: false }, ...this.campaign.locations.map((location) => ({ value: location.id, label: location.name || "Unnamed point" }))];
+    const campaignRoutes = this.campaign.routes.map((route, index) => ({
+      ...route, number: index + 1,
+      fromOptions: locationOptions.map((option) => ({ ...option, selected: option.value === route.fromId })),
+      toOptions: locationOptions.map((option) => ({ ...option, selected: option.value === route.toId })),
+      typeOptions: Object.entries(CAMPAIGN_ROUTE_TYPES).map(([value, label]) => ({ value, label, selected: value === route.type })),
+    }));
     const campaignValidation = [];
     if (!this.campaign.name.trim()) campaignValidation.push("Name the campaign.");
-    if (!this.campaign.problem.wrong.trim()) campaignValidation.push("Describe what is going wrong.");
-    if (!this.campaign.problem.cause.trim()) campaignValidation.push("Identify who or what is causing the problem.");
-    if (!this.campaign.problem.stakes.trim()) campaignValidation.push("Describe what happens if nobody intervenes.");
-    if (!this.campaign.locations.some((entry) => entry.name.trim())) campaignValidation.push("Name at least one important location.");
-    if (!this.campaign.factions.some((entry) => entry.name.trim())) campaignValidation.push("Name at least one active faction.");
-    if (!this.campaign.threats.some((entry) => entry.name.trim())) campaignValidation.push("Name at least one threat or conflict.");
+    if (!campaignMap.image) campaignValidation.push("Upload a regional map.");
+    if (!campaignMap.startLocationId) campaignValidation.push("Choose a starting point.");
+    if (!this.campaign.problem.wrong.trim()) campaignValidation.push("Describe the opening problem.");
     const campaignRecommendations = [];
     const namedCount = (entries) => entries.filter((entry) => entry.name.trim()).length;
-    if (namedCount(this.campaign.structure) < campaignTargets.structure) campaignRecommendations.push(`Name ${campaignTargets.structure} ${campaignLength.structureLabel.toLowerCase()} for the selected length.`);
-    if (namedCount(this.campaign.locations) < campaignTargets.locations) campaignRecommendations.push(`Name ${campaignTargets.locations} important locations for the selected length.`);
-    if (namedCount(this.campaign.factions) < campaignTargets.factions) campaignRecommendations.push(`Name ${campaignTargets.factions} active factions for the selected length.`);
-    if (namedCount(this.campaign.threats) < campaignTargets.threats) campaignRecommendations.push(`Name ${campaignTargets.threats} threats or conflicts for the selected length.`);
-    if (this.campaign.length !== "open") {
-      const unfinished = campaignChapters.filter((chapter) => !chapter.title.trim() || !chapter.purpose.trim()).length;
-      if (unfinished) campaignRecommendations.push(`${unfinished} session chapter${unfinished === 1 ? " is" : "s are"} still missing a title or purpose.`);
-    }
+    if (!markerViews.some((entry) => entry.isNearby)) campaignRecommendations.push("Place at least one nearby point to give the players an immediate direction beyond the starting location.");
+    if (!markerViews.some((entry) => entry.isDistant)) campaignRecommendations.push("Include one distant point inside the focus circle to suggest a wider region without preparing it deeply.");
     return {
       ...await super._prepareContext(options),
       tabs: { [this.activeTab]: true },
@@ -2610,6 +2709,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       ],
       campaignGuidance: { style: campaignStyle.guidance, scope: campaignLength.scope },
       campaignValidation, campaignRecommendations, campaignScope: campaignLength, campaignTargets,
+      campaignMap, campaignMapTool: this.campaignMapTool,
+      campaignMapMarkerTool: this.campaignMapTool === "marker", campaignMapFocusTool: this.campaignMapTool === "focus",
+      campaignMapMarkers: markerViews,
+      campaignCenterLocations: markerByBand("center"), campaignNearbyLocations: markerByBand("nearby"), campaignDistantLocations: markerByBand("distant"), campaignOutsideLocations: markerByBand("outside"),
+      campaignStartOptions: startOptions, campaignRoutes,
       campaignStructured: this.campaign.length !== "open", campaignSandbox: this.campaign.length === "open", campaignChapters,
       campaignStructure: this.campaign.structure.map((entry, index) => ({ ...entry, number: index + 1 })),
       campaignLocations: this.campaign.locations.map((entry, index) => ({ ...entry, number: index + 1 })),
@@ -2637,10 +2741,54 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
           this.campaignSaveTimer = setTimeout(() => void this.syncCampaignForm(), 300);
         });
       }
-      for (const select of this.element?.querySelectorAll('[name="campaignLength"], [name="campaignSessionCount"]') ?? []) {
+      for (const select of this.element?.querySelectorAll('[name="campaignLength"], [name="campaignSessionCount"], [name="campaignStartLocation"]') ?? []) {
         select.addEventListener("change", async () => {
           await this.syncCampaignForm();
           await this.renderCampaignPreservingScroll();
+        });
+      }
+      const campaignMap = this.element?.querySelector("[data-campaign-map]");
+      if (campaignMap) {
+        let focusStart = null;
+        const point = (event) => {
+          const rect = campaignMap.getBoundingClientRect();
+          return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) };
+        };
+        campaignMap.addEventListener("pointerdown", (event) => {
+          if (event.target.closest("[data-campaign-marker-id]") || this.campaignMapTool !== "focus") return;
+          focusStart = point(event);
+          campaignMap.setPointerCapture?.(event.pointerId);
+        });
+        campaignMap.addEventListener("pointermove", (event) => {
+          if (!focusStart) return;
+          const current = point(event);
+          const rect = campaignMap.getBoundingClientRect();
+          const aspect = Math.max(0.1, rect.width / rect.height);
+          const radius = Math.min(1, Math.hypot(current.x - focusStart.x, (current.y - focusStart.y) / aspect));
+          const circle = campaignMap.querySelector(".ls-map-focus-circle");
+          if (circle) {
+            circle.style.left = `${focusStart.x * 100}%`; circle.style.top = `${focusStart.y * 100}%`;
+            circle.style.width = `${radius * 200}%`; circle.style.height = `${radius * 200 * aspect}%`;
+          }
+        });
+        campaignMap.addEventListener("pointerup", async (event) => {
+          if (focusStart) {
+            const current = point(event);
+            const rect = campaignMap.getBoundingClientRect();
+            const aspect = Math.max(0.1, rect.width / rect.height);
+            const radius = Math.max(0.02, Math.min(1, Math.hypot(current.x - focusStart.x, (current.y - focusStart.y) / aspect)));
+            this.campaign.map.focus = { x: focusStart.x, y: focusStart.y, radius, aspect };
+            const nearest = this.campaign.locations.filter((entry) => Number.isFinite(Number(entry.x)) && Number.isFinite(Number(entry.y)))
+              .sort((left, right) => Math.hypot(left.x - focusStart.x, (left.y - focusStart.y) / aspect) - Math.hypot(right.x - focusStart.x, (right.y - focusStart.y) / aspect))[0];
+            if (nearest) this.campaign.map.startLocationId = nearest.id;
+            this.campaignMapTool = ""; focusStart = null;
+            await this.saveCampaignDraft(); await this.renderCampaignPreservingScroll();
+            return;
+          }
+          if (event.target.closest("[data-campaign-marker-id]") || this.campaignMapTool !== "marker") return;
+          const position = point(event);
+          this.campaign.locations.push({ ...newCampaignLocation(), x: position.x, y: position.y });
+          await this.saveCampaignDraft(); await this.renderCampaignPreservingScroll();
         });
       }
       return;
@@ -2880,6 +3028,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     assign(this.campaign, "sessionCount", "campaignSessionCount", (entry) => Math.max(1, Math.min(100, Number(entry) || 10)));
     assign(this.campaign, "sessionHours", "campaignSessionHours", (entry) => Math.max(1, Math.min(12, Number(entry) || 4)));
     assign(this.campaign, "length", "campaignLength");
+    const previousStart = this.campaign.map.startLocationId;
+    assign(this.campaign.map, "startLocationId", "campaignStartLocation");
+    if (this.campaign.map.startLocationId && this.campaign.map.startLocationId !== previousStart) {
+      const start = this.campaign.locations.find((entry) => entry.id === this.campaign.map.startLocationId);
+      if (start && Number.isFinite(Number(start.x)) && Number.isFinite(Number(start.y))) {
+        this.campaign.map.focus.x = Number(start.x);
+        this.campaign.map.focus.y = Number(start.y);
+      }
+    }
     assign(this.campaign, "style", "campaignStyle");
     assign(this.campaign, "tone", "campaignTone");
     assign(this.campaign.identity, "themes", "campaignThemes");
@@ -2908,11 +3065,12 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     assign(this.campaign.consistency, "timeline", "campaignConsistencyTimeline");
     assign(this.campaign.consistency, "travel", "campaignConsistencyTravel");
     const collectionFields = {
-      structure: ["name", "summary", "outcome"], locations: ["name", "image", "description", "importance", "secret"],
+      structure: ["name", "summary", "outcome"], locations: ["name", "type", "image", "description", "importance", "secret", "currentSituation", "people", "services", "reasonToLeave", "ignored", "relationship", "reasonToVisit", "opportunity", "danger", "lead", "travel", "knownFor", "rumor", "futureUse"],
       factions: ["name", "goal", "methods", "resources", "relationship", "ignored"], threats: ["name", "goal", "escalation", "consequences"],
       openQuestions: ["text"], secrets: ["secret", "clues", "knownBy"], rumors: ["text", "truth"],
       worldEvents: ["trigger", "event", "consequence"],
       chapters: ["title", "purpose", "opening", "information", "locations", "npcs", "scenes", "revelations", "encounters", "rewards", "choices", "consequences", "transition"],
+      routes: ["fromId", "toId", "type", "travel", "feature", "complication"],
     };
     for (const [property, fields] of Object.entries(collectionFields)) {
       const cards = [...root.querySelectorAll(`[data-campaign-entry-kind="${property}"]`)];
@@ -2990,13 +3148,49 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     } }).browse();
   }
 
+  static async browseCampaignMap() {
+    await this.syncCampaignForm();
+    new FilePicker({ type: "imagevideo", current: this.campaign.map.image, callback: async (path) => {
+      this.campaign.map.image = path;
+      await this.saveCampaignDraft();
+      await this.renderCampaignPreservingScroll();
+    } }).browse();
+  }
+
+  static async activateCampaignMapTool(_event, target) {
+    await this.syncCampaignForm();
+    this.campaignMapTool = target.dataset.tool === this.campaignMapTool ? "" : target.dataset.tool;
+    await this.renderCampaignPreservingScroll();
+  }
+
+  static async selectCampaignMarker(_event, target) {
+    await this.syncCampaignForm();
+    const location = this.campaign.locations.find((entry) => entry.id === target.dataset.id);
+    if (!location) return;
+    this.campaign.map.startLocationId = location.id;
+    this.campaign.map.focus.x = Number(location.x) || 0.5;
+    this.campaign.map.focus.y = Number(location.y) || 0.5;
+    await this.saveCampaignDraft();
+    await this.renderCampaignPreservingScroll();
+  }
+
+  static async removeCampaignMarker(_event, target) {
+    await this.syncCampaignForm();
+    const id = target.dataset.id;
+    this.campaign.locations = this.campaign.locations.filter((entry) => entry.id !== id);
+    this.campaign.routes = this.campaign.routes.filter((entry) => entry.fromId !== id && entry.toId !== id);
+    if (this.campaign.map.startLocationId === id) this.campaign.map.startLocationId = "";
+    await this.saveCampaignDraft();
+    await this.renderCampaignPreservingScroll();
+  }
+
   static async addCampaignEntry(_event, target) {
     await this.syncCampaignForm();
     const kind = target.dataset.kind;
     const factories = {
       structure: newCampaignStructure, locations: newCampaignLocation, factions: newCampaignFaction,
       threats: newCampaignThreat, openQuestions: newCampaignQuestion, secrets: newCampaignSecret,
-      rumors: newCampaignRumor, worldEvents: newCampaignWorldEvent,
+      rumors: newCampaignRumor, worldEvents: newCampaignWorldEvent, routes: newCampaignRoute,
       people: () => newCampaignPerson("person", `Important person ${this.campaign.people.length + 1}`),
     };
     if (!factories[kind] || !Array.isArray(this.campaign[kind])) return;
@@ -3032,9 +3226,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async createCampaignJournal() {
     await this.syncCampaignForm();
-    const invalid = !this.campaign.name.trim() || !this.campaign.problem.wrong.trim() || !this.campaign.problem.cause.trim() || !this.campaign.problem.stakes.trim()
-      || !this.campaign.locations.some((entry) => entry.name.trim()) || !this.campaign.factions.some((entry) => entry.name.trim())
-      || !this.campaign.threats.some((entry) => entry.name.trim());
+    const invalid = !this.campaign.name.trim() || !this.campaign.map.image || !this.campaign.map.startLocationId || !this.campaign.problem.wrong.trim();
     if (invalid) {
       this.campaignStep = 7;
       await this.saveCampaignDraft();
@@ -3074,6 +3266,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       length: this.campaign.length, style: this.campaign.style, tone: this.campaign.tone,
       startingLevel: this.campaign.startingLevel, finalLevel: this.campaign.finalLevel,
       sessionCount: this.campaign.sessionCount, sessionHours: this.campaign.sessionHours,
+      map: foundry.utils.deepClone(this.campaign.map),
     });
     await this.saveCampaignDraft();
     ui.notifications.info(`${journal.name} is ready in Foundry Journals.`);

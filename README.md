@@ -5,12 +5,17 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- an eight-step Adventure Book Builder that turns a chosen campaign format and
-  expected session count into a practical authoring plan; Short campaigns are
-  divided into three acts, Long campaigns into multi-session arcs, and Sandbox
-  campaigns into active situations, rumors, and world events instead of scripted
-  chapters; every planned session becomes an editable chapter and the finished
-  adventure becomes an organized native Foundry Journal;
+- an eight-step regional Campaign Builder: upload a real map, mark points of
+  interest, draw the party's starting area, and prepare outward by distance;
+  the center receives full playable detail, nearby places receive practical
+  visit preparation, distant places receive only a light sketch, and places
+  beyond the circle remain deliberately unprepared until the campaign expands;
+- regional connections for roads, waterways, mountain passes, trade, conflict,
+  and mysteries, followed by an opening situation that points from the starting
+  location toward several plausible player-chosen directions;
+- a generated native Foundry campaign Journal containing the annotated regional
+  map, detailed starting point, nearby locations, distant gazetteer, travel
+  connections, opening problem, and a list of points beyond the current focus;
 - a six-step Session Prep dashboard that turns a session goal, two or more
   image-backed locations, sensory descriptions, structured people and factions,
   dropped hazards and encounter actors, scenes, clues, rewards, consequences, and GM
