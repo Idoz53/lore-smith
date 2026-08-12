@@ -1907,7 +1907,7 @@ function ensureCampaignPlan(campaign) {
 
 function campaignMarkerDistance(campaign, location) {
   const focus = campaign.map?.focus;
-  if (!focus || !Number.isFinite(Number(location.x)) || !Number.isFinite(Number(location.y))) return null;
+  if (!focus || !Number.isFinite(Number.parseFloat(location.x)) || !Number.isFinite(Number.parseFloat(location.y))) return null;
   const aspect = Math.max(0.1, Number(focus.aspect) || 1);
   return Math.hypot(Number(location.x) - Number(focus.x), (Number(location.y) - Number(focus.y)) / aspect);
 }
@@ -2116,7 +2116,7 @@ function legacyCampaignJournalPages(campaign) {
 function campaignJournalPages(campaign) {
   ensureCampaignMapScope(campaign);
   const map = campaignMapView(campaign);
-  const positioned = campaign.locations.filter((entry) => Number.isFinite(Number(entry.x)) && Number.isFinite(Number(entry.y)));
+  const positioned = campaign.locations.filter((entry) => Number.isFinite(Number.parseFloat(entry.x)) && Number.isFinite(Number.parseFloat(entry.y)));
   const byBand = (band) => positioned.filter((entry) => campaignLocationBand(campaign, entry) === band);
   const center = byBand("center")[0];
   const locationSection = (entry, fields) => `<section><h2>${escapeHtml(entry.name || "Unnamed location")}</h2><p><em>${escapeHtml(CAMPAIGN_POINT_TYPES[entry.type] ?? "Location")}</em></p>${entry.image ? `<figure><img src="${escapeHtml(entry.image)}" alt="${escapeHtml(entry.name)}"></figure>` : ""}${fields.map(([label, key]) => sessionBlock(label, entry[key])).join("")}</section>`;
@@ -2783,7 +2783,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       const distance = campaignMarkerDistance(this.campaign, location);
       return {
         ...location, number: index + 1, band, guidance: campaignLocationGuidance(location, band),
-        positioned: Number.isFinite(Number(location.x)) && Number.isFinite(Number(location.y)),
+        positioned: Number.isFinite(Number.parseFloat(location.x)) && Number.isFinite(Number.parseFloat(location.y)),
         left: `${(Number(location.x) || 0) * 100}%`, top: `${(Number(location.y) || 0) * 100}%`,
         distancePercent: distance === null ? "" : Math.round(distance * 100), isCenter: band === "center",
         isNearby: band === "nearby", isDistant: band === "distant", isOutside: band === "outside",
@@ -2936,7 +2936,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         };
         const focusAnchor = () => {
           const selected = this.campaign.locations.find((entry) => entry.id === this.campaign.map.startLocationId);
-          if (!selected || !Number.isFinite(Number(selected.x)) || !Number.isFinite(Number(selected.y))) return null;
+          if (!selected || !Number.isFinite(Number.parseFloat(selected.x)) || !Number.isFinite(Number.parseFloat(selected.y))) return null;
           return { x: Number(selected.x), y: Number(selected.y) };
         };
         const closePointEditor = () => campaignMap.querySelector(".ls-map-point-editor")?.remove();
@@ -3423,7 +3423,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       assign(this.campaign.map, "startLocationId", "campaignStartLocation");
       if (this.campaign.map.startLocationId && this.campaign.map.startLocationId !== previousStart) {
         const start = this.campaign.locations.find((entry) => entry.id === this.campaign.map.startLocationId);
-        if (start && Number.isFinite(Number(start.x)) && Number.isFinite(Number(start.y))) {
+        if (start && Number.isFinite(Number.parseFloat(start.x)) && Number.isFinite(Number.parseFloat(start.y))) {
           this.campaign.map.focus.x = Number(start.x);
           this.campaign.map.focus.y = Number(start.y);
         }
@@ -3600,9 +3600,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   static async removeCampaignMarker(_event, target) {
-    await this.syncCampaignForm();
     const id = target.dataset.id;
     clearTimeout(this.campaignSaveTimer);
+    await this.syncCampaignForm({ persist: false });
     this.campaignDeletedLocationIds.add(id);
     this.campaign.locations = this.campaign.locations.filter((entry) => entry.id !== id);
     if (this.mapCampaign !== this.campaign) this.mapCampaign.locations = this.mapCampaign.locations.filter((entry) => entry.id !== id);
