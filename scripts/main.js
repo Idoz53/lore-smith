@@ -3403,12 +3403,21 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       const cards = [...root.querySelectorAll(`[data-campaign-entry-kind="${property}"]`)];
       if (!cards.length) continue;
       const existing = new Map(this.campaign[property].map((entry) => [entry.id, entry]));
-      this.campaign[property] = cards.map((card) => {
+      const updates = cards.map((card) => {
         const id = card.dataset.campaignEntryId;
         const entry = { ...(existing.get(id) ?? {}), id };
-        for (const field of fields) entry[field] = card.querySelector(`[data-campaign-field="${field}"]`)?.value.trim() ?? "";
+        for (const field of fields) {
+          const control = card.querySelector(`[data-campaign-field="${field}"]`);
+          if (control) entry[field] = control.value.trim();
+        }
         return entry;
       });
+      if (this.activeTab === "campaignMap" && property === "locations") {
+        const byId = new Map(updates.map((entry) => [entry.id, entry]));
+        this.campaign.locations = this.campaign.locations.map((entry) => byId.get(entry.id) ?? entry);
+      } else {
+        this.campaign[property] = updates;
+      }
     }
     const existingPeople = new Map(this.campaign.people.map((person) => [person.id, person]));
     const personCards = [...root.querySelectorAll("[data-campaign-person-id]")];
