@@ -5,11 +5,12 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- an eight-step Campaign Bible Builder for campaign identity, direction, flexible
-  structure, setting, factions, threats, recurring NPCs, player connections,
-  progression, consistency, and open questions; Short, Long, and Sandbox formats
-  create different scopes and structures, drafts save automatically, and the
-  finished bible becomes an organized native Foundry Journal;
+- an eight-step Adventure Book Builder that turns a chosen campaign format and
+  expected session count into a practical authoring plan; Short campaigns are
+  divided into three acts, Long campaigns into multi-session arcs, and Sandbox
+  campaigns into active situations, rumors, and world events instead of scripted
+  chapters; every planned session becomes an editable chapter and the finished
+  adventure becomes an organized native Foundry Journal;
 - a six-step Session Prep dashboard that turns a session goal, two or more
   image-backed locations, sensory descriptions, structured people and factions,
   dropped hazards and encounter actors, scenes, clues, rewards, consequences, and GM

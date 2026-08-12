@@ -2,7 +2,7 @@
   "id": "lore-smith",
   "title": "Lore Smith",
   "description": "A PF2e-native Game Master workspace for guided campaign and session preparation, creature and item building, encounter analysis, combat logs, and scene-based live simulation.",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "authors": [
     {
       "name": "Idoz53"
