@@ -16,6 +16,10 @@ The module provides:
   proportions, supports wheel zoom and right-drag panning, draggable and
   nameable points, cancellable placement tools, and a selected-point starting
   area drawn by dragging its radius;
+- world-persistent Campaign Map Builder drafts, with immediate saves for map
+  edits and automatic recovery of drafts created by earlier versions;
+- compact map markers with an on-map right-click editor for point type, live
+  naming, movement, and deletion—without a separate point-card list below the map;
 - regional connections for roads, waterways, mountain passes, trade, conflict,
   and mysteries, followed by an opening situation that points from the starting
   location toward several plausible player-chosen directions;
