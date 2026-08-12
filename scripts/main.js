@@ -2564,6 +2564,8 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   mapCampaignStep = 0;
   campaignDraftLoaded = false;
   campaignSaveTimer = null;
+  campaignSavePromise = Promise.resolve();
+  campaignSaveRevision = 0;
   campaignScrollTop = 0;
   campaignMapTool = "";
 
@@ -2630,8 +2632,12 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         const rawDraft = game.settings.get(MODULE_ID, "campaignBuilderDraft");
         const stored = rawDraft ? JSON.parse(rawDraft) : null;
         const rawWorldMapDraft = game.settings.get(MODULE_ID, "campaignMapBuilderWorldDraft");
-        const rawMapDraft = rawWorldMapDraft || game.settings.get(MODULE_ID, "campaignMapBuilderDraft");
-        const storedMap = rawMapDraft ? JSON.parse(rawMapDraft) : null;
+        const rawClientMapDraft = game.settings.get(MODULE_ID, "campaignMapBuilderDraft");
+        const worldMapDraft = rawWorldMapDraft ? JSON.parse(rawWorldMapDraft) : null;
+        const clientMapDraft = rawClientMapDraft ? JSON.parse(rawClientMapDraft) : null;
+        const worldUpdated = Number(worldMapDraft?.updatedAt) || 0;
+        const clientUpdated = Number(clientMapDraft?.updatedAt) || 0;
+        const storedMap = clientMapDraft && (!worldMapDraft || clientUpdated >= worldUpdated) ? clientMapDraft : worldMapDraft;
         if (stored?.campaign || stored?.name) {
           this.adventureCampaign = normalizeCampaignBuild(stored.campaign ?? stored);
           this.adventureCampaignStep = Math.max(0, Math.min(7, Number(stored.step) || 0));
@@ -2639,7 +2645,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         if (storedMap?.campaign || storedMap?.name) {
           this.mapCampaign = normalizeCampaignMapBuild(storedMap.campaign ?? storedMap);
           this.mapCampaignStep = Math.max(0, Math.min(7, Number(storedMap.step) || 0));
-          if (!rawWorldMapDraft) await game.settings.set(MODULE_ID, "campaignMapBuilderWorldDraft", JSON.stringify({ step: this.mapCampaignStep, campaign: this.mapCampaign }));
+          this.campaignSaveRevision = Math.max(Number(storedMap.revision) || 0, Number(worldMapDraft?.revision) || 0, Number(clientMapDraft?.revision) || 0);
         } else if (stored?.campaign?.map || stored?.map) {
           this.mapCampaign = normalizeCampaignMapBuild(stored.campaign ?? stored);
           this.mapCampaignStep = Math.max(0, Math.min(7, Number(stored.step) || 0));
@@ -3296,15 +3302,30 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   async close(options = {}) {
     clearTimeout(this.campaignSaveTimer);
     if (["campaign", "campaignMap"].includes(this.activeTab)) await this.syncCampaignForm();
+    await this.campaignSavePromise;
     return super.close(options);
   }
 
   async saveCampaignDraft() {
     if (this.activeTab === "campaignMap") {
       this.mapCampaign = this.campaign; this.mapCampaignStep = this.campaignStep;
-      const serialized = JSON.stringify({ step: this.campaignStep, campaign: this.campaign });
-      await game.settings.set(MODULE_ID, "campaignMapBuilderWorldDraft", serialized);
-      await game.settings.set(MODULE_ID, "campaignMapBuilderDraft", serialized);
+      const serialized = JSON.stringify({
+        step: this.campaignStep,
+        campaign: foundry.utils.deepClone(this.campaign),
+        updatedAt: Date.now(),
+        revision: ++this.campaignSaveRevision,
+      });
+      const persist = async () => {
+        await game.settings.set(MODULE_ID, "campaignMapBuilderDraft", serialized);
+        if (!game.user?.isGM) return;
+        try {
+          await game.settings.set(MODULE_ID, "campaignMapBuilderWorldDraft", serialized);
+        } catch (error) {
+          console.warn("Lore Smith | The map draft was saved locally, but the shared world copy could not be updated.", error);
+        }
+      };
+      this.campaignSavePromise = this.campaignSavePromise.then(persist, persist);
+      await this.campaignSavePromise;
     } else {
       this.adventureCampaign = this.campaign; this.adventureCampaignStep = this.campaignStep;
       await game.settings.set(MODULE_ID, "campaignBuilderDraft", JSON.stringify({ step: this.campaignStep, campaign: this.campaign }));
