@@ -3309,12 +3309,16 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (kind === "reward" && document.documentName !== "Item") return ui.notifications.warn("Drop a PF2e Item here.");
     const reference = normalizeSessionReference({ uuid: document.uuid, name: document.name, img: document.img, type: document.type });
     if (kind === "hazard") {
-      if (!(this.sessionPrep.hazards ?? []).some((entry) => entry.uuid === reference.uuid)) this.sessionPrep.hazards.push(reference);
+      // Each drop is an encounter instance. The same compendium hazard can therefore
+      // appear more than once while retaining a unique local id for individual removal.
+      this.sessionPrep.hazards.push(reference);
     } else if (kind === "reward") {
       if (!(this.sessionPrep.rewardItems ?? []).some((entry) => entry.uuid === reference.uuid)) this.sessionPrep.rewardItems.push(reference);
     } else {
       const encounter = this.sessionPrep.encounterEntries.find((entry) => entry.id === zone.dataset.parentId);
-      if (encounter && !encounter.actors.some((entry) => entry.uuid === reference.uuid)) encounter.actors.push(reference);
+      // Do not deduplicate by source UUID: two drops of one bestiary actor represent
+      // two separate combatants, and their generated reference ids remain distinct.
+      if (encounter) encounter.actors.push(reference);
     }
     await this.saveSessionPrepDraft();
     await this.renderSessionPreservingScroll();
