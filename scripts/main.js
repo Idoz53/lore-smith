@@ -2011,6 +2011,273 @@ function normalizeCampaignMapBuild(stored = {}) {
   return ensureCampaignMapScope(normalized);
 }
 
+const WORLD_REGION_TYPES = {
+  realm: { label: "Realm or nation", icon: "fa-crown", color: "#8f3029" },
+  province: { label: "Province or territory", icon: "fa-flag", color: "#b85f2c" },
+  cultural: { label: "Cultural region", icon: "fa-people-group", color: "#7452a3" },
+  wilderness: { label: "Wilderness", icon: "fa-campground", color: "#6c7d35" },
+  forest: { label: "Forest", icon: "fa-tree", color: "#327048" },
+  mountains: { label: "Mountain range", icon: "fa-mountain", color: "#74665b" },
+  coast: { label: "Coast", icon: "fa-water", color: "#377c8f" },
+  watershed: { label: "Lake, sea, or river basin", icon: "fa-water", color: "#3f6fa6" },
+  disputed: { label: "Disputed region", icon: "fa-shield-halved", color: "#9a4b4b" },
+  other: { label: "Other region", icon: "fa-draw-polygon", color: "#8a6337" },
+};
+
+const WORLD_REGION_DEVELOPMENT = {
+  named: "Named only",
+  outlined: "Outlined",
+  playable: "Ready for play",
+  developed: "Fully developed",
+};
+
+function newWorldRegion() {
+  const type = "province";
+  return {
+    id: foundry.utils.randomID(), name: "", type, parentId: "", journalId: "",
+    color: WORLD_REGION_TYPES[type].color, opacity: 0.26, development: "named", vertices: [],
+    summary: "", terrain: "", climate: "", inhabitants: "", authority: "", culture: "",
+    resources: "", factions: "", currentSituation: "", dangers: "", hooks: "", travel: "",
+  };
+}
+
+function newWorldMapBuild() {
+  return {
+    schemaVersion: 1, id: foundry.utils.randomID(), name: "", journalFolderId: "", indexJournalId: "",
+    map: { image: "", view: { zoom: 1, panX: 0, panY: 0 } },
+    regions: [], selectedRegionId: "", draftVertices: [], updatedAt: 0,
+  };
+}
+
+function worldMapRecoveryKey() {
+  return `${MODULE_ID}.world-map-recovery.${game.world?.id ?? "world"}.${game.user?.id ?? "user"}`;
+}
+
+function readWorldMapRecovery() {
+  try {
+    const raw = globalThis.localStorage?.getItem(worldMapRecoveryKey());
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.warn("Lore Smith | Could not read the emergency world-map recovery copy.", error);
+    return null;
+  }
+}
+
+function writeWorldMapRecovery(serialized) {
+  try {
+    globalThis.localStorage?.setItem(worldMapRecoveryKey(), serialized);
+  } catch (error) {
+    console.warn("Lore Smith | Could not write the emergency world-map recovery copy.", error);
+  }
+}
+
+function clampWorldCoordinate(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function normalizeWorldVertices(vertices) {
+  if (!Array.isArray(vertices)) return [];
+  const normalized = vertices
+    .filter((point) => Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y)))
+    .map((point) => ({ x: clampWorldCoordinate(point.x), y: clampWorldCoordinate(point.y) }));
+  if (normalized.length > 1) {
+    const first = normalized[0]; const last = normalized.at(-1);
+    if (Math.hypot(first.x - last.x, first.y - last.y) < 0.0001) normalized.pop();
+  }
+  return normalized.filter((point, index) => index === 0 || Math.hypot(point.x - normalized[index - 1].x, point.y - normalized[index - 1].y) >= 0.0001);
+}
+
+function normalizeWorldMapBuild(stored = {}) {
+  const fresh = newWorldMapBuild();
+  const map = stored.map ?? {};
+  const normalized = {
+    ...fresh, ...stored,
+    schemaVersion: 1,
+    id: stored.id || fresh.id,
+    map: {
+      ...fresh.map, ...map,
+      view: {
+        zoom: Math.max(1, Math.min(6, Number(map.view?.zoom) || 1)),
+        panX: Number(map.view?.panX) || 0,
+        panY: Number(map.view?.panY) || 0,
+      },
+    },
+    regions: (Array.isArray(stored.regions) ? stored.regions : []).map((entry) => {
+      const base = newWorldRegion();
+      const type = WORLD_REGION_TYPES[entry?.type] ? entry.type : base.type;
+      return {
+        ...base, ...entry,
+        id: entry?.id || foundry.utils.randomID(), type,
+        color: /^#[0-9a-f]{6}$/i.test(entry?.color ?? "") ? entry.color : WORLD_REGION_TYPES[type].color,
+        opacity: Math.max(0.08, Math.min(0.72, Number(entry?.opacity) || base.opacity)),
+        development: WORLD_REGION_DEVELOPMENT[entry?.development] ? entry.development : base.development,
+        vertices: normalizeWorldVertices(entry?.vertices),
+      };
+    }),
+    draftVertices: normalizeWorldVertices(stored.draftVertices),
+  };
+  if (!normalized.regions.some((region) => region.id === normalized.selectedRegionId)) normalized.selectedRegionId = "";
+  const ids = new Set(normalized.regions.map((region) => region.id));
+  for (const region of normalized.regions) if (!ids.has(region.parentId) || region.parentId === region.id) region.parentId = "";
+  for (const region of normalized.regions) {
+    const visited = new Set([region.id]); let current = region;
+    while (current.parentId) {
+      if (visited.has(current.parentId)) { current.parentId = ""; break; }
+      visited.add(current.parentId);
+      current = normalized.regions.find((candidate) => candidate.id === current.parentId);
+      if (!current) break;
+    }
+  }
+  return normalized;
+}
+
+function worldPolygonSignedArea(vertices) {
+  if (vertices.length < 3) return 0;
+  return vertices.reduce((sum, point, index) => {
+    const next = vertices[(index + 1) % vertices.length];
+    return sum + point.x * next.y - next.x * point.y;
+  }, 0) / 2;
+}
+
+function worldPolygonArea(vertices) {
+  return Math.abs(worldPolygonSignedArea(vertices));
+}
+
+function worldPolygonCentroid(vertices) {
+  const signedArea = worldPolygonSignedArea(vertices);
+  if (vertices.length < 3 || Math.abs(signedArea) < 0.000001) {
+    const total = vertices.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
+    return { x: total.x / Math.max(1, vertices.length), y: total.y / Math.max(1, vertices.length) };
+  }
+  let x = 0; let y = 0;
+  for (let index = 0; index < vertices.length; index += 1) {
+    const point = vertices[index]; const next = vertices[(index + 1) % vertices.length];
+    const cross = point.x * next.y - next.x * point.y;
+    x += (point.x + next.x) * cross; y += (point.y + next.y) * cross;
+  }
+  return { x: x / (6 * signedArea), y: y / (6 * signedArea) };
+}
+
+function worldPolygonLabelPoint(vertices) {
+  const centroid = worldPolygonCentroid(vertices);
+  if (worldPointInPolygon(centroid, vertices)) return centroid;
+  const xs = vertices.map((point) => point.x); const ys = vertices.map((point) => point.y);
+  const minX = Math.min(...xs); const maxX = Math.max(...xs); const minY = Math.min(...ys); const maxY = Math.max(...ys);
+  let best = vertices[0] ?? { x: 0.5, y: 0.5 }; let bestDistance = -1;
+  const steps = 24;
+  for (let yIndex = 0; yIndex < steps; yIndex += 1) for (let xIndex = 0; xIndex < steps; xIndex += 1) {
+    const point = { x: minX + ((xIndex + 0.5) / steps) * (maxX - minX), y: minY + ((yIndex + 0.5) / steps) * (maxY - minY) };
+    if (!worldPointInPolygon(point, vertices)) continue;
+    let distance = Infinity;
+    for (let index = 0; index < vertices.length; index += 1) {
+      const start = vertices[index]; const end = vertices[(index + 1) % vertices.length];
+      const dx = end.x - start.x; const dy = end.y - start.y; const length = dx * dx + dy * dy;
+      const projection = length ? Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / length)) : 0;
+      distance = Math.min(distance, Math.hypot(point.x - (start.x + projection * dx), point.y - (start.y + projection * dy)));
+    }
+    if (distance > bestDistance) { best = point; bestDistance = distance; }
+  }
+  return best;
+}
+
+function worldPointOnSegment(point, start, end, epsilon = 0.00001) {
+  const dx = end.x - start.x; const dy = end.y - start.y;
+  const squaredLength = dx * dx + dy * dy;
+  if (squaredLength <= Number.EPSILON) return Math.hypot(point.x - start.x, point.y - start.y) <= epsilon;
+  const projection = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / squaredLength));
+  const nearestX = start.x + projection * dx; const nearestY = start.y + projection * dy;
+  return Math.hypot(point.x - nearestX, point.y - nearestY) <= epsilon;
+}
+
+function worldPointInPolygon(point, vertices) {
+  if (vertices.length < 3) return false;
+  let inside = false;
+  for (let index = 0, previous = vertices.length - 1; index < vertices.length; previous = index++) {
+    const left = vertices[index]; const right = vertices[previous];
+    if (worldPointOnSegment(point, left, right)) return true;
+    const crosses = (left.y > point.y) !== (right.y > point.y)
+      && point.x < ((right.x - left.x) * (point.y - left.y)) / ((right.y - left.y) || Number.EPSILON) + left.x;
+    if (crosses) inside = !inside;
+  }
+  return inside;
+}
+
+function worldSegmentOrientation(a, b, c, epsilon = 0.0000001) {
+  const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  return Math.abs(cross) <= epsilon ? 0 : Math.sign(cross);
+}
+
+function worldSegmentsIntersect(a, b, c, d) {
+  const o1 = worldSegmentOrientation(a, b, c); const o2 = worldSegmentOrientation(a, b, d);
+  const o3 = worldSegmentOrientation(c, d, a); const o4 = worldSegmentOrientation(c, d, b);
+  if (o1 !== o2 && o3 !== o4) return true;
+  return (o1 === 0 && worldPointOnSegment(c, a, b))
+    || (o2 === 0 && worldPointOnSegment(d, a, b))
+    || (o3 === 0 && worldPointOnSegment(a, c, d))
+    || (o4 === 0 && worldPointOnSegment(b, c, d));
+}
+
+function worldSegmentsProperlyIntersect(a, b, c, d) {
+  const o1 = worldSegmentOrientation(a, b, c); const o2 = worldSegmentOrientation(a, b, d);
+  const o3 = worldSegmentOrientation(c, d, a); const o4 = worldSegmentOrientation(c, d, b);
+  return o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0 && o1 !== o2 && o3 !== o4;
+}
+
+function worldPolygonSelfIntersects(vertices) {
+  for (let left = 0; left < vertices.length; left += 1) {
+    const leftNext = (left + 1) % vertices.length;
+    for (let right = left + 1; right < vertices.length; right += 1) {
+      const rightNext = (right + 1) % vertices.length;
+      if (left === right || leftNext === right || rightNext === left) continue;
+      if (worldSegmentsIntersect(vertices[left], vertices[leftNext], vertices[right], vertices[rightNext])) return true;
+    }
+  }
+  return false;
+}
+
+function worldRegionDepth(region, regions) {
+  let depth = 0; let current = region; const visited = new Set([region.id]);
+  while (current?.parentId && depth < regions.length) {
+    if (visited.has(current.parentId)) break;
+    visited.add(current.parentId); current = regions.find((entry) => entry.id === current.parentId); depth += 1;
+  }
+  return depth;
+}
+
+function worldRegionAtPoint(point, regions) {
+  return regions.filter((region) => worldPointInPolygon(point, region.vertices))
+    .sort((left, right) => worldRegionDepth(right, regions) - worldRegionDepth(left, regions)
+      || worldPolygonArea(left.vertices) - worldPolygonArea(right.vertices)
+      || left.id.localeCompare(right.id))[0] ?? null;
+}
+
+function worldRegionContainsRegion(parent, child) {
+  if (parent.vertices.length < 3 || child.vertices.length < 3
+    || worldPolygonArea(parent.vertices) <= worldPolygonArea(child.vertices) + 0.000001
+    || !child.vertices.every((point) => worldPointInPolygon(point, parent.vertices))) return false;
+  for (let childIndex = 0; childIndex < child.vertices.length; childIndex += 1) {
+    const start = child.vertices[childIndex]; const end = child.vertices[(childIndex + 1) % child.vertices.length];
+    for (const fraction of [0.25, 0.5, 0.75]) {
+      if (!worldPointInPolygon({ x: start.x + (end.x - start.x) * fraction, y: start.y + (end.y - start.y) * fraction }, parent.vertices)) return false;
+    }
+    for (let parentIndex = 0; parentIndex < parent.vertices.length; parentIndex += 1) {
+      const parentStart = parent.vertices[parentIndex]; const parentEnd = parent.vertices[(parentIndex + 1) % parent.vertices.length];
+      if (worldSegmentsProperlyIntersect(start, end, parentStart, parentEnd)) return false;
+    }
+  }
+  return true;
+}
+
+function worldContentFingerprint(content) {
+  let hash = 2166136261;
+  const text = String(content ?? "");
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 function ensureCampaignScope(campaign) {
   const targets = campaignPlanTargets(campaign);
   const factories = { structure: newCampaignStructure, locations: newCampaignLocation, factions: newCampaignFaction, threats: newCampaignThreat };
@@ -2555,6 +2822,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       removeCampaignCharacter: LoreSmithDashboard.removeCampaignCharacter,
       createCampaignJournal: LoreSmithDashboard.createCampaignJournal,
       openCampaignJournal: LoreSmithDashboard.openCampaignJournal,
+      newWorldMapBuild: LoreSmithDashboard.newWorldMapBuild,
+      browseWorldMap: LoreSmithDashboard.browseWorldMap,
+      activateWorldRegionTool: LoreSmithDashboard.activateWorldRegionTool,
+      cancelWorldRegionTool: LoreSmithDashboard.cancelWorldRegionTool,
+      resetWorldMapView: LoreSmithDashboard.resetWorldMapView,
+      selectWorldRegion: LoreSmithDashboard.selectWorldRegion,
+      deleteWorldRegion: LoreSmithDashboard.deleteWorldRegion,
+      openWorldRegionJournal: LoreSmithDashboard.openWorldRegionJournal,
+      createWorldAtlas: LoreSmithDashboard.createWorldAtlas,
     },
   };
 
@@ -2602,6 +2878,17 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   campaignDeletedLocationIds = new Set();
   campaignScrollTop = 0;
   campaignMapTool = "";
+  worldMap = newWorldMapBuild();
+  worldMapDraftLoaded = false;
+  worldMapTool = "";
+  worldMapSaveTimer = null;
+  worldMapSavePromise = Promise.resolve();
+  worldMapSaveRevision = 0;
+  worldMapScrollTop = 0;
+  _worldJournalPromises = new Map();
+  _worldJournalSyncPromises = new Map();
+  _worldFolderPromise = null;
+  _worldAtlasPromise = null;
   dashboardFullscreen = false;
 
   async getNotebook(create = false) {
@@ -2696,6 +2983,27 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         this.campaignStep = this.activeTab === "campaignMap" ? this.mapCampaignStep : this.adventureCampaignStep;
       } catch (error) {
         console.warn("Lore Smith | Could not restore the Campaign Builder draft.", error);
+      }
+    }
+    if (!this.worldMapDraftLoaded) {
+      this.worldMapDraftLoaded = true;
+      try {
+        const candidates = [
+          { draft: parseStoredDraft(game.settings.get(MODULE_ID, "worldMapBuilderWorldDraft"), "shared world-map"), priority: 0 },
+          { draft: parseStoredDraft(game.settings.get(MODULE_ID, "worldMapBuilderDraft"), "browser world-map"), priority: 1 },
+          { draft: readWorldMapRecovery(), priority: 2 },
+        ].filter(({ draft }) => draft?.worldMap || draft?.map || draft?.regions)
+          .sort((left, right) => (Number(left.draft.updatedAt) || 0) - (Number(right.draft.updatedAt) || 0)
+            || (Number(left.draft.revision) || 0) - (Number(right.draft.revision) || 0)
+            || left.priority - right.priority);
+        const storedWorld = candidates.at(-1)?.draft ?? null;
+        if (storedWorld) {
+          this.worldMap = normalizeWorldMapBuild(storedWorld.worldMap ?? storedWorld);
+          this.worldMapSaveRevision = Math.max(...candidates.map(({ draft }) => Number(draft.revision) || 0), 0);
+          if (this.worldMap.draftVertices.length) this.worldMapTool = "draw";
+        }
+      } catch (error) {
+        console.warn("Lore Smith | Could not restore the World Map Builder draft.", error);
       }
     }
     const sceneTokens = (canvas?.scene?.tokens?.contents ?? []).filter((token) => token.actor).map((token) => {
@@ -2820,6 +3128,82 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     const namedCount = (entries) => entries.filter((entry) => entry.name.trim()).length;
     if (mapBuilderActive && !markerViews.some((entry) => entry.isNearby)) campaignRecommendations.push("Place at least one nearby point to give the players an immediate direction beyond the starting location.");
     if (mapBuilderActive && !markerViews.some((entry) => entry.isDistant)) campaignRecommendations.push("Include one distant point inside the focus circle to suggest a wider region without preparing it deeply.");
+    const worldMapView = {
+      image: this.worldMap.map.image,
+      hasImage: Boolean(this.worldMap.map.image),
+      zoom: Math.max(1, Math.min(6, Number(this.worldMap.map.view.zoom) || 1)),
+      panX: Number(this.worldMap.map.view.panX) || 0,
+      panY: Number(this.worldMap.map.view.panY) || 0,
+    };
+    const worldMapSameSource = Boolean(this.worldMap.map.image && this.worldMap.map.image === this.mapCampaign.map.image);
+    const positionedWorldLocations = worldMapSameSource
+      ? this.mapCampaign.locations.filter((entry) => Number.isFinite(Number.parseFloat(entry.x)) && Number.isFinite(Number.parseFloat(entry.y)))
+      : [];
+    const regionSort = (left, right) => worldRegionDepth(left, this.worldMap.regions) - worldRegionDepth(right, this.worldMap.regions)
+      || worldPolygonArea(right.vertices) - worldPolygonArea(left.vertices)
+      || right.id.localeCompare(left.id);
+    const worldRegionViews = [...this.worldMap.regions].sort(regionSort).map((region) => {
+      const centroid = worldPolygonLabelPoint(region.vertices);
+      const containedLocations = positionedWorldLocations.filter((location) => worldPointInPolygon({ x: Number(location.x), y: Number(location.y) }, region.vertices));
+      const children = this.worldMap.regions.filter((candidate) => candidate.parentId === region.id);
+      return {
+        ...region,
+        selected: region.id === this.worldMap.selectedRegionId,
+        points: region.vertices.map((point) => `${(point.x * 1000).toFixed(2)},${(point.y * 1000).toFixed(2)}`).join(" "),
+        vertexViews: region.vertices.map((point, index) => ({ index, left: `${point.x * 100}%`, top: `${point.y * 100}%`, markerScale: Math.max(0.62, Math.min(1.15, 1 / worldMapView.zoom)) })),
+        labelLeft: `${centroid.x * 100}%`, labelTop: `${centroid.y * 100}%`,
+        labelScale: Math.max(0.62, Math.min(1.15, 1 / worldMapView.zoom)),
+        icon: WORLD_REGION_TYPES[region.type]?.icon ?? WORLD_REGION_TYPES.other.icon,
+        typeLabel: WORLD_REGION_TYPES[region.type]?.label ?? WORLD_REGION_TYPES.other.label,
+        developmentLabel: WORLD_REGION_DEVELOPMENT[region.development] ?? WORLD_REGION_DEVELOPMENT.named,
+        depth: worldRegionDepth(region, this.worldMap.regions), area: worldPolygonArea(region.vertices),
+        containedLocations, children, journalAvailable: Boolean(game.journal.get(region.journalId)),
+      };
+    });
+    const selectedWorldRegion = this.worldMap.regions.find((region) => region.id === this.worldMap.selectedRegionId) ?? null;
+    const wouldCreateWorldRegionCycle = (candidate) => {
+      if (!selectedWorldRegion) return false;
+      let current = candidate; const visited = new Set();
+      while (current?.parentId && !visited.has(current.id)) {
+        if (current.parentId === selectedWorldRegion.id) return true;
+        visited.add(current.id); current = this.worldMap.regions.find((entry) => entry.id === current.parentId);
+      }
+      return false;
+    };
+    const selectedWorldRegionView = selectedWorldRegion ? {
+      ...selectedWorldRegion,
+      typeOptions: Object.entries(WORLD_REGION_TYPES).map(([value, data]) => ({ value, label: data.label, selected: value === selectedWorldRegion.type })),
+      developmentOptions: Object.entries(WORLD_REGION_DEVELOPMENT).map(([value, label]) => ({ value, label, selected: value === selectedWorldRegion.development })),
+      parentOptions: [
+        { value: "", label: "No parent region", selected: !selectedWorldRegion.parentId },
+        ...this.worldMap.regions.filter((candidate) => candidate.id !== selectedWorldRegion.id && !wouldCreateWorldRegionCycle(candidate))
+          .map((candidate) => ({ value: candidate.id, label: candidate.name || "Unnamed region", selected: selectedWorldRegion.parentId === candidate.id })),
+      ],
+      containedLocations: positionedWorldLocations.filter((location) => worldPointInPolygon({ x: Number(location.x), y: Number(location.y) }, selectedWorldRegion.vertices)),
+      childRegions: this.worldMap.regions.filter((candidate) => candidate.parentId === selectedWorldRegion.id),
+      journalAvailable: Boolean(game.journal.get(selectedWorldRegion.journalId)),
+    } : null;
+    const worldMapPointViews = positionedWorldLocations.map((location) => {
+      const primary = worldRegionAtPoint({ x: Number(location.x), y: Number(location.y) }, this.worldMap.regions);
+      return {
+        ...location,
+        left: `${Number(location.x) * 100}%`, top: `${Number(location.y) * 100}%`,
+        icon: CAMPAIGN_POINT_ICONS[location.type] ?? CAMPAIGN_POINT_ICONS.custom,
+        primaryRegionName: primary?.name ?? "",
+      };
+    });
+    const worldMapValidation = [];
+    if (!this.worldMap.name.trim()) worldMapValidation.push("Name the world or atlas.");
+    if (!this.worldMap.map.image) worldMapValidation.push("Choose a world map.");
+    if (!this.worldMap.regions.length) worldMapValidation.push("Draw at least one region.");
+    if (this.worldMap.regions.some((region) => !region.name.trim())) worldMapValidation.push("Name every region.");
+    if (this.worldMap.regions.some((region) => region.vertices.length < 3 || worldPolygonArea(region.vertices) < 0.0001 || worldPolygonSelfIntersects(region.vertices))) {
+      worldMapValidation.push("Repair invalid or self-crossing region boundaries.");
+    }
+    if (this.worldMap.regions.some((region) => {
+      const parent = this.worldMap.regions.find((candidate) => candidate.id === region.parentId);
+      return parent && !worldRegionContainsRegion(parent, region);
+    })) worldMapValidation.push("A subregion extends beyond its parent. Reshape it or change its parent region.");
     return {
       ...await super._prepareContext(options),
       tabs: { [this.activeTab]: true },
@@ -2892,6 +3276,19 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       campaignQuestions: this.campaign.openQuestions.map((entry, index) => ({ ...entry, number: index + 1 })),
       canCampaignBack: this.campaignStep > 0,
       campaignJournalAvailable: Boolean(game.journal.get(this.campaign.journalId)),
+      worldMap: this.worldMap,
+      worldMapView,
+      worldMapRegions: worldRegionViews,
+      worldMapSelectedRegion: selectedWorldRegionView,
+      worldMapPoints: worldMapPointViews,
+      worldMapSameSource,
+      worldMapDraftPoints: this.worldMap.draftVertices.map((point) => `${(point.x * 1000).toFixed(2)},${(point.y * 1000).toFixed(2)}`).join(" "),
+      worldMapTool: this.worldMapTool,
+      worldMapDrawing: this.worldMapTool === "draw",
+      worldMapValidation,
+      worldMapAtlasAvailable: Boolean(game.journal.get(this.worldMap.indexJournalId)?.getFlag(FLAG_SCOPE, "worldBuilder")
+        && game.journal.get(this.worldMap.indexJournalId)?.getFlag(FLAG_SCOPE, "worldId") === this.worldMap.id
+        && game.journal.get(this.worldMap.indexJournalId)?.getFlag(FLAG_SCOPE, "worldDocument") === "index"),
     };
   }
 
@@ -2904,9 +3301,213 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       window.removeEventListener("keydown", this._campaignMapEscape);
       this._campaignMapEscape = null;
     }
+    if (this._worldMapKeydown) {
+      window.removeEventListener("keydown", this._worldMapKeydown);
+      this._worldMapKeydown = null;
+    }
+    clearTimeout(this._worldMapSelectTimer);
     const main = this.element?.querySelector(".ls-main");
     if (main && this.sessionScrollTop) main.scrollTop = this.sessionScrollTop;
     if (main && ["campaign", "campaignMap"].includes(this.activeTab) && this.campaignScrollTop) main.scrollTop = this.campaignScrollTop;
+    if (main && this.activeTab === "worldMap" && this.worldMapScrollTop) main.scrollTop = this.worldMapScrollTop;
+    if (this.activeTab === "worldMap") {
+      for (const field of this.element?.querySelectorAll(".ls-world-panel input, .ls-world-panel textarea, .ls-world-panel select") ?? []) {
+        const eventName = field.matches("select") ? "change" : "input";
+        field.addEventListener(eventName, () => {
+          clearTimeout(this.worldMapSaveTimer);
+          const structural = field.matches('[data-world-region-field="parentId"], [data-world-region-field="type"], [data-world-region-field="development"]');
+          if (structural) {
+            void this.syncWorldMapForm().then(() => this.renderWorldMapPreservingScroll());
+            return;
+          }
+          void this.syncWorldMapForm({ persist: false });
+          this.worldMapSaveTimer = setTimeout(() => void this.syncWorldMapForm(), 300);
+        });
+        field.addEventListener("blur", () => void this.syncWorldMapForm());
+      }
+      const worldMap = this.element?.querySelector("[data-world-map]");
+      const stage = worldMap?.querySelector("[data-world-map-stage]");
+      const image = worldMap?.querySelector("[data-world-map-image]");
+      if (!worldMap || !stage || !image) return;
+      const view = this.worldMap.map.view;
+      let operation = null;
+      let pointerPreview = null;
+      const inverseScale = () => Math.max(0.15, Math.min(1.15, 1 / (Number(view.zoom) || 1)));
+      const clampView = () => {
+        const viewport = worldMap.getBoundingClientRect();
+        const scaledWidth = stage.offsetWidth * view.zoom;
+        const scaledHeight = image.offsetHeight * view.zoom;
+        view.panX = Math.max(Math.min(0, viewport.width - scaledWidth), Math.min(0, Number(view.panX) || 0));
+        view.panY = Math.max(Math.min(0, viewport.height - scaledHeight), Math.min(0, Number(view.panY) || 0));
+      };
+      const applyView = () => {
+        clampView();
+        stage.style.transform = `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`;
+        for (const element of stage.querySelectorAll("[data-world-region-label], [data-world-region-vertex], [data-world-map-point]")) {
+          element.style.setProperty("--world-marker-scale", inverseScale());
+        }
+      };
+      const point = (event, clamp = false) => {
+        const rect = image.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        const raw = { x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height };
+        if (!clamp && (raw.x < 0 || raw.x > 1 || raw.y < 0 || raw.y > 1)) return null;
+        return { x: clampWorldCoordinate(raw.x), y: clampWorldCoordinate(raw.y) };
+      };
+      const regionForElement = (element) => this.worldMap.regions.find((region) => region.id === element?.dataset?.worldRegionId);
+      const polygonElement = (id) => stage.querySelector(`polygon[data-world-region-id="${id}"]`);
+      const updatePolygonDom = (region) => {
+        const points = region.vertices.map((vertex) => `${(vertex.x * 1000).toFixed(2)},${(vertex.y * 1000).toFixed(2)}`).join(" ");
+        polygonElement(region.id)?.setAttribute("points", points);
+        const centroid = worldPolygonLabelPoint(region.vertices);
+        const label = stage.querySelector(`[data-world-region-label="${region.id}"]`);
+        if (label) { label.style.left = `${centroid.x * 100}%`; label.style.top = `${centroid.y * 100}%`; }
+      };
+      const updateDraftDom = (preview = null) => {
+        const vertices = preview ? [...this.worldMap.draftVertices, preview] : this.worldMap.draftVertices;
+        stage.querySelector("[data-world-region-draft]")?.setAttribute("points", vertices.map((vertex) => `${(vertex.x * 1000).toFixed(2)},${(vertex.y * 1000).toFixed(2)}`).join(" "));
+      };
+      const selectRegion = (region, { render = true } = {}) => {
+        this.worldMap.selectedRegionId = region?.id ?? "";
+        for (const polygon of stage.querySelectorAll("[data-world-region-id]")) polygon.classList.toggle("selected", polygon.dataset.worldRegionId === region?.id);
+        this.writeWorldMapRecoverySnapshot();
+        if (render) void this.renderWorldMapPreservingScroll();
+      };
+      const finishDraft = async () => {
+        const vertices = normalizeWorldVertices(this.worldMap.draftVertices);
+        if (vertices.length < 3) return ui.notifications.warn("A region needs at least three corners.");
+        if (worldPolygonArea(vertices) < 0.0001) return ui.notifications.warn("This region is too small or has no usable area.");
+        if (worldPolygonSelfIntersects(vertices)) return ui.notifications.warn("The region boundary crosses itself. Move or remove a corner before closing it.");
+        const region = { ...newWorldRegion(), vertices };
+        const possibleParents = this.worldMap.regions.filter((candidate) => worldRegionContainsRegion(candidate, region))
+          .sort((left, right) => worldPolygonArea(left.vertices) - worldPolygonArea(right.vertices));
+        region.parentId = possibleParents[0]?.id ?? "";
+        this.worldMap.regions.push(region);
+        this.worldMap.selectedRegionId = region.id;
+        this.worldMap.draftVertices = [];
+        this.worldMapTool = "";
+        await this.saveWorldMapDraft();
+        await this.renderWorldMapPreservingScroll();
+      };
+      applyView();
+      if (!image.complete) image.addEventListener("load", applyView, { once: true });
+      worldMap.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const rect = worldMap.getBoundingClientRect();
+        const cursorX = event.clientX - rect.left; const cursorY = event.clientY - rect.top;
+        const oldZoom = view.zoom; const nextZoom = Math.max(1, Math.min(6, oldZoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15)));
+        const localX = (cursorX - view.panX) / oldZoom; const localY = (cursorY - view.panY) / oldZoom;
+        view.zoom = nextZoom; view.panX = cursorX - localX * nextZoom; view.panY = cursorY - localY * nextZoom;
+        applyView(); this.writeWorldMapRecoverySnapshot();
+        clearTimeout(this.worldMapSaveTimer); this.worldMapSaveTimer = setTimeout(() => void this.saveWorldMapDraft(), 250);
+      }, { passive: false });
+      worldMap.addEventListener("auxclick", (event) => { if (event.button === 1) event.preventDefault(); });
+      worldMap.addEventListener("pointerdown", (event) => {
+        const handle = event.target.closest?.("[data-world-region-vertex]");
+        const polygon = event.target.closest?.("[data-world-region-id]");
+        if (event.button === 1) {
+          event.preventDefault(); operation = { kind: "pan", x: event.clientX, y: event.clientY, panX: view.panX, panY: view.panY };
+          worldMap.classList.add("panning"); worldMap.setPointerCapture?.(event.pointerId); return;
+        }
+        if (event.button !== 0 || this.worldMapTool === "draw") return;
+        if (handle) {
+          const region = regionForElement(handle); const vertexIndex = Number(handle.dataset.worldRegionVertex);
+          if (!region || !Number.isInteger(vertexIndex)) return;
+          operation = { kind: "vertex", region, vertexIndex, originalVertices: foundry.utils.deepClone(region.vertices) };
+          worldMap.setPointerCapture?.(event.pointerId); event.preventDefault(); return;
+        }
+        if (polygon) {
+          const region = regionForElement(polygon);
+          if (!region) return;
+          clearTimeout(this._worldMapSelectTimer);
+          this._worldMapSelectTimer = setTimeout(() => selectRegion(region), 550);
+        }
+      });
+      worldMap.addEventListener("pointermove", (event) => {
+        if (operation?.kind === "pan") {
+          view.panX = operation.panX + event.clientX - operation.x; view.panY = operation.panY + event.clientY - operation.y;
+          applyView(); return;
+        }
+        if (operation?.kind === "vertex") {
+          const next = point(event, true); if (!next) return;
+          operation.region.vertices[operation.vertexIndex] = next;
+          const handle = stage.querySelector(`[data-world-region-id="${operation.region.id}"][data-world-region-vertex="${operation.vertexIndex}"]`);
+          if (handle) { handle.style.left = `${next.x * 100}%`; handle.style.top = `${next.y * 100}%`; }
+          updatePolygonDom(operation.region); return;
+        }
+        if (this.worldMapTool === "draw") {
+          pointerPreview = point(event); updateDraftDom(pointerPreview);
+        }
+      });
+      worldMap.addEventListener("pointerup", async () => {
+        if (!operation) return;
+        const completed = operation; operation = null; worldMap.classList.remove("panning");
+        if (completed.kind === "vertex") {
+          const vertices = normalizeWorldVertices(completed.region.vertices);
+          if (vertices.length < 3 || worldPolygonArea(vertices) < 0.0001 || worldPolygonSelfIntersects(vertices)) {
+            completed.region.vertices = completed.originalVertices;
+            ui.notifications.warn("That edit would create an invalid or self-crossing boundary, so it was undone.");
+          } else {
+            completed.region.vertices = vertices;
+            const parent = this.worldMap.regions.find((candidate) => candidate.id === completed.region.parentId);
+            if (parent && !worldRegionContainsRegion(parent, completed.region)) {
+              completed.region.parentId = "";
+              ui.notifications.warn(`${completed.region.name || "The region"} no longer fits inside its parent and was detached.`);
+            }
+            for (const child of this.worldMap.regions.filter((candidate) => candidate.parentId === completed.region.id)) {
+              if (!worldRegionContainsRegion(completed.region, child)) child.parentId = "";
+            }
+          }
+        }
+        this.writeWorldMapRecoverySnapshot();
+        await this.saveWorldMapDraft();
+        if (completed.kind === "vertex") await this.renderWorldMapPreservingScroll();
+      });
+      const cancelOperation = () => {
+        if (operation?.kind === "vertex") {
+          operation.region.vertices = operation.originalVertices;
+          updatePolygonDom(operation.region);
+        }
+        if (operation?.kind === "pan") { view.panX = operation.panX; view.panY = operation.panY; }
+        operation = null; worldMap.classList.remove("panning"); applyView();
+      };
+      worldMap.addEventListener("pointercancel", cancelOperation);
+      worldMap.addEventListener("lostpointercapture", cancelOperation);
+      worldMap.addEventListener("contextmenu", (event) => {
+        const region = regionForElement(event.target.closest?.("[data-world-region-id]"));
+        if (!region || this.worldMapTool === "draw") return;
+        event.preventDefault(); selectRegion(region);
+      });
+      worldMap.addEventListener("click", (event) => {
+        if (this.worldMapTool !== "draw" || event.detail > 1 || event.target.closest?.("button, input, textarea, select")) return;
+        const next = point(event); if (!next) return;
+        this.worldMap.draftVertices.push(next); pointerPreview = null; updateDraftDom(); this.writeWorldMapRecoverySnapshot();
+        clearTimeout(this.worldMapSaveTimer); this.worldMapSaveTimer = setTimeout(() => void this.saveWorldMapDraft(), 220);
+      });
+      worldMap.addEventListener("dblclick", async (event) => {
+        event.preventDefault(); event.stopPropagation(); clearTimeout(this._worldMapSelectTimer);
+        if (this.worldMapTool === "draw") { await finishDraft(); return; }
+        if (event.target.closest?.("[data-world-region-vertex]")) return;
+        const polygon = event.target.closest?.("[data-world-region-id]");
+        const region = regionForElement(polygon);
+        if (!region) return;
+        await this.openOrCreateWorldRegionJournal(region, { sync: !game.journal.get(region.journalId) });
+      });
+      this._worldMapKeydown = (event) => {
+        if (this.activeTab !== "worldMap" || this.worldMapTool !== "draw") return;
+        if (event.target?.matches?.("input, textarea, select, [contenteditable='true']")) return;
+        if (event.key === "Escape") {
+          event.preventDefault(); this.worldMap.draftVertices = []; this.worldMapTool = ""; this.writeWorldMapRecoverySnapshot(); void this.saveWorldMapDraft().then(() => this.renderWorldMapPreservingScroll());
+        } else if (event.key === "Backspace") {
+          event.preventDefault(); this.worldMap.draftVertices.pop(); updateDraftDom(pointerPreview); this.writeWorldMapRecoverySnapshot();
+          clearTimeout(this.worldMapSaveTimer); this.worldMapSaveTimer = setTimeout(() => void this.saveWorldMapDraft(), 150);
+        } else if (event.key === "Enter") {
+          event.preventDefault(); void finishDraft();
+        }
+      };
+      window.addEventListener("keydown", this._worldMapKeydown);
+      return;
+    }
     if (["campaign", "campaignMap"].includes(this.activeTab)) {
       for (const field of this.element?.querySelectorAll(".ls-campaign-panel input, .ls-campaign-panel textarea, .ls-campaign-panel select") ?? []) {
         const eventName = field.matches("select") ? "change" : "input";
@@ -3385,10 +3986,88 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.saveSessionPrepDraft();
   }
 
+  writeWorldMapRecoverySnapshot() {
+    const serialized = JSON.stringify({
+      worldMap: foundry.utils.deepClone(this.worldMap),
+      updatedAt: Date.now(),
+      revision: ++this.worldMapSaveRevision,
+    });
+    writeWorldMapRecovery(serialized);
+    return serialized;
+  }
+
+  async saveWorldMapDraft() {
+    this.worldMap.updatedAt = Date.now();
+    // Serialize a normalized snapshot without replacing the live object graph.
+    // Map gestures and vertex drags deliberately retain references into that graph.
+    const snapshot = normalizeWorldMapBuild(foundry.utils.deepClone(this.worldMap));
+    snapshot.updatedAt = this.worldMap.updatedAt;
+    const serialized = JSON.stringify({
+      worldMap: snapshot,
+      updatedAt: this.worldMap.updatedAt,
+      revision: ++this.worldMapSaveRevision,
+    });
+    writeWorldMapRecovery(serialized);
+    const persist = async () => {
+      try {
+        await game.settings.set(MODULE_ID, "worldMapBuilderDraft", serialized);
+      } catch (error) {
+        console.warn("Lore Smith | The emergency world-map recovery copy was saved, but the browser setting could not be updated.", error);
+      }
+      if (!game.user?.isGM) return;
+      try {
+        await game.settings.set(MODULE_ID, "worldMapBuilderWorldDraft", serialized);
+      } catch (error) {
+        console.warn("Lore Smith | The world map was saved locally, but the shared world copy could not be updated.", error);
+      }
+    };
+    this.worldMapSavePromise = this.worldMapSavePromise.then(persist, persist);
+    await this.worldMapSavePromise;
+  }
+
+  async renderWorldMapPreservingScroll() {
+    this.worldMapScrollTop = this.element?.querySelector(".ls-main")?.scrollTop ?? this.worldMapScrollTop;
+    await this.render();
+  }
+
+  async syncWorldMapForm({ persist = true } = {}) {
+    const root = this.element;
+    if (!root || this.activeTab !== "worldMap") return;
+    const worldName = root.querySelector('[name="worldMapName"]')?.value;
+    if (worldName !== undefined) this.worldMap.name = worldName.trim();
+    const editor = root.querySelector("[data-world-region-editor]");
+    const region = this.worldMap.regions.find((entry) => entry.id === editor?.dataset?.worldRegionEditor);
+    if (region && editor) {
+      const value = (field) => editor.querySelector(`[data-world-region-field="${field}"]`)?.value;
+      for (const property of ["name", "type", "parentId", "development", "color", "summary", "terrain", "climate", "inhabitants", "authority", "culture", "resources", "factions", "currentSituation", "dangers", "hooks", "travel"]) {
+        const next = value(property);
+        if (next !== undefined) region[property] = typeof next === "string" ? next.trim() : next;
+      }
+      const opacity = Number(value("opacity"));
+      if (Number.isFinite(opacity)) region.opacity = Math.max(0.08, Math.min(0.72, opacity));
+      if (!WORLD_REGION_TYPES[region.type]) region.type = "other";
+      if (region.parentId === region.id || !this.worldMap.regions.some((candidate) => candidate.id === region.parentId)) region.parentId = "";
+      const label = root.querySelector(`[data-world-region-label="${region.id}"] span`);
+      if (label) label.textContent = region.name || "Unnamed region";
+      const polygon = root.querySelector(`polygon[data-world-region-id="${region.id}"]`);
+      if (polygon) {
+        polygon.style.setProperty("--region-color", region.color);
+        polygon.style.setProperty("--region-opacity", region.opacity);
+      }
+    }
+    this.writeWorldMapRecoverySnapshot();
+    if (persist) await this.saveWorldMapDraft();
+  }
+
   async close(options = {}) {
     clearTimeout(this.campaignSaveTimer);
+    clearTimeout(this.worldMapSaveTimer);
     if (["campaign", "campaignMap"].includes(this.activeTab)) await this.syncCampaignForm();
+    if (this.activeTab === "worldMap") await this.syncWorldMapForm();
     await this.campaignSavePromise;
+    await this.worldMapSavePromise;
+    if (this._worldMapKeydown) window.removeEventListener("keydown", this._worldMapKeydown);
+    clearTimeout(this._worldMapSelectTimer);
     return super.close(options);
   }
 
@@ -3759,11 +4438,283 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     journal.sheet.render(true);
   }
 
+  async ensureWorldJournalFolder(worldId = this.worldMap.id) {
+    if (this._worldFolderPromise?.worldId === worldId) return this._worldFolderPromise.promise;
+    const worldName = this.worldMap.name.trim() || "Lore Smith World";
+    const storedFolderId = this.worldMap.journalFolderId;
+    const promise = (async () => {
+      let folder = game.folders.get(storedFolderId);
+      if (folder?.type !== "JournalEntry" || !folder.getFlag(FLAG_SCOPE, "worldBuilderFolder")
+        || folder.getFlag(FLAG_SCOPE, "worldId") !== worldId) folder = null;
+      folder ??= game.folders.find((entry) => entry.type === "JournalEntry"
+        && entry.getFlag(FLAG_SCOPE, "worldBuilderFolder")
+        && entry.getFlag(FLAG_SCOPE, "worldId") === worldId);
+      if (!folder) {
+        folder = await Folder.create({
+          name: worldName, type: "JournalEntry", sorting: "a",
+          flags: { [FLAG_SCOPE]: { worldBuilderFolder: true, worldId, schemaVersion: 1 } },
+        });
+      } else if (folder.name !== worldName) await folder.update({ name: worldName });
+      if (this.worldMap.id === worldId) this.worldMap.journalFolderId = folder.id;
+      return folder;
+    })();
+    this._worldFolderPromise = { worldId, promise };
+    try { return await promise; } finally {
+      if (this._worldFolderPromise?.promise === promise) this._worldFolderPromise = null;
+    }
+  }
+
+  async syncGeneratedWorldPage(journal, { key, name, content, regionId = "", worldId = this.worldMap.id }) {
+    const fingerprint = worldContentFingerprint(content);
+    const existing = journal.pages.find((page) => page.getFlag(FLAG_SCOPE, "worldSection") === key
+      && (page.getFlag(FLAG_SCOPE, "worldRegionId") ?? "") === regionId);
+    if (!existing) {
+      const [created] = await journal.createEmbeddedDocuments("JournalEntryPage", [{
+        name, type: "text", text: { content, format: CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML },
+        flags: { [FLAG_SCOPE]: { worldId, worldRegionId: regionId, worldSection: key, generatedFingerprint: fingerprint, schemaVersion: 1 } },
+      }]);
+      const persistedFingerprint = worldContentFingerprint(created.text?.content ?? "");
+      if (persistedFingerprint !== fingerprint) await created.setFlag(FLAG_SCOPE, "generatedFingerprint", persistedFingerprint);
+      return { page: created, conflict: false };
+    }
+    const priorFingerprint = existing.getFlag(FLAG_SCOPE, "generatedFingerprint");
+    const currentFingerprint = worldContentFingerprint(existing.text?.content ?? "");
+    if ((!priorFingerprint && String(existing.text?.content ?? "").trim()) || (priorFingerprint && currentFingerprint !== priorFingerprint)) {
+      return { page: existing, conflict: true };
+    }
+    await existing.update({
+      name, "text.content": content, "text.format": CONST.JOURNAL_ENTRY_PAGE_FORMATS.HTML,
+      [`flags.${FLAG_SCOPE}.worldId`]: worldId,
+      [`flags.${FLAG_SCOPE}.worldRegionId`]: regionId,
+      [`flags.${FLAG_SCOPE}.worldSection`]: key,
+      [`flags.${FLAG_SCOPE}.generatedFingerprint`]: fingerprint,
+      [`flags.${FLAG_SCOPE}.schemaVersion`]: 1,
+    });
+    const persistedFingerprint = worldContentFingerprint(existing.text?.content ?? "");
+    if (persistedFingerprint !== fingerprint) await existing.setFlag(FLAG_SCOPE, "generatedFingerprint", persistedFingerprint);
+    return { page: existing, conflict: false };
+  }
+
+  worldRegionJournalContent(region) {
+    const parent = this.worldMap.regions.find((entry) => entry.id === region.parentId);
+    const children = this.worldMap.regions.filter((entry) => entry.parentId === region.id);
+    const parentJournal = parent ? game.journal.get(parent.journalId) : null;
+    const childLinks = children.map((child) => {
+      const journal = game.journal.get(child.journalId);
+      return journal ? `@UUID[${journal.uuid}]{${escapeHtml(child.name || "Unnamed region")}}` : escapeHtml(child.name || "Unnamed region");
+    });
+    const locations = this.worldMap.map.image === this.mapCampaign.map.image
+      ? this.mapCampaign.locations.filter((location) => Number.isFinite(Number.parseFloat(location.x)) && Number.isFinite(Number.parseFloat(location.y))
+        && worldPointInPolygon({ x: Number.parseFloat(location.x), y: Number.parseFloat(location.y) }, region.vertices))
+      : [];
+    const type = WORLD_REGION_TYPES[region.type]?.label ?? WORLD_REGION_TYPES.other.label;
+    return `<article class="ls-world-region-journal"><header><h1>${escapeHtml(region.name || "Unnamed region")}</h1><p><strong>${escapeHtml(type)}</strong> · ${escapeHtml(WORLD_REGION_DEVELOPMENT[region.development] ?? WORLD_REGION_DEVELOPMENT.named)}</p></header>
+      ${parent ? `<p><strong>Part of</strong> ${parentJournal ? `@UUID[${parentJournal.uuid}]{${escapeHtml(parent.name || "Unnamed region")}}` : escapeHtml(parent.name || "Unnamed region")}</p>` : ""}
+      ${sessionBlock("Regional identity", region.summary)}
+      <h2>Land and travel</h2>${sessionBlock("Terrain", region.terrain)}${sessionBlock("Climate", region.climate)}${sessionBlock("Travel and connections", region.travel)}
+      <h2>People and power</h2>${sessionBlock("Inhabitants", region.inhabitants)}${sessionBlock("Authority and law", region.authority)}${sessionBlock("Culture and identity", region.culture)}${sessionBlock("Resources and trade", region.resources)}${sessionBlock("Factions", region.factions)}
+      <h2>What matters in play</h2>${sessionBlock("Current situation", region.currentSituation)}${sessionBlock("Dangers and pressures", region.dangers)}${sessionBlock("Adventure hooks", region.hooks)}
+      ${locations.length ? campaignList("Places inside this region", locations.map((location) => `${location.name || "Unnamed point"} (${CAMPAIGN_POINT_TYPES[location.type] ?? "location"})`)) : ""}
+      ${childLinks.length ? `<h2>Subregions</h2><ul>${childLinks.map((link) => `<li>${link}</li>`).join("")}</ul>` : ""}</article>`;
+  }
+
+  async ensureWorldRegionJournal(region, { sync = false } = {}) {
+    const worldId = this.worldMap.id; const regionId = region.id; const regionName = region.name.trim() || "Unnamed Region";
+    let pending = this._worldJournalPromises.get(regionId);
+    if (!pending) pending = (async () => {
+      let journal = game.journal.get(region.journalId);
+      if (journal && (!journal.getFlag(FLAG_SCOPE, "worldBuilder")
+        || journal.getFlag(FLAG_SCOPE, "worldDocument") !== "region"
+        || journal.getFlag(FLAG_SCOPE, "worldId") !== worldId
+        || journal.getFlag(FLAG_SCOPE, "worldRegionId") !== regionId)) journal = null;
+      journal ??= game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "worldBuilder")
+        && entry.getFlag(FLAG_SCOPE, "worldDocument") === "region"
+        && entry.getFlag(FLAG_SCOPE, "worldId") === worldId
+        && entry.getFlag(FLAG_SCOPE, "worldRegionId") === regionId);
+      const folder = await this.ensureWorldJournalFolder(worldId);
+      if (!journal) {
+        journal = await JournalEntry.create({
+          name: regionName, folder: folder.id, pages: [],
+          flags: { [FLAG_SCOPE]: { worldBuilder: true, worldId, worldDocument: "region", worldRegionId: regionId, schemaVersion: 1 } },
+        });
+      } else {
+        const update = {};
+        if (journal.name !== regionName) update.name = regionName;
+        if (journal.folder?.id !== folder.id) update.folder = folder.id;
+        if (Object.keys(update).length) await journal.update(update);
+      }
+      return journal;
+    })().finally(() => this._worldJournalPromises.delete(regionId));
+    this._worldJournalPromises.set(regionId, pending);
+    const journal = await pending;
+    if (this.worldMap.id !== worldId) throw new Error("The World Map Builder changed while its Journal was being created.");
+    const liveRegion = this.worldMap.regions.find((entry) => entry.id === regionId);
+    if (!liveRegion) throw new Error("The region was removed while its Journal was being created.");
+    liveRegion.journalId = journal.id;
+    let page = journal.pages.find((entry) => entry.getFlag(FLAG_SCOPE, "worldSection") === "overview");
+    let conflict = false;
+    if (sync || !page) {
+      let syncPromise = this._worldJournalSyncPromises.get(regionId);
+      if (!syncPromise) {
+        syncPromise = this.syncGeneratedWorldPage(journal, {
+          key: "overview", name: "Regional Overview", content: this.worldRegionJournalContent(liveRegion), regionId, worldId,
+        }).finally(() => this._worldJournalSyncPromises.delete(regionId));
+        this._worldJournalSyncPromises.set(regionId, syncPromise);
+      }
+      ({ page, conflict } = await syncPromise);
+    }
+    return { journal, page, conflict };
+  }
+
+  async openOrCreateWorldRegionJournal(region, { sync = false } = {}) {
+    const { journal, page, conflict } = await this.ensureWorldRegionJournal(region, { sync });
+    await this.saveWorldMapDraft();
+    if (conflict) ui.notifications.warn(`${journal.name}'s generated overview was edited manually, so Lore Smith preserved it.`);
+    const sheet = journal.sheet;
+    await sheet.render(true);
+    if (page && typeof sheet.goToPage === "function") await sheet.goToPage(page.id);
+    return journal;
+  }
+
+  static async newWorldMapBuild() {
+    await this.syncWorldMapForm();
+    const confirmed = await foundry.applications.api.DialogV2.confirm({
+      window: { title: "Start a new world map?" },
+      content: "<p>This clears the current World Map Builder draft. Existing Foundry region Journals are preserved.</p>",
+      yes: { label: "Start new world", icon: "fa-solid fa-rotate-left" }, no: { label: "Cancel" },
+    });
+    if (!confirmed) return;
+    this.worldMap = newWorldMapBuild(); this.worldMapTool = "";
+    await this.saveWorldMapDraft(); await this.render();
+  }
+
+  static async browseWorldMap() {
+    await this.syncWorldMapForm();
+    new FilePicker({ type: "image", current: this.worldMap.map.image, callback: async (path) => {
+      if (this.worldMap.regions.length && this.worldMap.map.image && path !== this.worldMap.map.image) {
+        const confirmed = await foundry.applications.api.DialogV2.confirm({
+          window: { title: "Replace the world map?" },
+          content: "<p>The existing regions will remain at the same proportional coordinates. If the new map has different dimensions or geography, their outlines may no longer align.</p>",
+          yes: { label: "Replace map" }, no: { label: "Cancel" },
+        });
+        if (!confirmed) return;
+      }
+      this.worldMap.map.image = path; this.worldMap.map.view = { zoom: 1, panX: 0, panY: 0 };
+      await this.saveWorldMapDraft(); await this.renderWorldMapPreservingScroll();
+    } }).browse();
+  }
+
+  static async activateWorldRegionTool() {
+    await this.syncWorldMapForm();
+    if (!this.worldMap.map.image) return ui.notifications.warn("Choose a world map before drawing regions.");
+    if (this.worldMapTool === "draw") return;
+    this.worldMapTool = "draw";
+    await this.saveWorldMapDraft(); await this.renderWorldMapPreservingScroll();
+  }
+
+  static async cancelWorldRegionTool() {
+    this.worldMapTool = ""; this.worldMap.draftVertices = [];
+    await this.saveWorldMapDraft(); await this.renderWorldMapPreservingScroll();
+  }
+
+  static async resetWorldMapView() {
+    this.worldMap.map.view = { zoom: 1, panX: 0, panY: 0 };
+    await this.saveWorldMapDraft(); await this.renderWorldMapPreservingScroll();
+  }
+
+  static async selectWorldRegion(_event, target) {
+    await this.syncWorldMapForm();
+    if (!this.worldMap.regions.some((region) => region.id === target.dataset.id)) return;
+    this.worldMap.selectedRegionId = target.dataset.id;
+    await this.saveWorldMapDraft(); await this.renderWorldMapPreservingScroll();
+  }
+
+  static async deleteWorldRegion(_event, target) {
+    await this.syncWorldMapForm();
+    const region = this.worldMap.regions.find((entry) => entry.id === (target.dataset.id || this.worldMap.selectedRegionId));
+    if (!region) return;
+    const confirmed = await foundry.applications.api.DialogV2.confirm({
+      window: { title: `Delete ${region.name || "this region"}?` },
+      content: "<p>The polygon and builder data will be removed. Its Foundry Journal will be preserved.</p>",
+      yes: { label: "Delete region", icon: "fa-solid fa-trash" }, no: { label: "Cancel" },
+    });
+    if (!confirmed) return;
+    this.worldMap.regions = this.worldMap.regions.filter((entry) => entry.id !== region.id);
+    for (const child of this.worldMap.regions) if (child.parentId === region.id) child.parentId = "";
+    this.worldMap.selectedRegionId = "";
+    await this.saveWorldMapDraft(); await this.renderWorldMapPreservingScroll();
+  }
+
+  static async openWorldRegionJournal(_event, target) {
+    await this.syncWorldMapForm();
+    const region = this.worldMap.regions.find((entry) => entry.id === (target.dataset.id || this.worldMap.selectedRegionId));
+    if (!region) return ui.notifications.warn("Select a region first.");
+    await this.openOrCreateWorldRegionJournal(region, { sync: true });
+  }
+
+  static async createWorldAtlas() {
+    if (this._worldAtlasPromise) return this._worldAtlasPromise;
+    const pending = (async () => {
+    await this.syncWorldMapForm();
+    const worldId = this.worldMap.id;
+    if (!this.worldMap.name.trim() || !this.worldMap.map.image || !this.worldMap.regions.length || this.worldMap.regions.some((region) => !region.name.trim())) {
+      return ui.notifications.warn("Name the world, choose its map, draw at least one region, and name every region first.");
+    }
+    if (this.worldMap.regions.some((region) => region.vertices.length < 3 || worldPolygonArea(region.vertices) < 0.0001 || worldPolygonSelfIntersects(region.vertices))) {
+      return ui.notifications.warn("Repair invalid or self-crossing region boundaries before creating the atlas.");
+    }
+    const folder = await this.ensureWorldJournalFolder(worldId);
+    const regionJournals = [];
+    let conflicts = 0;
+    for (const region of this.worldMap.regions) {
+      const result = await this.ensureWorldRegionJournal(region, { sync: false });
+      regionJournals.push({ region, journal: result.journal });
+      if (result.conflict) conflicts += 1;
+    }
+    // A second pass runs only after every regional Journal shell exists, so parent and child links are complete.
+    for (const region of this.worldMap.regions) {
+      const result = await this.ensureWorldRegionJournal(region, { sync: true });
+      if (result.conflict) conflicts += 1;
+    }
+    if (this.worldMap.id !== worldId) throw new Error("The World Map Builder changed while the atlas was being created.");
+    let index = game.journal.get(this.worldMap.indexJournalId);
+    if (index && (!index.getFlag(FLAG_SCOPE, "worldBuilder") || index.getFlag(FLAG_SCOPE, "worldId") !== worldId
+      || index.getFlag(FLAG_SCOPE, "worldDocument") !== "index")) index = null;
+    index ??= game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "worldBuilder")
+      && entry.getFlag(FLAG_SCOPE, "worldId") === worldId && entry.getFlag(FLAG_SCOPE, "worldDocument") === "index");
+    if (!index) index = await JournalEntry.create({
+      name: `${this.worldMap.name} - World Atlas`, folder: folder.id, pages: [],
+      flags: { [FLAG_SCOPE]: { worldBuilder: true, worldId, worldDocument: "index", schemaVersion: 1 } },
+    });
+    else await index.update({ name: `${this.worldMap.name} - World Atlas`, folder: folder.id });
+    this.worldMap.indexJournalId = index.id;
+    const mapContent = `<h1>${escapeHtml(this.worldMap.name)}</h1><figure><img src="${escapeHtml(this.worldMap.map.image)}" alt="${escapeHtml(this.worldMap.name)}"></figure><p>Double-click a region in Lore Smith's World Map Builder to open its native Foundry Journal.</p>`;
+    const directory = regionJournals.sort((left, right) => left.region.name.localeCompare(right.region.name)).map(({ region, journal }) => {
+      const parent = this.worldMap.regions.find((candidate) => candidate.id === region.parentId);
+      return `<li>@UUID[${journal.uuid}]{${escapeHtml(region.name)}} — ${escapeHtml(WORLD_REGION_TYPES[region.type]?.label ?? "Region")}${parent ? `, part of ${escapeHtml(parent.name)}` : ""}</li>`;
+    }).join("");
+    const mapPage = await this.syncGeneratedWorldPage(index, { key: "world-map", name: "1. World Map", content: mapContent, worldId });
+    const directoryPage = await this.syncGeneratedWorldPage(index, { key: "region-directory", name: "2. Region Directory", content: `<h1>Region Directory</h1><ul>${directory}</ul>`, worldId });
+    if (mapPage.conflict) conflicts += 1; if (directoryPage.conflict) conflicts += 1;
+    await this.saveWorldMapDraft();
+    if (conflicts) ui.notifications.warn(`${conflicts} generated page${conflicts === 1 ? " was" : "s were"} edited manually and preserved.`);
+    else ui.notifications.info(`${this.worldMap.name} is ready in Foundry Journals.`);
+    await index.sheet.render(true);
+    if (mapPage.page && typeof index.sheet.goToPage === "function") await index.sheet.goToPage(mapPage.page.id);
+    await this.renderWorldMapPreservingScroll();
+    })();
+    this._worldAtlasPromise = pending;
+    try { return await pending; } finally {
+      if (this._worldAtlasPromise === pending) this._worldAtlasPromise = null;
+    }
+  }
+
   static async changeTab(event, target) {
     const tab = target?.dataset?.tab || event?.currentTarget?.dataset?.tab;
     if (!tab) return;
     await this.syncSessionPrepForm();
     await this.syncCampaignForm();
+    await this.syncWorldMapForm();
     this.activeTab = tab;
     if (tab === "campaignMap") {
       this.campaign = this.mapCampaign; this.campaignStep = this.mapCampaignStep;
@@ -4319,6 +5270,16 @@ Hooks.once("init", () => {
   game.settings.register(MODULE_ID, "campaignMapBuilderWorldDraft", {
     name: "Campaign Map Builder World Draft",
     hint: "Stores the regional campaign map for this Foundry world so it survives browser and device changes.",
+    scope: "world", config: false, type: String, default: "",
+  });
+  game.settings.register(MODULE_ID, "worldMapBuilderDraft", {
+    name: "World Map Builder Draft",
+    hint: "Automatically stores the current polygon-based worldbuilding atlas in this browser.",
+    scope: "client", config: false, type: String, default: "",
+  });
+  game.settings.register(MODULE_ID, "worldMapBuilderWorldDraft", {
+    name: "World Map Builder Shared Draft",
+    hint: "Stores the polygon-based worldbuilding atlas for this Foundry world.",
     scope: "world", config: false, type: String, default: "",
   });
   game.settings.registerMenu(MODULE_ID, "openDashboard", {

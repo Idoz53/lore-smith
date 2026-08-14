@@ -18,6 +18,19 @@ The module provides:
   area drawn by dragging its radius;
 - world-persistent Campaign Map Builder drafts, with immediate saves for map
   edits and automatic recovery of drafts created by earlier versions;
+- an independent World Map Builder for tracing territorial polygons over any
+  map, reshaping their corners, nesting provinces or wilderness areas inside
+  larger realms, and recording geography, travel, people, power, dangers, and
+  hooks without disturbing either Campaign Builder draft;
+- automatic point-in-region assignment when the World Map Builder uses the same
+  source image as the Campaign Map Builder, plus a generated native Foundry
+  World Atlas folder, index, and one safely linked Journal per region;
+- double-clicking a completed region opens its own native Journal immediately;
+  region identity is stable across renames, user-created pages are preserved,
+  and edited generated pages are never overwritten silently;
+- three-layer World Map recovery: every edit is snapshotted immediately in the
+  browser, then serialized to client and shared world settings for resilience
+  against Forge reconnects;
 - compact map markers with an on-map right-click editor for point type, live
   naming, movement, and deletion—without a separate point-card list below the map;
 - regional connections for roads, waterways, mountain passes, trade, conflict,

@@ -37,6 +37,27 @@ if (manifest.esmodules.some((path) => path.includes("journal-editor"))
 if (!script.includes("combatantInsideTemplate") || !script.includes("rollNativeDamage")) {
   throw new Error("Live area hit-testing or native PF2e damage controls are missing.");
 }
+for (const requiredWorldMapFeature of [
+  "normalizeWorldMapBuild",
+  "worldPointInPolygon",
+  "worldPolygonSelfIntersects",
+  "ensureWorldRegionJournal",
+  "createWorldAtlas",
+  "worldMapBuilderWorldDraft",
+]) {
+  if (!script.includes(requiredWorldMapFeature)) throw new Error(`World Map Builder feature missing: ${requiredWorldMapFeature}`);
+}
+for (const requiredWorldMapTemplate of [
+  'data-tab="worldMap"',
+  'data-world-map',
+  'data-world-region-id',
+  'data-action="openWorldRegionJournal"',
+]) {
+  if (!template.includes(requiredWorldMapTemplate)) throw new Error(`World Map Builder template feature missing: ${requiredWorldMapTemplate}`);
+}
+if (/async saveWorldMapDraft\(\)[\s\S]{0,500}this\.worldMap\s*=\s*normalizeWorldMapBuild/.test(script)) {
+  throw new Error("World Map Builder saves must not replace gesture state with a detached object graph.");
+}
 if (script.includes("nativeCheck ?? await resolveModeledCheckWithRoll")) {
   throw new Error("Live combat must not silently replace a failed PF2e control with a modeled roll.");
 }

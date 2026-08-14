@@ -7,6 +7,7 @@
     <nav>
       <button type="button" data-action="dashboardTab" data-tab="campaign" class="{{#if tabs.campaign}}active{{/if}}"><i class="fa-solid fa-map"></i> Campaign Builder</button>
       <button type="button" data-action="dashboardTab" data-tab="campaignMap" class="{{#if tabs.campaignMap}}active{{/if}}"><i class="fa-solid fa-map-location-dot"></i> Campaign Map Builder</button>
+      <button type="button" data-action="dashboardTab" data-tab="worldMap" class="{{#if tabs.worldMap}}active{{/if}}"><i class="fa-solid fa-earth-europe"></i> World Map Builder</button>
       <button type="button" data-action="dashboardTab" data-tab="session" class="{{#if tabs.session}}active{{/if}}"><i class="fa-solid fa-compass"></i> Session Prep</button>
       <button type="button" data-action="dashboardTab" data-tab="loot" class="{{#if tabs.loot}}active{{/if}}"><i class="fa-solid fa-gem"></i> Loot & Treasure</button>
     </nav>
@@ -14,6 +15,71 @@
   </aside>
 
   <main class="ls-main">
+    {{#if tabs.worldMap}}
+      <section class="ls-panel ls-world-panel">
+        <header><div><span>Territorial worldbuilding atlas</span><h1>World Map Builder</h1></div><div class="ls-header-actions"><button type="button" data-action="newWorldMapBuild"><i class="fa-solid fa-rotate-left"></i> Start over</button><button type="button" data-action="createWorldAtlas"><i class="fa-solid fa-book-atlas"></i> {{#if worldMapAtlasAvailable}}Update{{else}}Create{{/if}} world atlas</button></div></header>
+        <p class="ls-lead">Draw real territorial regions over your map, nest smaller areas inside larger ones, and develop each region only as far as play requires. Every region can become its own native Foundry Journal.</p>
+
+        <div class="ls-world-map-heading">
+          <label>World or atlas name<input name="worldMapName" value="{{worldMap.name}}" placeholder="Dominion of Kryta"></label>
+          <label>World map<span class="ls-inline-control"><input value="{{worldMapView.image}}" readonly placeholder="Choose a world map"><button type="button" data-action="browseWorldMap">Browse</button></span></label>
+        </div>
+        <div class="ls-map-toolbar">
+          <button type="button" data-action="activateWorldRegionTool" class="{{#if worldMapDrawing}}active{{/if}}"><i class="fa-solid fa-draw-polygon"></i> Draw region</button>
+          {{#if worldMapDrawing}}<button type="button" data-action="cancelWorldRegionTool"><i class="fa-solid fa-xmark"></i> Cancel drawing</button>{{/if}}
+          <button type="button" data-action="resetWorldMapView"><i class="fa-solid fa-magnifying-glass-minus"></i> Reset view</button>
+          <button type="button" data-action="toggleLoreSmithFullscreen"><i class="fa-solid fa-expand"></i> Full screen</button>
+          <span>{{#if worldMapDrawing}}Left-click corners · Double-click or Enter to close · Backspace removes a corner · Escape cancels{{else}}Wheel: zoom · Middle-drag: pan · Left-click: select · Drag a corner: reshape · Double-click: open region Journal{{/if}}</span>
+        </div>
+
+        <div class="ls-world-workspace">
+          <aside class="ls-world-region-list">
+            <header><strong>Regions</strong><span>{{worldMapRegions.length}}</span></header>
+            <div>{{#each worldMapRegions}}<button type="button" data-action="selectWorldRegion" data-id="{{id}}" class="{{#if selected}}active{{/if}}"><i class="fa-solid {{icon}}" style="color:{{color}}"></i><span>{{#if name}}{{name}}{{else}}Unnamed region{{/if}}<small>{{typeLabel}} · {{developmentLabel}}</small></span></button>{{else}}<p>No regions yet. Choose <strong>Draw region</strong> and trace the first boundary.</p>{{/each}}</div>
+            {{#if worldMapSameSource}}<small class="ls-world-source-note"><i class="fa-solid fa-location-dot"></i> Campaign Map points are shown and assigned automatically.</small>{{else}}<small class="ls-world-source-note"><i class="fa-solid fa-circle-info"></i> Use the same map in Campaign Map Builder to show its named points here.</small>{{/if}}
+          </aside>
+
+          <div class="ls-world-map {{#if worldMapDrawing}}drawing{{/if}}" data-world-map>
+            {{#if worldMapView.hasImage}}
+              <div class="ls-world-map-stage" data-world-map-stage style="transform:translate({{worldMapView.panX}}px,{{worldMapView.panY}}px) scale({{worldMapView.zoom}})">
+                <img data-world-map-image src="{{worldMapView.image}}" alt="{{worldMap.name}} world map">
+                <svg class="ls-world-region-layer" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="World regions">
+                  {{#each worldMapRegions}}<polygon data-world-region-id="{{id}}" class="ls-world-region {{#if selected}}selected{{/if}}" points="{{points}}" style="--region-color:{{color}};--region-opacity:{{opacity}}"></polygon>{{/each}}
+                  <polyline data-world-region-draft class="ls-world-region-draft" points="{{worldMapDraftPoints}}"></polyline>
+                </svg>
+                {{#each worldMapRegions}}
+                  <button type="button" data-world-region-label="{{id}}" data-world-region-id="{{id}}" class="ls-world-region-label {{#if selected}}selected{{/if}}" style="left:{{labelLeft}};top:{{labelTop}};--world-marker-scale:{{labelScale}}"><i class="fa-solid {{icon}}"></i><span>{{#if name}}{{name}}{{else}}Unnamed region{{/if}}</span></button>
+                  {{#if selected}}{{#each vertexViews}}<button type="button" data-world-region-id="{{../id}}" data-world-region-vertex="{{index}}" class="ls-world-region-vertex" style="left:{{left}};top:{{top}};--world-marker-scale:{{markerScale}}" aria-label="Move region corner"></button>{{/each}}{{/if}}
+                {{/each}}
+                {{#each worldMapPoints}}<span data-world-map-point class="ls-world-map-point" style="left:{{left}};top:{{top}}" title="{{name}}{{#if primaryRegionName}} · {{primaryRegionName}}{{/if}}"><i class="fa-solid {{icon}}"></i></span>{{/each}}
+              </div>
+            {{else}}<div class="ls-region-map-empty"><i class="fa-solid fa-earth-europe"></i><strong>Choose a world map to begin</strong></div>{{/if}}
+          </div>
+
+          <aside class="ls-world-inspector">
+            {{#if worldMapSelectedRegion}}
+              <div data-world-region-editor="{{worldMapSelectedRegion.id}}">
+                <header><div><span>Selected region</span><strong>{{#if worldMapSelectedRegion.name}}{{worldMapSelectedRegion.name}}{{else}}Unnamed region{{/if}}</strong></div><button type="button" data-action="deleteWorldRegion" data-id="{{worldMapSelectedRegion.id}}" title="Delete region"><i class="fa-solid fa-trash"></i></button></header>
+                <label>Region name<input data-world-region-field="name" value="{{worldMapSelectedRegion.name}}" placeholder="Northern Marches"></label>
+                <div class="ls-world-inspector-grid"><label>Region type<select data-world-region-field="type">{{#each worldMapSelectedRegion.typeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>Preparation level<select data-world-region-field="development">{{#each worldMapSelectedRegion.developmentOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label></div>
+                <label>Part of<select data-world-region-field="parentId">{{#each worldMapSelectedRegion.parentOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <div class="ls-world-style-row"><label>Colour<input type="color" data-world-region-field="color" value="{{worldMapSelectedRegion.color}}"></label><label>Fill opacity<input type="range" data-world-region-field="opacity" min="0.08" max="0.72" step="0.02" value="{{worldMapSelectedRegion.opacity}}"></label></div>
+                <label>Regional identity<textarea data-world-region-field="summary" rows="2" placeholder="What immediately distinguishes this region?">{{worldMapSelectedRegion.summary}}</textarea></label>
+                <details open><summary>Land and travel</summary><label>Terrain<textarea data-world-region-field="terrain" rows="2">{{worldMapSelectedRegion.terrain}}</textarea></label><label>Climate<textarea data-world-region-field="climate" rows="2">{{worldMapSelectedRegion.climate}}</textarea></label><label>Travel and connections<textarea data-world-region-field="travel" rows="2">{{worldMapSelectedRegion.travel}}</textarea></label></details>
+                <details><summary>People and power</summary><label>Inhabitants<textarea data-world-region-field="inhabitants" rows="2">{{worldMapSelectedRegion.inhabitants}}</textarea></label><label>Authority and law<textarea data-world-region-field="authority" rows="2">{{worldMapSelectedRegion.authority}}</textarea></label><label>Culture and identity<textarea data-world-region-field="culture" rows="2">{{worldMapSelectedRegion.culture}}</textarea></label><label>Resources and trade<textarea data-world-region-field="resources" rows="2">{{worldMapSelectedRegion.resources}}</textarea></label><label>Factions<textarea data-world-region-field="factions" rows="2">{{worldMapSelectedRegion.factions}}</textarea></label></details>
+                <details><summary>What matters in play</summary><label>Current situation<textarea data-world-region-field="currentSituation" rows="2">{{worldMapSelectedRegion.currentSituation}}</textarea></label><label>Dangers and pressures<textarea data-world-region-field="dangers" rows="2">{{worldMapSelectedRegion.dangers}}</textarea></label><label>Adventure hooks<textarea data-world-region-field="hooks" rows="2">{{worldMapSelectedRegion.hooks}}</textarea></label></details>
+                {{#if worldMapSelectedRegion.containedLocations.length}}<details><summary>Places inside · {{worldMapSelectedRegion.containedLocations.length}}</summary><ul>{{#each worldMapSelectedRegion.containedLocations}}<li>{{name}} <small>{{type}}</small></li>{{/each}}</ul></details>{{/if}}
+                {{#if worldMapSelectedRegion.childRegions.length}}<details><summary>Subregions · {{worldMapSelectedRegion.childRegions.length}}</summary><ul>{{#each worldMapSelectedRegion.childRegions}}<li>{{name}}</li>{{/each}}</ul></details>{{/if}}
+                <button type="button" class="ls-world-journal-button" data-action="openWorldRegionJournal" data-id="{{worldMapSelectedRegion.id}}"><i class="fa-solid fa-book-open"></i> {{#if worldMapSelectedRegion.journalAvailable}}Update and open{{else}}Create{{/if}} region Journal</button>
+              </div>
+            {{else}}<div class="ls-world-inspector-empty"><i class="fa-solid fa-hand-pointer"></i><strong>Select a region</strong><p>Its worldbuilding guidance and Foundry Journal controls will appear here.</p></div>{{/if}}
+          </aside>
+        </div>
+        {{#if worldMapValidation.length}}<div class="ls-warning ls-world-validation"><strong>Before creating the atlas:</strong>{{#each worldMapValidation}}<div>{{this}}</div>{{/each}}</div>{{/if}}
+        <footer class="ls-world-footer"><span><i class="fa-solid fa-cloud-arrow-up"></i> Every edit is recovered immediately and saved to this Foundry world.</span><span>Double-click any completed region to open its Journal.</span></footer>
+      </section>
+    {{/if}}
+
     {{#if tabs.campaignMap}}
       <section class="ls-panel ls-campaign-panel">
         <header><div><span>Progressive regional campaign authoring</span><h1>Campaign Map Builder</h1></div><div class="ls-header-actions"><button data-action="newCampaignBuild"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openCampaignJournal" {{#unless campaignJournalAvailable}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open campaign</button></div></header>
