@@ -5,8 +5,11 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- the original guided adventure-book Campaign Builder remains available as its
-  own workspace and keeps a separate automatically saved draft;
+- a progressive, act-based Campaign Builder: prepare Act I, call it ready to
+  play, record what actually happened, complete it, and unlock Act II without
+  having to write the entire campaign in advance; three acts—Introduction,
+  Escalation, and Resolution—are provided by default, with optional extra acts,
+  Foundry document drops, automatic drafts, and one evolving native Journal;
 - a separate eight-step Campaign Map Builder: upload a real map, mark points of
   interest, draw the party's starting area, and prepare outward by distance;
   the center receives full playable detail, nearby places receive practical

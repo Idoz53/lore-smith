@@ -128,6 +128,51 @@
     {{/if}}
 
     {{#if tabs.campaign}}
+      <section class="ls-panel ls-campaign-panel ls-act-campaign-panel">
+        <header><div><span>Prepare, play, and complete one act at a time</span><h1>Campaign Builder</h1></div><div class="ls-header-actions"><button data-action="newCampaignBuild"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openCampaignJournal" {{#unless campaignJournalAvailable}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open campaign</button></div></header>
+        <p class="ls-lead">Prepare only the act you are about to play. Calling it ready creates or updates its Foundry Journal page. Completing it records what happened and unlocks the next act.</p>
+        <div class="ls-act-campaign-basics"><label>Campaign name<input name="campaignName" value="{{campaign.name}}" placeholder="Name this campaign"></label><label>Campaign summary<textarea name="campaignPremise" rows="2" placeholder="A short reminder of the campaign's central situation.">{{campaign.premise}}</textarea></label></div>
+        <nav class="ls-act-rail" aria-label="Campaign acts">{{#each campaignActs}}<button type="button" data-action="goToCampaignStep" data-step="{{index}}" class="{{#if active}}active{{/if}} {{#if completed}}completed{{/if}} {{#if ready}}ready{{/if}}" {{#if locked}}disabled{{/if}}><span class="ls-act-roman">{{roman}}</span><span><strong>Act {{roman}}</strong><small>{{name}}</small></span><em>{{#if locked}}Locked{{else}}{{statusLabel}}{{/if}}</em></button>{{/each}}<button type="button" data-action="addCampaignAct" class="add-act"><i class="fa-solid fa-plus"></i><span><strong>Add Act</strong><small>Continue beyond the current ending</small></span></button></nav>
+        {{#with campaignCurrentAct}}
+          <section class="ls-session-step ls-act-editor" data-campaign-act-id="{{id}}">
+            <div class="ls-act-heading"><div><div class="ls-step-kicker">Act {{roman}} · {{statusLabel}}</div><h2>{{#if name}}{{name}}{{else}}Untitled Act{{/if}}</h2></div><span class="ls-act-status {{status}}"><i class="fa-solid {{#if completed}}fa-circle-check{{else}}{{#if ready}}fa-dice-d20{{else}}fa-pen-ruler{{/if}}{{/if}}"></i> {{statusLabel}}</span></div>
+            <aside class="ls-campaign-guidance"><strong>Guidance for this act</strong><p>{{guidance}}</p>{{#if previousCarryForward}}<p><strong>Carried forward from the previous act:</strong> {{previousCarryForward}}</p>{{/if}}</aside>
+            <div class="ls-session-form ls-act-core">
+              <label>Act name<input data-campaign-act-field="name" value="{{name}}" placeholder="Introduction, The Broken Alliance, Final Reckoning..."></label>
+              <label>Expected sessions<input type="number" min="1" max="100" data-campaign-act-field="estimatedSessions" value="{{estimatedSessions}}"></label>
+              <label class="wide">What must this act accomplish?<textarea rows="3" data-campaign-act-field="objective" placeholder="The playable purpose of this part of the campaign.">{{objective}}</textarea></label>
+              <label class="wide">How does this act begin?<textarea rows="3" data-campaign-act-field="startingSituation" placeholder="Where the party is, what has just changed, and what demands attention.">{{startingSituation}}</textarea></label>
+              <label>Important locations<textarea rows="3" data-campaign-act-field="locations" placeholder="Only the places this act is likely to use.">{{locations}}</textarea></label>
+              <label>People and factions<textarea rows="3" data-campaign-act-field="people" placeholder="Who wants what during this act?">{{people}}</textarea></label>
+            </div>
+            <div class="ls-act-reference-grid">
+              <section class="ls-structured-section"><header><div><strong>Actors</strong><small>NPCs, enemies, allies, and hazards</small></div></header><div class="ls-document-drop" data-campaign-act-drop="actors" data-campaign-act-id="{{id}}"><i class="fa-solid fa-user-group"></i><span>Drop PF2e Actors here</span></div><div class="ls-reference-list">{{#each actorRefs}}<div><img src="{{img}}"><span>{{name}}<small>{{type}}</small></span><button data-action="openLootDocument" data-uuid="{{uuid}}" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></button><button data-action="removeCampaignActReference" data-act-id="{{../id}}" data-kind="actors" data-id="{{id}}"><i class="fa-solid fa-xmark"></i></button></div>{{/each}}</div></section>
+              <section class="ls-structured-section"><header><div><strong>Locations and notes</strong><small>Journal pages or Scenes used in this act</small></div></header><div class="ls-document-drop" data-campaign-act-drop="journals" data-campaign-act-id="{{id}}"><i class="fa-solid fa-map-location-dot"></i><span>Drop Journals, pages, or Scenes here</span></div><div class="ls-reference-list">{{#each journalRefs}}<div><img src="{{img}}"><span>{{name}}<small>{{type}}</small></span><button data-action="openLootDocument" data-uuid="{{uuid}}" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></button><button data-action="removeCampaignActReference" data-act-id="{{../id}}" data-kind="journals" data-id="{{id}}"><i class="fa-solid fa-xmark"></i></button></div>{{/each}}</div></section>
+            </div>
+            <div class="ls-session-form ls-act-development">
+              <label>Developments and pressure<textarea rows="4" data-campaign-act-field="developments" placeholder="Events that can happen in different orders; what worsens if the party waits.">{{developments}}</textarea></label>
+              <label>Clues and revelations<textarea rows="4" data-campaign-act-field="clues" placeholder="What the party can learn and several ways they might learn it.">{{clues}}</textarea></label>
+              <label class="wide">Encounters and hazards<textarea rows="4" data-campaign-act-field="encounters" placeholder="Combat, social pressure, exploration challenges, hazards, and alternatives.">{{encounters}}</textarea></label>
+              <label>Turning point<textarea rows="3" data-campaign-act-field="turningPoint" placeholder="The discovery, choice, victory, or failure that changes the direction of the act.">{{turningPoint}}</textarea></label>
+              <label>What ends this act?<textarea rows="3" data-campaign-act-field="endingCondition" placeholder="A concrete event—not a predetermined player choice.">{{endingCondition}}</textarea></label>
+              <label class="wide">GM notes<textarea rows="4" data-campaign-act-field="gmNotes" placeholder="Anything useful at the table that does not fit above.">{{gmNotes}}</textarea></label>
+            </div>
+            <section class="ls-structured-section ls-act-rewards"><header><div><strong>Rewards and important items</strong><small>Optional Foundry Item links for this act</small></div></header><div class="ls-document-drop" data-campaign-act-drop="items" data-campaign-act-id="{{id}}"><i class="fa-solid fa-gift"></i><span>Drop PF2e Items here</span></div><div class="ls-reference-list">{{#each itemRefs}}<div><img src="{{img}}"><span>{{name}}<small>{{type}}</small></span><button data-action="openLootDocument" data-uuid="{{uuid}}" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></button><button data-action="removeCampaignActReference" data-act-id="{{../id}}" data-kind="items" data-id="{{id}}"><i class="fa-solid fa-xmark"></i></button></div>{{/each}}</div></section>
+            {{#if draft}}
+              {{#if ../campaignActValidation.length}}<div class="ls-warning"><strong>Before this act is ready:</strong>{{#each ../campaignActValidation}}<div>{{this}}</div>{{/each}}</div>{{/if}}
+              <div class="ls-act-primary-action"><button data-action="markCampaignActReady"><i class="fa-solid fa-dice-d20"></i> Call Act {{roman}} ready to play</button><small>You can reopen the draft until the act is completed.</small></div>
+            {{/if}}
+            {{#if ready}}
+              <section class="ls-act-after-play"><div class="ls-step-kicker">After playing this act</div><h3>Record only what the next act needs</h3><div class="ls-session-form"><label class="wide">What actually happened?<textarea rows="4" data-campaign-act-field="actualOutcome" placeholder="The choices, victories, failures, losses, and changes that became true at the table.">{{actualOutcome}}</textarea></label><label class="wide">What important situation carries into the next act?<textarea rows="3" data-campaign-act-field="carryForward" placeholder="Unresolved danger, new goal, surviving enemy, promise, consequence, or relationship.">{{carryForward}}</textarea></label></div><div class="ls-act-completion-actions"><button data-action="reopenCampaignAct"><i class="fa-solid fa-pen"></i> Reopen draft</button><button data-action="completeCampaignAct" class="primary"><i class="fa-solid fa-flag-checkered"></i> Complete Act {{roman}}</button></div></section>
+            {{/if}}
+            {{#if completed}}<div class="ls-session-ready"><i class="fa-solid fa-circle-check"></i><span>Act {{roman}} was completed. Its outcome is saved in the campaign Journal.</span></div>{{/if}}
+          </section>
+        {{/with}}
+        <footer class="ls-session-navigation ls-act-footer"><button data-action="createCampaignJournal"><i class="fa-solid fa-book"></i> {{#if campaignJournalAvailable}}Update{{else}}Create{{/if}} campaign Journal</button><span>Every field autosaves. Completing an act unlocks the next one; older acts remain available to read.</span><button data-action="addCampaignAct"><i class="fa-solid fa-plus"></i> Add another act</button></footer>
+      </section>
+    {{/if}}
+
+    {{#if tabs.legacyCampaign}}
       <section class="ls-panel ls-campaign-panel">
         <header><div><span>Guided adventure-book authoring</span><h1>Campaign Builder</h1></div><div class="ls-header-actions"><button data-action="newCampaignBuild"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openCampaignJournal" {{#unless campaignJournalAvailable}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open adventure</button></div></header>
         <p class="ls-lead">Write the campaign as a usable adventure book. The format and expected session count determine the writing plan used by later steps.</p>

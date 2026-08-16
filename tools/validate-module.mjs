@@ -55,6 +55,24 @@ for (const requiredWorldMapTemplate of [
 ]) {
   if (!template.includes(requiredWorldMapTemplate)) throw new Error(`World Map Builder template feature missing: ${requiredWorldMapTemplate}`);
 }
+for (const requiredCampaignActFeature of [
+  "newCampaignAct",
+  "ensureCampaignActs",
+  "markCampaignActReady",
+  "completeCampaignAct",
+  "handleCampaignActDrop",
+  "adventureCampaignJournalPages",
+]) {
+  if (!script.includes(requiredCampaignActFeature)) throw new Error(`Act-based Campaign Builder feature missing: ${requiredCampaignActFeature}`);
+}
+for (const requiredCampaignActTemplate of [
+  "data-campaign-act-id",
+  'data-action="markCampaignActReady"',
+  'data-action="completeCampaignAct"',
+  "data-campaign-act-drop",
+]) {
+  if (!template.includes(requiredCampaignActTemplate)) throw new Error(`Act-based Campaign Builder template missing: ${requiredCampaignActTemplate}`);
+}
 if (/async saveWorldMapDraft\(\)[\s\S]{0,500}this\.worldMap\s*=\s*normalizeWorldMapBuild/.test(script)) {
   throw new Error("World Map Builder saves must not replace gesture state with a detached object graph.");
 }
