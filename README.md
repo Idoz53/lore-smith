@@ -11,7 +11,8 @@ The module provides:
   Chapter I (Introduction), Chapter II (Escalation), and Chapter III
   (Resolution), with its planned sessions distributed across those chapters;
   every individual session links directly to the full Session Prep wizard and
-  back to the evolving native campaign Journal;
+  back to the evolving native campaign Journal; locked future Acts remain
+  hidden from that Journal until the preceding Act is completed;
 - a separate eight-step Campaign Map Builder: upload a real map, mark points of
   interest, draw the party's starting area, and prepare outward by distance;
   the center receives full playable detail, nearby places receive practical

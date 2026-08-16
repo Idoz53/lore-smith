@@ -1030,12 +1030,20 @@ function campaignJournalPages(campaign) {
 
 function adventureCampaignJournalPages(campaign) {
   ensureCampaignActs(campaign);
+  // Only expose the contiguous sequence of Acts that the GM has unlocked.
+  // Act I is always available; each following Act appears only after the
+  // preceding Act has been completed.
+  let unlockedActCount = campaign.acts.length ? 1 : 0;
+  while (unlockedActCount < campaign.acts.length && campaign.acts[unlockedActCount - 1]?.status === "completed") {
+    unlockedActCount += 1;
+  }
+  const unlockedActs = campaign.acts.slice(0, unlockedActCount);
   const referenceList = (title, refs) => refs?.length
     ? `<h2>${escapeHtml(title)}</h2><ul>${refs.map((entry) => `<li>${sessionReferenceLink(entry)}</li>`).join("")}</ul>` : "";
   const completed = campaign.acts.filter((act) => act.status === "completed").length;
-  const overview = `${sessionBlock("Campaign summary", campaign.premise)}<p><strong>Progress</strong> ${completed} of ${campaign.acts.length} acts completed</p><ol>${campaign.acts.map((act) => `<li><strong>Act ${act.number}: ${escapeHtml(act.name || "Untitled")}</strong> — ${escapeHtml(act.status === "completed" ? "Completed" : act.status === "ready" ? "Ready to play" : "Draft")}</li>`).join("")}</ol>`;
+  const overview = `${sessionBlock("Campaign summary", campaign.premise)}<p><strong>Progress</strong> ${completed} of ${campaign.acts.length} acts completed</p><ol>${unlockedActs.map((act) => `<li><strong>Act ${act.number}: ${escapeHtml(act.name || "Untitled")}</strong> — ${escapeHtml(act.status === "completed" ? "Completed" : act.status === "ready" ? "Ready to play" : "Draft")}</li>`).join("")}</ol>`;
   const pages = [{ key: "overview", name: "Campaign Overview", content: overview }];
-  for (const act of campaign.acts) {
+  for (const act of unlockedActs) {
     const status = act.status === "completed" ? "Completed" : act.status === "ready" ? "Ready to play" : "Draft";
     const chapterContent = act.chapters.map((chapter) => {
       const roman = ["I", "II", "III"][chapter.number - 1] ?? chapter.number;
@@ -3289,7 +3297,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       const key = page.getFlag(FLAG_SCOPE, "campaignSection");
       return key && !generatedKeys.has(key);
     });
-    if (mapBuilder && obsoletePages.length) await journal.deleteEmbeddedDocuments("JournalEntryPage", obsoletePages.map((page) => page.id));
+    const removablePages = mapBuilder
+      ? obsoletePages
+      : obsoletePages.filter((page) => String(page.getFlag(FLAG_SCOPE, "campaignSection") ?? "").startsWith("act-"));
+    if (removablePages.length) await journal.deleteEmbeddedDocuments("JournalEntryPage", removablePages.map((page) => page.id));
     for (const [index, pageData] of generated.entries()) {
       const existing = journal.pages.find((page) => page.getFlag(FLAG_SCOPE, "campaignSection") === pageData.key);
       if (existing) {
