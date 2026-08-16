@@ -118,8 +118,9 @@ function newSessionEncounter() {
   return { id: foundry.utils.randomID(), type: "social", description: "", actors: [] };
 }
 
-function newSessionPrep() {
+function newSessionPrep(campaignLink = null) {
   return {
+    campaignLink,
     title: "", goal: "", opening: "", ending: "",
     locations: [newSessionLocation(), newSessionLocation()],
     npcs: [newSessionNpc()],
@@ -246,6 +247,37 @@ function newCampaignLocation() {
   };
 }
 
+function normalizeSessionPrep(stored = {}) {
+  const fresh = newSessionPrep(stored.campaignLink ?? null);
+  const storedLocations = Array.isArray(stored.locations) ? stored.locations : [];
+  return {
+    ...fresh,
+    ...stored,
+    campaignLink: stored.campaignLink && typeof stored.campaignLink === "object" ? { ...stored.campaignLink } : null,
+    locations: storedLocations.length
+      ? storedLocations.map((location) => ({ ...newSessionLocation(), ...location, id: location.id || foundry.utils.randomID() }))
+      : fresh.locations,
+    npcs: Array.isArray(stored.npcs)
+      ? stored.npcs.map((npc) => ({ ...newSessionNpc(), ...npc, id: npc.id || foundry.utils.randomID() }))
+      : fresh.npcs,
+    musicCues: Array.isArray(stored.musicCues)
+      ? stored.musicCues.map((cue) => ({ ...newSessionMusicCue(), ...cue, id: cue.id || foundry.utils.randomID() }))
+      : fresh.musicCues,
+    peopleEntries: Array.isArray(stored.peopleEntries)
+      ? stored.peopleEntries.map((entry) => ({ ...newSessionPeopleEntry(), ...entry, id: entry.id || foundry.utils.randomID() }))
+      : [newSessionPeopleEntry(stored.people ?? "")],
+    hazards: Array.isArray(stored.hazards) ? stored.hazards.map(normalizeSessionReference) : [],
+    encounterEntries: Array.isArray(stored.encounterEntries)
+      ? stored.encounterEntries.map((entry) => ({ ...newSessionEncounter(), ...entry, id: entry.id || foundry.utils.randomID(), actors: (entry.actors ?? []).map(normalizeSessionReference) }))
+      : [newSessionEncounter()],
+    sceneEntries: normalizeSessionTextEntries(stored.sceneEntries, stored.scenes ?? ""),
+    clueEntries: normalizeSessionTextEntries(stored.clueEntries),
+    rewardItems: Array.isArray(stored.rewardItems) ? stored.rewardItems.map(normalizeSessionReference) : [],
+    consequenceEntries: normalizeSessionTextEntries(stored.consequenceEntries, stored.rewards ?? ""),
+    changeEntries: normalizeSessionTextEntries(stored.changeEntries),
+  };
+}
+
 function newCampaignRoute() {
   return { id: foundry.utils.randomID(), fromId: "", toId: "", type: "road", travel: "", feature: "", complication: "" };
 }
@@ -332,6 +364,60 @@ function newCampaignChapter(number = 1) {
   };
 }
 
+const CAMPAIGN_ACT_CHAPTERS = [
+  { name: "Introduction", guidance: "Establish the situation, put the Act's problem in front of the characters, and give them a reason to engage with it." },
+  { name: "Escalation", guidance: "Complicate the situation, reveal useful information, make choices matter, and increase pressure without dictating one route." },
+  { name: "Resolution", guidance: "Bring the Act's central problem to a decisive change and establish what becomes true before the next Act begins." },
+];
+
+function newCampaignActSession(number = 1) {
+  return { id: foundry.utils.randomID(), number, title: "", purpose: "", prep: null, journalId: "" };
+}
+
+function newCampaignActChapter(number = 1) {
+  const preset = CAMPAIGN_ACT_CHAPTERS[number - 1] ?? CAMPAIGN_ACT_CHAPTERS[1];
+  return { id: foundry.utils.randomID(), number, name: preset.name, guidance: preset.guidance, sessions: [] };
+}
+
+function campaignActChapterCounts(total) {
+  const sessions = Math.max(3, Math.min(100, Number(total) || 3));
+  const introduction = Math.max(1, Math.round(sessions * 0.25));
+  const resolution = Math.max(1, Math.round(sessions * 0.25));
+  return [introduction, Math.max(1, sessions - introduction - resolution), resolution];
+}
+
+function ensureCampaignActChapters(act) {
+  act.estimatedSessions = Math.max(3, Math.min(100, Number(act.estimatedSessions) || 3));
+  const storedChapters = Array.isArray(act.chapters) ? act.chapters : [];
+  const existing = [...(act.archivedSessions ?? []), ...storedChapters.flatMap((chapter) => Array.isArray(chapter.sessions) ? chapter.sessions : [])];
+  const byNumber = new Map(existing.map((session) => [Number(session.number), session]));
+  const sessions = Array.from({ length: act.estimatedSessions }, (_, index) => {
+    const stored = byNumber.get(index + 1) ?? newCampaignActSession(index + 1);
+    return {
+      ...newCampaignActSession(index + 1), ...stored,
+      id: stored.id || foundry.utils.randomID(), number: index + 1,
+      prep: stored.prep && typeof stored.prep === "object" ? normalizeSessionPrep(stored.prep) : null,
+      journalId: String(stored.journalId ?? ""),
+    };
+  });
+  act.archivedSessions = existing.filter((session) => Number(session.number) > act.estimatedSessions);
+  const counts = campaignActChapterCounts(act.estimatedSessions);
+  let offset = 0;
+  act.chapters = CAMPAIGN_ACT_CHAPTERS.map((preset, index) => {
+    const stored = storedChapters[index] ?? {};
+    const count = counts[index];
+    const chapter = {
+      ...newCampaignActChapter(index + 1), ...stored,
+      id: stored.id || foundry.utils.randomID(), number: index + 1,
+      name: preset.name, guidance: preset.guidance,
+      sessions: sessions.slice(offset, offset + count),
+    };
+    offset += count;
+    return chapter;
+  });
+  return act;
+}
+
 function newCampaignAct(number = 1) {
   const defaults = [
     { name: "Introduction", objective: "", guidance: "Introduce the characters to the central problem, give them a reason to act, and end with a decision that carries them into the wider conflict." },
@@ -340,10 +426,10 @@ function newCampaignAct(number = 1) {
   ];
   const preset = defaults[number - 1] ?? { name: `Act ${number}`, objective: "", guidance: "Continue from the previous act's outcome. Escalate what remains unresolved and end this act with a clear change in the campaign." };
   return {
-    id: foundry.utils.randomID(), number, name: preset.name, status: "draft", estimatedSessions: number === 2 ? 5 : 2,
+    id: foundry.utils.randomID(), number, name: preset.name, status: "draft", estimatedSessions: number === 2 ? 5 : 3,
     objective: preset.objective, startingSituation: "", locations: "", people: "", developments: "", clues: "",
     encounters: "", turningPoint: "", endingCondition: "", gmNotes: "", actualOutcome: "", carryForward: "",
-    actorRefs: [], itemRefs: [], journalRefs: [], guidance: preset.guidance, readyAt: "", completedAt: "",
+    actorRefs: [], itemRefs: [], journalRefs: [], chapters: [], archivedSessions: [], guidance: preset.guidance, readyAt: "", completedAt: "",
   };
 }
 
@@ -356,7 +442,7 @@ function ensureCampaignActs(campaign) {
     first.startingSituation = campaign.problem?.involvement ?? "";
     first.gmNotes = campaign.background ?? "";
   }
-  campaign.acts = campaign.acts.map((act, index) => ({
+  campaign.acts = campaign.acts.map((act, index) => ensureCampaignActChapters({
     ...newCampaignAct(index + 1), ...act, id: act.id || foundry.utils.randomID(), number: index + 1,
     status: ["draft", "ready", "completed"].includes(act.status) ? act.status : "draft",
     actorRefs: (act.actorRefs ?? []).map(normalizeSessionReference),
@@ -936,8 +1022,18 @@ function adventureCampaignJournalPages(campaign) {
   const pages = [{ key: "overview", name: "Campaign Overview", content: overview }];
   for (const act of campaign.acts) {
     const status = act.status === "completed" ? "Completed" : act.status === "ready" ? "Ready to play" : "Draft";
+    const chapterContent = act.chapters.map((chapter) => {
+      const roman = ["I", "II", "III"][chapter.number - 1] ?? chapter.number;
+      const sessions = chapter.sessions.map((session) => {
+        const journal = game.journal.get(session.journalId);
+        const link = journal ? `<p>${sessionReferenceLink({ uuid: journal.uuid, name: "Open prepared session Journal" })}</p>` : "";
+        return `<section><h4>Session ${session.number}${session.title ? ` — ${escapeHtml(session.title)}` : ""}</h4>${sessionBlock("Purpose", session.purpose)}${link}</section>`;
+      }).join("");
+      return `<section><h3>Chapter ${roman} — ${escapeHtml(chapter.name)}</h3><p>${escapeHtml(chapter.guidance)}</p>${sessions}</section>`;
+    }).join("");
     const content = `<p><strong>Status</strong> ${status}</p><p><strong>Estimated sessions</strong> ${Number(act.estimatedSessions) || 1}</p>
       ${sessionBlock("Act objective", act.objective)}${sessionBlock("Starting situation", act.startingSituation)}
+      <h2>Chapters and sessions</h2>${chapterContent}
       ${sessionBlock("Important locations", act.locations)}${sessionBlock("People and factions", act.people)}
       ${referenceList("Linked actors", act.actorRefs)}${referenceList("Linked locations and notes", act.journalRefs)}
       ${sessionBlock("Developments and pressure", act.developments)}${sessionBlock("Clues and revelations", act.clues)}
@@ -1336,6 +1432,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       addCampaignCharacter: LoreSmithDashboard.addCampaignCharacter,
       removeCampaignCharacter: LoreSmithDashboard.removeCampaignCharacter,
       addCampaignAct: LoreSmithDashboard.addCampaignAct,
+      prepareCampaignSession: LoreSmithDashboard.prepareCampaignSession,
+      openCampaignSessionJournal: LoreSmithDashboard.openCampaignSessionJournal,
+      backToCampaignAct: LoreSmithDashboard.backToCampaignAct,
       markCampaignActReady: LoreSmithDashboard.markCampaignActReady,
       reopenCampaignAct: LoreSmithDashboard.reopenCampaignAct,
       completeCampaignAct: LoreSmithDashboard.completeCampaignAct,
@@ -1622,14 +1721,38 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       const previousComplete = index === 0 || this.campaign.acts[index - 1]?.status === "completed";
       const locked = !previousComplete;
       const roman = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"][index] ?? String(index + 1);
+      const chapters = act.chapters.map((chapter, chapterIndex) => ({
+        ...chapter,
+        roman: ["I", "II", "III"][chapterIndex],
+        sessionCount: chapter.sessions.length,
+        sessions: chapter.sessions.map((session) => ({
+          ...session,
+          prepared: Boolean(session.prep),
+          journalReady: Boolean(game.journal.get(session.journalId)),
+        })),
+      }));
       return {
         ...act, index, roman, locked, active: index === this.campaignStep,
+        chapters,
         draft: act.status === "draft", ready: act.status === "ready", completed: act.status === "completed",
         previousCarryForward: this.campaign.acts[index - 1]?.carryForward ?? "",
         statusLabel: act.status === "completed" ? "Completed" : act.status === "ready" ? "Ready to play" : "Draft",
       };
     });
     const campaignCurrentAct = mapBuilderActive ? null : campaignActs[this.campaignStep];
+    const linkedSession = this.sessionPrep.campaignLink;
+    const linkedAct = linkedSession ? this.adventureCampaign.acts.find((act) => act.id === linkedSession.actId) : null;
+    const linkedChapter = linkedAct?.chapters.find((chapter) => chapter.id === linkedSession.chapterId);
+    const linkedActSession = linkedChapter?.sessions.find((session) => session.id === linkedSession.sessionId);
+    const sessionCampaignLink = linkedAct && linkedChapter && linkedActSession ? {
+      ...linkedSession,
+      actName: linkedAct.name,
+      actNumber: linkedAct.number,
+      actRoman: ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"][linkedAct.number - 1] ?? String(linkedAct.number),
+      chapterName: linkedChapter.name,
+      chapterRoman: ["I", "II", "III"][linkedChapter.number - 1],
+      sessionNumber: linkedActSession.number,
+    } : null;
     const campaignActValidation = [];
     if (campaignCurrentAct) {
       if (!this.campaign.name.trim()) campaignActValidation.push("Name the campaign.");
@@ -1637,6 +1760,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       if (!campaignCurrentAct.objective.trim()) campaignActValidation.push("Describe what this act must accomplish.");
       if (!campaignCurrentAct.startingSituation.trim()) campaignActValidation.push("Describe how the act begins.");
       if (!campaignCurrentAct.endingCondition.trim()) campaignActValidation.push("Describe what ends this act.");
+      for (const session of campaignCurrentAct.chapters.flatMap((chapter) => chapter.sessions)) {
+        if (!session.title.trim()) campaignActValidation.push(`Name Session ${session.number}.`);
+        if (!session.purpose.trim()) campaignActValidation.push(`Describe what Session ${session.number} should accomplish.`);
+      }
     }
     const campaignValidation = [];
     if (!this.campaign.name.trim()) campaignValidation.push("Name the campaign.");
@@ -1737,6 +1864,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       creatureResults: this.creatureResults,
       itemResults: this.itemResults,
       sessionPrep: { ...this.sessionPrep, locations: locationViews, npcs: npcViews, musicCues: musicCueViews },
+      sessionCampaignLink,
       sessionSteps,
       sessionValidation,
       canSessionBack: this.sessionStep > 0,
@@ -2037,7 +2165,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         });
         field.addEventListener("blur", () => void this.syncCampaignForm());
       }
-      for (const select of this.element?.querySelectorAll('[name="campaignLength"], [name="campaignSessionCount"], [name="campaignStartLocation"]') ?? []) {
+      for (const select of this.element?.querySelectorAll('[name="campaignLength"], [name="campaignSessionCount"], [name="campaignStartLocation"], [data-campaign-act-field="estimatedSessions"]') ?? []) {
         select.addEventListener("change", async () => {
           await this.syncCampaignForm();
           await this.renderCampaignPreservingScroll();
@@ -2468,6 +2596,25 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async saveSessionPrepDraft() {
     await game.settings.set(MODULE_ID, "sessionPrepDraft", JSON.stringify({ step: this.sessionStep, prep: this.sessionPrep }));
+    await this.syncLinkedCampaignSession();
+  }
+
+  async syncLinkedCampaignSession({ journalId = undefined } = {}) {
+    const link = this.sessionPrep.campaignLink;
+    if (!link) return;
+    ensureCampaignActs(this.adventureCampaign);
+    const act = this.adventureCampaign.acts.find((entry) => entry.id === link.actId);
+    const chapter = act?.chapters.find((entry) => entry.id === link.chapterId);
+    const session = chapter?.sessions.find((entry) => entry.id === link.sessionId);
+    if (!session) return;
+    session.prep = foundry.utils.deepClone(this.sessionPrep);
+    if (journalId !== undefined) session.journalId = String(journalId ?? "");
+    if (!session.title.trim() && this.sessionPrep.title.trim()) session.title = this.sessionPrep.title.trim();
+    if (!session.purpose.trim() && this.sessionPrep.goal.trim()) session.purpose = this.sessionPrep.goal.trim();
+    await game.settings.set(MODULE_ID, "campaignBuilderDraft", JSON.stringify({
+      step: this.adventureCampaignStep,
+      campaign: this.adventureCampaign,
+    }));
   }
 
   async syncSessionPrepForm() {
@@ -2684,7 +2831,16 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
           if (control) act[field] = control.value.trim();
         }
         const sessions = card.querySelector('[data-campaign-act-field="estimatedSessions"]');
-        if (sessions) act.estimatedSessions = Math.max(1, Math.min(100, Number(sessions.value) || 1));
+        if (sessions) act.estimatedSessions = Math.max(3, Math.min(100, Number(sessions.value) || 3));
+        for (const sessionCard of card.querySelectorAll("[data-campaign-act-session-id]")) {
+          const session = act.chapters.flatMap((chapter) => chapter.sessions).find((entry) => entry.id === sessionCard.dataset.campaignActSessionId);
+          if (!session) continue;
+          for (const field of ["title", "purpose"]) {
+            const control = sessionCard.querySelector(`[data-campaign-act-session-field="${field}"]`);
+            if (control) session[field] = control.value.trim();
+          }
+        }
+        ensureCampaignActChapters(act);
       }
     }
     if (this.activeTab === "campaignMap") {
@@ -2944,6 +3100,43 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.renderCampaignPreservingScroll();
   }
 
+  static async prepareCampaignSession(_event, target) {
+    await this.syncCampaignForm();
+    const act = this.adventureCampaign.acts.find((entry) => entry.id === target.dataset.actId);
+    const chapter = act?.chapters.find((entry) => entry.id === target.dataset.chapterId);
+    const session = chapter?.sessions.find((entry) => entry.id === target.dataset.sessionId);
+    if (!act || !chapter || !session) return ui.notifications.warn("Lore Smith could not find that campaign session.");
+    const link = { actId: act.id, chapterId: chapter.id, sessionId: session.id };
+    const prep = session.prep ? normalizeSessionPrep(session.prep) : newSessionPrep(link);
+    prep.campaignLink = link;
+    if (!prep.title.trim()) prep.title = session.title.trim() || `${this.adventureCampaign.name || "Campaign"} — Act ${act.number}, Session ${session.number}`;
+    if (!prep.goal.trim()) prep.goal = session.purpose.trim();
+    this.sessionPrep = prep;
+    this.sessionStep = 0;
+    this.lastSessionJournalId = game.journal.get(session.journalId)?.id ?? null;
+    this.activeTab = "session";
+    await this.saveSessionPrepDraft();
+    await this.render();
+  }
+
+  static async openCampaignSessionJournal(_event, target) {
+    const journal = game.journal.get(target.dataset.journalId);
+    if (!journal) return ui.notifications.warn("This session Journal no longer exists.");
+    journal.sheet.render(true);
+  }
+
+  static async backToCampaignAct() {
+    await this.syncSessionPrepForm();
+    const actId = this.sessionPrep.campaignLink?.actId;
+    const index = this.adventureCampaign.acts.findIndex((act) => act.id === actId);
+    this.activeTab = "campaign";
+    this.campaign = this.adventureCampaign;
+    this.campaignStep = index >= 0 ? index : this.adventureCampaignStep;
+    this.adventureCampaignStep = this.campaignStep;
+    await this.saveCampaignDraft();
+    await this.render();
+  }
+
   static async markCampaignActReady() {
     await this.syncCampaignForm();
     const act = this.campaign.acts[this.campaignStep];
@@ -2954,6 +3147,8 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!act.objective.trim()) missing.push("act objective");
     if (!act.startingSituation.trim()) missing.push("starting situation");
     if (!act.endingCondition.trim()) missing.push("act ending condition");
+    const incompleteSessions = act.chapters.flatMap((chapter) => chapter.sessions).filter((session) => !session.title.trim() || !session.purpose.trim());
+    if (incompleteSessions.length) missing.push("a title and purpose for every planned session");
     if (missing.length) return ui.notifications.warn(`Before calling this act ready, add: ${missing.join(", ")}.`);
     act.status = "ready";
     act.readyAt = new Date().toISOString();
@@ -3364,8 +3559,9 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   static async newSessionPrep() {
+    const campaignLink = this.sessionPrep.campaignLink ? { ...this.sessionPrep.campaignLink } : null;
     this.sessionStep = 0;
-    this.sessionPrep = newSessionPrep();
+    this.sessionPrep = newSessionPrep(campaignLink);
     await this.saveSessionPrepDraft();
     await this.render();
   }
@@ -3534,6 +3730,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async createSessionJournal() {
     await this.syncSessionPrepForm();
+    const linkedActId = this.sessionPrep.campaignLink?.actId ?? "";
     const invalid = !this.sessionPrep.title.trim() || !this.sessionPrep.goal.trim()
       || this.sessionPrep.locations.length < 2 || this.sessionPrep.locations.some((location) => !location.name.trim() || !location.image.trim());
     if (invalid) {
@@ -3549,16 +3746,24 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     const journal = await JournalEntry.create({
       name: this.sessionPrep.title.trim(),
-      flags: { [FLAG_SCOPE]: { sessionPrep: true, sessionPrepVersion: 3, createdAt: new Date().toISOString(), sessionGoal: this.sessionPrep.goal.trim() } },
+      flags: { [FLAG_SCOPE]: { sessionPrep: true, sessionPrepVersion: 3, createdAt: new Date().toISOString(), sessionGoal: this.sessionPrep.goal.trim(), campaignLink: this.sessionPrep.campaignLink ?? null } },
       pages: [],
     });
     const pages = sessionJournalPages(this.sessionPrep).map((page, index) => ({ name: page.name, type: "text", text: { content: page.content }, sort: (index + 1) * 100000 }));
     await journal.createEmbeddedDocuments("JournalEntryPage", pages);
     this.lastSessionJournalId = journal.id;
     this.activeNoteId = null;
+    await this.syncLinkedCampaignSession({ journalId: journal.id });
     this.sessionPrep = newSessionPrep();
     this.sessionStep = 0;
     await this.saveSessionPrepDraft();
+    if (linkedActId) {
+      this.activeTab = "campaign";
+      this.campaign = this.adventureCampaign;
+      const actIndex = this.adventureCampaign.acts.findIndex((act) => act.id === linkedActId);
+      if (actIndex >= 0) this.campaignStep = this.adventureCampaignStep = actIndex;
+      await this.saveCampaignDraft();
+    }
     ui.notifications.info(`Created session Journal: ${journal.name}.`);
     journal.sheet.render(true);
     await this.render();

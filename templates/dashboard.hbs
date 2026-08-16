@@ -139,12 +139,37 @@
             <aside class="ls-campaign-guidance"><strong>Guidance for this act</strong><p>{{guidance}}</p>{{#if previousCarryForward}}<p><strong>Carried forward from the previous act:</strong> {{previousCarryForward}}</p>{{/if}}</aside>
             <div class="ls-session-form ls-act-core">
               <label>Act name<input data-campaign-act-field="name" value="{{name}}" placeholder="Introduction, The Broken Alliance, Final Reckoning..."></label>
-              <label>Expected sessions<input type="number" min="1" max="100" data-campaign-act-field="estimatedSessions" value="{{estimatedSessions}}"></label>
+              <label>Expected sessions<input type="number" min="3" max="100" data-campaign-act-field="estimatedSessions" value="{{estimatedSessions}}"></label>
               <label class="wide">What must this act accomplish?<textarea rows="3" data-campaign-act-field="objective" placeholder="The playable purpose of this part of the campaign.">{{objective}}</textarea></label>
               <label class="wide">How does this act begin?<textarea rows="3" data-campaign-act-field="startingSituation" placeholder="Where the party is, what has just changed, and what demands attention.">{{startingSituation}}</textarea></label>
               <label>Important locations<textarea rows="3" data-campaign-act-field="locations" placeholder="Only the places this act is likely to use.">{{locations}}</textarea></label>
               <label>People and factions<textarea rows="3" data-campaign-act-field="people" placeholder="Who wants what during this act?">{{people}}</textarea></label>
             </div>
+            <section class="ls-act-chapter-planner">
+              <header><div><strong>Act chapters and sessions</strong><small>The planned sessions are distributed across Introduction, Escalation, and Resolution.</small></div></header>
+              <div class="ls-act-chapter-stack">
+                {{#each chapters}}
+                  <article class="ls-act-chapter">
+                    <header><div><span>Chapter {{roman}}</span><strong>{{name}}</strong><small>{{guidance}}</small></div><em>{{sessionCount}} sessions</em></header>
+                    <div class="ls-act-session-list">
+                      {{#each sessions}}
+                        <section class="ls-act-session-card" data-campaign-act-session-id="{{id}}">
+                          <div class="ls-act-session-number"><span>Session</span><strong>{{number}}</strong></div>
+                          <div class="ls-act-session-fields">
+                            <label>Session title<input data-campaign-act-session-field="title" value="{{title}}" placeholder="What is this session called?"></label>
+                            <label>What should this session accomplish?<textarea rows="2" data-campaign-act-session-field="purpose" placeholder="The situation, discovery, choice, or confrontation this session should support.">{{purpose}}</textarea></label>
+                          </div>
+                          <div class="ls-act-session-actions">
+                            {{#if journalReady}}<button type="button" data-action="openCampaignSessionJournal" data-journal-id="{{journalId}}" title="Open the prepared session Journal"><i class="fa-solid fa-book-open"></i> Journal</button>{{/if}}
+                            <button type="button" class="primary" data-action="prepareCampaignSession" data-act-id="{{../../id}}" data-chapter-id="{{../id}}" data-session-id="{{id}}"><i class="fa-solid fa-compass"></i> {{#if prepared}}Continue prep{{else}}Prepare session{{/if}}</button>
+                          </div>
+                        </section>
+                      {{/each}}
+                    </div>
+                  </article>
+                {{/each}}
+              </div>
+            </section>
             <div class="ls-act-reference-grid">
               <section class="ls-structured-section"><header><div><strong>Actors</strong><small>NPCs, enemies, allies, and hazards</small></div></header><div class="ls-document-drop" data-campaign-act-drop="actors" data-campaign-act-id="{{id}}"><i class="fa-solid fa-user-group"></i><span>Drop PF2e Actors here</span></div><div class="ls-reference-list">{{#each actorRefs}}<div><img src="{{img}}"><span>{{name}}<small>{{type}}</small></span><button data-action="openLootDocument" data-uuid="{{uuid}}" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></button><button data-action="removeCampaignActReference" data-act-id="{{../id}}" data-kind="actors" data-id="{{id}}"><i class="fa-solid fa-xmark"></i></button></div>{{/each}}</div></section>
               <section class="ls-structured-section"><header><div><strong>Locations and notes</strong><small>Journal pages or Scenes used in this act</small></div></header><div class="ls-document-drop" data-campaign-act-drop="journals" data-campaign-act-id="{{id}}"><i class="fa-solid fa-map-location-dot"></i><span>Drop Journals, pages, or Scenes here</span></div><div class="ls-reference-list">{{#each journalRefs}}<div><img src="{{img}}"><span>{{name}}<small>{{type}}</small></span><button data-action="openLootDocument" data-uuid="{{uuid}}" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></button><button data-action="removeCampaignActReference" data-act-id="{{../id}}" data-kind="journals" data-id="{{id}}"><i class="fa-solid fa-xmark"></i></button></div>{{/each}}</div></section>
@@ -193,6 +218,7 @@
       <section class="ls-panel ls-session-panel">
         <header><div><span>Guided next-session preparation</span><h1>Session Prep</h1></div><div class="ls-header-actions"><button data-action="newSessionPrep"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openLastSessionJournal" {{#unless lastSessionJournalId}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open last session</button></div></header>
         <p class="ls-lead">Answer a few focused questions. Lore Smith turns them into a ready-to-run Foundry Journal, with every important place, person, scene, and secret on its own page.</p>
+        {{#if sessionCampaignLink}}<aside class="ls-session-campaign-link"><div><span>Campaign session</span><strong>Act {{actRoman}} · Chapter {{chapterRoman}} — {{chapterName}} · Session {{sessionNumber}}</strong><small>{{actName}}</small></div><button type="button" data-action="backToCampaignAct"><i class="fa-solid fa-arrow-left"></i> Back to Act</button></aside>{{/if}}
         <div class="ls-session-progress" aria-label="Session prep progress">
           {{#each sessionSteps}}<button data-action="goToSessionStep" data-step="{{index}}" class="{{#if active}}active{{/if}}"><span>{{number}}</span>{{label}}</button>{{/each}}
         </div>

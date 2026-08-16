@@ -7,9 +7,11 @@ The module provides:
 
 - a progressive, act-based Campaign Builder: prepare Act I, call it ready to
   play, record what actually happened, complete it, and unlock Act II without
-  having to write the entire campaign in advance; three acts—Introduction,
-  Escalation, and Resolution—are provided by default, with optional extra acts,
-  Foundry document drops, automatic drafts, and one evolving native Journal;
+  having to write the entire campaign in advance; every Act is divided into
+  Chapter I (Introduction), Chapter II (Escalation), and Chapter III
+  (Resolution), with its planned sessions distributed across those chapters;
+  every individual session links directly to the full Session Prep wizard and
+  back to the evolving native campaign Journal;
 - a separate eight-step Campaign Map Builder: upload a real map, mark points of
   interest, draw the party's starting area, and prepare outward by distance;
   the center receives full playable detail, nearby places receive practical

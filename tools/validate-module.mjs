@@ -57,6 +57,9 @@ for (const requiredCampaignActFeature of [
   "completeCampaignAct",
   "handleCampaignActDrop",
   "adventureCampaignJournalPages",
+  "ensureCampaignActChapters",
+  "prepareCampaignSession",
+  "syncLinkedCampaignSession",
 ]) {
   if (!script.includes(requiredCampaignActFeature)) throw new Error(`Act-based Campaign Builder feature missing: ${requiredCampaignActFeature}`);
 }
@@ -65,6 +68,8 @@ for (const requiredCampaignActTemplate of [
   'data-action="markCampaignActReady"',
   'data-action="completeCampaignAct"',
   "data-campaign-act-drop",
+  "data-campaign-act-session-id",
+  'data-action="prepareCampaignSession"',
 ]) {
   if (!template.includes(requiredCampaignActTemplate)) throw new Error(`Act-based Campaign Builder template missing: ${requiredCampaignActTemplate}`);
 }
