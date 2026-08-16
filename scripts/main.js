@@ -4030,10 +4030,46 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 }
 
 let dashboard;
+let launcherPlayerListObserver;
 
 function openLoreSmith() {
   dashboard ??= new LoreSmithDashboard();
   dashboard.render(true);
+}
+
+function mountLoreSmithLauncher() {
+  if (!game.user?.isGM || game.system?.id !== "pf2e") return;
+  let button = document.getElementById("lore-smith-launcher");
+  if (!button) {
+    button = document.createElement("button");
+    button.id = "lore-smith-launcher";
+    button.type = "button";
+    button.title = "Open Lore Smith";
+    button.setAttribute("aria-label", "Open Lore Smith");
+    button.innerHTML = '<i class="fa-solid fa-book" aria-hidden="true"></i><span>Lore Smith</span>';
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      openLoreSmith();
+    });
+    document.body.append(button);
+  }
+
+  const positionLauncher = () => {
+    const playerList = document.querySelector("#players");
+    const playerListRight = playerList?.getBoundingClientRect?.().right ?? 0;
+    button.style.left = `${Math.max(16, Math.round(playerListRight) + 12)}px`;
+  };
+  positionLauncher();
+  requestAnimationFrame(positionLauncher);
+
+  launcherPlayerListObserver?.disconnect();
+  launcherPlayerListObserver = new ResizeObserver(positionLauncher);
+  const playerList = document.querySelector("#players");
+  if (playerList) launcherPlayerListObserver.observe(playerList);
+  if (button.dataset.resizeBound !== "true") {
+    button.dataset.resizeBound = "true";
+    window.addEventListener("resize", positionLauncher);
+  }
 }
 
 Hooks.once("init", () => {
@@ -4088,12 +4124,15 @@ Hooks.once("ready", async () => {
     return;
   }
   Object.assign(game.loreSmith ??= {}, { open: openLoreSmith });
+  mountLoreSmithLauncher();
   try {
     await migrateSessionPrepJournals();
   } catch (error) {
     console.warn("Lore Smith | Could not clean older Session Prep Journal headings.", error);
   }
 });
+
+Hooks.on("canvasReady", () => mountLoreSmithLauncher());
 
 Hooks.on("getSceneControlButtons", (controls) => {
   if (!game.user.isGM || game.system.id !== "pf2e") return;

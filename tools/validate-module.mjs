@@ -79,6 +79,9 @@ for (const requiredSceneControlFeature of [
   'name: "lore-smith"',
   "order: Object.keys(tools).length",
   "onChange: () => openLoreSmith()",
+  "mountLoreSmithLauncher",
+  'button.id = "lore-smith-launcher"',
+  'Hooks.on("canvasReady"',
 ]) {
   if (!script.includes(requiredSceneControlFeature)) throw new Error(`Foundry V13 Scene control integration missing: ${requiredSceneControlFeature}`);
 }
