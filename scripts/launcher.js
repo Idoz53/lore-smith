@@ -9,7 +9,9 @@ function positionLauncher(button) {
   const playerBounds = playerList
     ? [playerList, ...playerList.querySelectorAll("*")].map((element) => element.getBoundingClientRect?.()).filter(Boolean)
     : [];
-  const playerListRight = playerBounds.reduce((right, rect) => Math.max(right, rect.right), 0);
+  const playerRect = playerList?.getBoundingClientRect?.();
+  const contentRight = playerRect ? playerRect.left + Math.max(160, playerList.scrollWidth) : 0;
+  const playerListRight = Math.max(contentRight, playerBounds.reduce((right, rect) => Math.max(right, rect.right), 0));
   const left = Math.min(window.innerWidth - 60, Math.max(16, Math.ceil(playerListRight) + 16));
   button.style.left = `${left}px`;
 }
