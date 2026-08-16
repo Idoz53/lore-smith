@@ -4037,6 +4037,10 @@ function openLoreSmith() {
   dashboard.render(true);
 }
 
+// Publish the workspace opener as soon as this module evaluates. The permanent
+// launcher may be rendered after Foundry's ready hook has already fired.
+Object.assign(game.loreSmith ??= {}, { open: openLoreSmith });
+
 function mountLoreSmithLauncher() {
   if (!game.user?.isGM || game.system?.id !== "pf2e") return;
   let button = document.getElementById("lore-smith-launcher");

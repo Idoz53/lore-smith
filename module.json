@@ -2,7 +2,7 @@
   "id": "lore-smith",
   "title": "Lore Smith",
   "description": "A PF2e-native Game Master workspace for guided campaign and session preparation, worldbuilding, creature creation, item building, NPC voice references, and treasure planning.",
-  "version": "0.36.3",
+  "version": "0.36.4",
   "authors": [
     {
       "name": "Idoz53"
@@ -24,8 +24,8 @@
     ]
   },
   "esmodules": [
-    "scripts/launcher.js",
     "scripts/main.js",
+    "scripts/launcher.js",
     "scripts/native-workflows.js",
     "scripts/npc-voice-recorder.js"
   ],

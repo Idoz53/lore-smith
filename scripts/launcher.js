@@ -6,8 +6,11 @@ let bodyObserver;
 
 function positionLauncher(button) {
   const playerList = document.querySelector("#players");
-  const playerListRight = playerList?.getBoundingClientRect?.().right ?? 0;
-  const left = Math.min(window.innerWidth - 60, Math.max(16, Math.round(playerListRight) + 12));
+  const playerBounds = playerList
+    ? [playerList, ...playerList.querySelectorAll("*")].map((element) => element.getBoundingClientRect?.()).filter(Boolean)
+    : [];
+  const playerListRight = playerBounds.reduce((right, rect) => Math.max(right, rect.right), 0);
+  const left = Math.min(window.innerWidth - 60, Math.max(16, Math.ceil(playerListRight) + 16));
   button.style.left = `${left}px`;
 }
 
@@ -17,7 +20,6 @@ function openLoreSmith() {
     open();
     return;
   }
-  ui.notifications?.error("Lore Smith is active, but its workspace did not finish loading. Reload Foundry once.");
   console.error(`${MODULE_ID} | The permanent launcher loaded, but game.loreSmith.open is unavailable.`);
 }
 
@@ -85,6 +87,7 @@ Hooks.once("ready", () => {
   bodyObserver.observe(document.body, { childList: true });
 });
 
+if (game.ready) queueMicrotask(mountLoreSmithLauncher);
+
 Hooks.on("canvasReady", mountLoreSmithLauncher);
 Hooks.on("renderSceneControls", mountLoreSmithLauncher);
-
