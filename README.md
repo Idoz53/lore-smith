@@ -83,35 +83,6 @@ The module provides:
   they appear in the actor's Actions tab with their action cost and frequency;
 - existing compendium automation, runes, subitems, and native rules are preserved
   when an item is copied and customized;
-- encounter setup using actors and tokens already in the Foundry world;
-- Combat Tracker buttons for randomized iteration logs and live Scene combat;
-- spell-, ability-, item-, strike-, save-, condition-, and area-template-aware combat choices;
-- detailed iteration logs and a separate isolated live-combat battlefield window;
-- pause, resume, stop, adjustable pacing, and a previous/next action timeline
-  that reviews logged actions together with their token positions and Hit Points,
-  without Chat spam by default;
-- Live Combat operates on cloned token positions, HP, conditions, cooldowns,
-  item quantities, frequencies, and spell resources. It never moves Scene tokens,
-  changes actor HP or conditions, consumes inventory or spell slots, advances the
-  Combat Tracker, places real templates, leaves changed targets, or moves the GM camera;
-- the isolated popup displays the Scene background, animated combatant copies,
-  HP bars, conditions, area templates, action captions, and the complete log;
-- the isolated replay opens at the available screen size, preserves the Scene's
-  true aspect ratio and pixel coordinates, snaps combatant copies to Foundry's
-  grid, supports wheel zoom and drag panning, and displays the real Scene walls;
-- replay pathfinding uses Foundry's native wall collision for movement and
-  requires an unobstructed sight line before resolving a targeted action;
-- the replay window is freely resizable while keeping one uniform map/grid
-  scale, and Strides visibly traverse every collision-checked grid square in
-  their selected route instead of teleporting to the final destination;
-- PF2e damage-card results are captured from the native ChatMessage roll or its
-  rendered dice total, so a visible result is applied instead of being falsely
-  reported as a missing roll;
-- native PF2e spellcasting-entry casts for prepared, flexible, spontaneous,
-  innate, focus, at-will, and cantrip spells, using the same slot and use
-  validation as the PF2e Cast control;
-- native PF2e spell override variants, so variable-action spells use the
-  system-defined action cost, target, range, area, and damage or healing data;
 - browse-all compendium source libraries with keyword, level, trait, and type filters;
 - an optional Bestiary Ability Glossary-only filter for creature abilities;
 - creature ability search also indexes actions, reactions, free actions, passive
@@ -126,59 +97,11 @@ The module provides:
   system's normal permissions, sharing, Show Players, images, tables, document
   links, read view, and editor;
 - side-by-side creature and item source previews before copying a compendium entry.
-- PF2e XP difficulty with in-between labels such as Moderate+ and Severe-, shown
-  separately from the randomized character victory estimate.
-- PF2e-native live targeting and controls for Combat Tracker initiative,
-  prepared strikes, spell Cast/Attack/Damage buttons, actor saving throws,
-  system skill actions, healing, conditions, shield state, and finite resources;
-- live combat never silently substitutes a reconstructed formula when PF2e has
-  no executable control: the action is reported as unsupported instead;
-- live measured-template hit testing against the grid spaces actually occupied by
-  each token, plus GM-private Foundry roll cards for initiative, checks, saves,
-  damage, and healing;
-- automatic native PF2e roll execution uses the GM-private, skip-dialog behavior,
-  so checks, saves, damage, and healing resolve without stopping for modifier dialogs;
-- isolated spell resolution now creates the native PF2e Cast chat card without
-  consuming the real slot, presses its Attack, Save, and Roll Damage buttons,
-  restores the GM's previous targets, and applies the result only to simulated HP;
-- melee entries reported by PF2e as zero range use their legal 5-foot grid reach,
-  so an actor already in range does not waste actions Striding;
-- flanking is recalculated from the centers of two adjacent allies on opposite
-  sides of a target; the simulated target becomes off-guard and the log names
-  the two flankers and shows the adjusted AC beside its base AC;
-- prone actors Stand before moving, restrained or immobilized actors use native
-  GM-private Escape checks, fleeing actors move away, and slowed, stunned,
-  unconscious, paralyzed, and petrified states constrain their action economy;
-- cryptographically seeded tactical tie-breaking and randomized equal-cost path
-  choices keep repeated combats and Monte Carlo iterations from replaying one script;
-- live grid movement uses occupied-square pathfinding, respects walls and token
-  footprints, accepts legal progress when a target is farther than one Stride,
-  keeps melee combatants from walking closer when already in reach, and prevents
-  two tokens from ending in the same space;
-- explicit adapters for attacks, saves, damage, healing, IWR, conditions, area
-  templates, spell slots, frequencies, recharge timers, and common skill actions;
-- the complete old-app tactical flowchart library: one shared legality,
-  rescue, targeting, movement, cover, off-guard, trained-skill, MAP, defense,
-  and resolution loop plus data-driven overlays for all 29 PF2e classes;
-- class overlays are selected from the actor's actual Class item and score only
-  actions, spells, strikes, items, and trained system actions the actor owns;
-- unclassed NPCs infer frontline, ranged, or spellcaster positioning from their
-  own native entries; class and NPC profiles seek safe range or legal flanks and
-  deliberately avoid repeating utility actions instead of dealing damage;
-- both Monte Carlo and live combat use the same decision policy. The fast model
-  resolves it through explicit adapters, while live combat executes the chosen
-  option through native PF2e targets, checks, Cast controls, resources, effects,
-  damage, healing, conditions, and measured templates;
-- a per-encounter coverage report that identifies native, modeled, partial, and
-  unsupported actions for every combatant.
-- schema-driven effect ownership and linked condition operations: self effects
-  stay on the user, explicit removals remove conditions, and a condition word in
-  descriptive, prerequisite, or future-effect text is never applied by itself.
 
 ## Prototype warning
 
-Lore Smith is experimental. Encounter estimates and tactical choices can contain
-bugs or strange behavior and are not a substitute for a GM's rules judgment.
+Lore Smith is experimental. Builders and preparation workflows can still contain
+bugs while the module is under active development.
 
 ## Installation
 
@@ -206,34 +129,7 @@ duration, and effect text. Benchmark-linked attack bonuses, Strike damage,
 area damage, and save DCs recalculate automatically when the NPC's level changes;
 custom values remain untouched. Manual edits to generated numbers safely change
 that entry to Custom until the GM explicitly relinks it.
-The Item Builder icon appears in native PF2e Item sheets. The Combat Tracker
-adds **Simulate Logs** and **Live Combat** controls when an encounter is active.
-Use the slider in the Live Combat window to change the delay from 0.25 to 10
-seconds per action, or pause, resume, and stop the replay. Chat mirroring is
-optional in Module Settings and is off by default.
-
-Selecting **Live Combat** opens a separate Lore Smith window immediately. It
-shows preparation errors as well as the complete action log, so failed setup is
-visible instead of silently stopping.
-
-Both simulation modes include a collapsible **Simulation coverage** report.
-Review partial and unsupported entries before treating an encounter estimate as
-reliable; the report is deliberately explicit about mechanics that still need a
-dedicated adapter. Each actor also reports its assigned class flow, positioning
-policy, available class-priority tags, and class priorities for which the actor
-does not currently own a matching Foundry action.
-
-The **Live Combat** mode drives the installed PF2e system as a GM would: it sets
-the actual Foundry target, invokes native action/statistic/cast controls, consumes
-the actor's real resources, and applies the resulting native damage or healing
-roll. All native roll cards created by the simulator are private to GMs. The
-multi-iteration estimate remains a non-destructive model so it can run many
-encounters without consuming or damaging the world actors.
-
-Lore Smith does not maintain exceptions for named actors, NPCs, spells, or
-abilities. It reads the mechanics declared by each installed PF2e document. An
-entry without a safe structured resolution path is excluded from tactical
-selection and identified by the coverage report rather than guessed from prose.
+The Item Builder icon appears in native PF2e Item sheets.
 
 ## Content and licensing
 

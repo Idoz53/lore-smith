@@ -15,7 +15,6 @@ const templateFiles = [
   "templates/dashboard.hbs",
   "templates/creature-builder.hbs",
   "templates/item-builder.hbs",
-  "templates/live-combat.hbs",
 ];
 
 for (const relativePath of [...manifest.esmodules, ...manifest.styles, ...templateFiles]) {
@@ -27,15 +26,11 @@ const nativeScript = await readFile(resolve(root, "scripts/native-workflows.js")
 const template = await readFile(resolve(root, "templates/dashboard.hbs"), "utf8");
 const creatureTemplate = await readFile(resolve(root, "templates/creature-builder.hbs"), "utf8");
 const itemTemplate = await readFile(resolve(root, "templates/item-builder.hbs"), "utf8");
-const liveTemplate = await readFile(resolve(root, "templates/live-combat.hbs"), "utf8");
 if (manifest.esmodules.some((path) => path.includes("journal-editor"))
   || nativeScript.includes('Hooks.on("renderJournalSheet"')
   || nativeScript.includes('Hooks.on("renderJournalPageSheet"')
   || nativeScript.includes('Hooks.on("renderJournalEntryPageSheet"')) {
   throw new Error("Lore Smith must leave Foundry's Journal sheets and page editors unmodified.");
-}
-if (!script.includes("combatantInsideTemplate") || !script.includes("rollNativeDamage")) {
-  throw new Error("Live area hit-testing or native PF2e damage controls are missing.");
 }
 for (const requiredWorldMapFeature of [
   "normalizeWorldMapBuild",
@@ -76,23 +71,16 @@ for (const requiredCampaignActTemplate of [
 if (/async saveWorldMapDraft\(\)[\s\S]{0,500}this\.worldMap\s*=\s*normalizeWorldMapBuild/.test(script)) {
   throw new Error("World Map Builder saves must not replace gesture state with a detached object graph.");
 }
-if (script.includes("nativeCheck ?? await resolveModeledCheckWithRoll")) {
-  throw new Error("Live combat must not silently replace a failed PF2e control with a modeled roll.");
+for (const removedSimulatorFeature of ["simulateEncounter", "runLiveReplay", "runEstimate", "runLive"]) {
+  if (script.includes(removedSimulatorFeature)) throw new Error(`Removed combat simulator feature is still loaded: ${removedSimulatorFeature}`);
 }
-const adapterScript = await readFile(resolve(root, "scripts/simulation-adapters.js"), "utf8");
-if (!adapterScript.includes('"spell-save"') || !adapterScript.includes('"spell-damage"')) {
-  throw new Error("Native PF2e spell-card Save and Damage controls are not wired.");
+for (const removedNativeFeature of ["LoreSmithLiveLog", "lsRunIterations", "lsRunLiveCombat", "lsAddCombatTrackerButtons"]) {
+  if (nativeScript.includes(removedNativeFeature)) throw new Error(`Removed native combat feature is still loaded: ${removedNativeFeature}`);
 }
 const templateActions = [...template.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]);
 for (const action of new Set(templateActions)) {
   if (!new RegExp(`\\b${action}:\\s*LoreSmithDashboard\\.`).test(script)) {
     throw new Error(`Template action "${action}" is not wired in the dashboard.`);
-  }
-}
-
-for (const action of new Set([...liveTemplate.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))) {
-  if (!new RegExp(`\\b${action}:\\s*LoreSmithLiveLog\\.`).test(nativeScript)) {
-    throw new Error(`Template action "${action}" is not wired in the live combat window.`);
   }
 }
 
