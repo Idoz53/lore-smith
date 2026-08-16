@@ -112,3 +112,4 @@
 /* Permanent GM launcher beside Foundry's player list. */
 #lore-smith-launcher{position:fixed;z-index:100;width:44px;height:44px;min-width:44px;bottom:18px;display:grid;place-items:center;padding:0;background:linear-gradient(145deg,#7d281f,#401714);color:#ffe3a3;border:2px solid #d19a3d;border-radius:7px;box-shadow:0 3px 10px #000b,inset 0 0 0 1px #2b100e;cursor:pointer;text-shadow:0 1px 2px #000;transition:transform .12s ease,filter .12s ease}#lore-smith-launcher i{margin:0;font-size:21px}#lore-smith-launcher span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}#lore-smith-launcher:hover{filter:brightness(1.22);transform:translateY(-2px)}#lore-smith-launcher:focus-visible{outline:3px solid #ffd56b;outline-offset:2px}@media(max-width:700px){#lore-smith-launcher{bottom:70px}}
 [data-campaign-act-validation][hidden] { display: none !important; }
+[data-campaign-act-state][hidden] { display: none !important; }

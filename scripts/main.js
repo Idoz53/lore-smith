@@ -2160,19 +2160,22 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
     if (["campaign", "campaignMap"].includes(this.activeTab)) {
-      for (const field of this.element?.querySelectorAll(".ls-campaign-panel input, .ls-campaign-panel textarea, .ls-campaign-panel select") ?? []) {
-        const eventName = field.matches("select") ? "change" : "input";
-        field.addEventListener(eventName, () => {
-          void this.syncCampaignForm({ persist: false });
-          this.refreshCampaignActValidation();
-          clearTimeout(this.campaignSaveTimer);
-          this.campaignSaveTimer = setTimeout(() => void this.syncCampaignForm(), 300);
-        });
-        field.addEventListener("blur", async () => {
-          await this.syncCampaignForm();
-          this.refreshCampaignActValidation();
-        });
-      }
+      const campaignPanel = this.element?.querySelector(".ls-campaign-panel");
+      const syncLiveCampaignState = async (event) => {
+        if (!event.target?.matches?.("input, textarea, select")) return;
+        await this.syncCampaignForm({ persist: false });
+        this.refreshCampaignActValidation();
+        clearTimeout(this.campaignSaveTimer);
+        this.campaignSaveTimer = setTimeout(() => void this.syncCampaignForm(), 300);
+      };
+      campaignPanel?.addEventListener("input", syncLiveCampaignState);
+      campaignPanel?.addEventListener("change", syncLiveCampaignState);
+      campaignPanel?.addEventListener("focusout", async (event) => {
+        if (!event.target?.matches?.("input, textarea, select")) return;
+        clearTimeout(this.campaignSaveTimer);
+        await this.syncCampaignForm();
+        this.refreshCampaignActValidation();
+      });
       for (const select of this.element?.querySelectorAll('[name="campaignLength"], [name="campaignSessionCount"], [name="campaignStartLocation"], [data-campaign-act-field="estimatedSessions"]') ?? []) {
         select.addEventListener("change", async () => {
           await this.syncCampaignForm();
@@ -2794,7 +2797,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       await this.campaignSavePromise;
     } else {
       this.adventureCampaign = this.campaign; this.adventureCampaignStep = this.campaignStep;
-      await game.settings.set(MODULE_ID, "campaignBuilderDraft", JSON.stringify({ step: this.campaignStep, campaign: this.campaign }));
+      const serialized = JSON.stringify({ step: this.campaignStep, campaign: foundry.utils.deepClone(this.campaign) });
+      const persist = () => game.settings.set(MODULE_ID, "campaignBuilderDraft", serialized);
+      this.campaignSavePromise = this.campaignSavePromise.then(persist, persist);
+      await this.campaignSavePromise;
     }
   }
 
@@ -2827,6 +2833,31 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       return row;
     }));
     container.hidden = missing.length === 0;
+  }
+
+  applyCampaignActStatusToDom(status) {
+    if (this.activeTab !== "campaign") return;
+    for (const section of this.element?.querySelectorAll("[data-campaign-act-state]") ?? []) {
+      section.hidden = section.dataset.campaignActState !== status;
+    }
+    const labels = { draft: "Draft", ready: "Ready to play", completed: "Completed" };
+    const icons = { draft: "fa-pen-ruler", ready: "fa-dice-d20", completed: "fa-circle-check" };
+    const label = labels[status] ?? labels.draft;
+    const badge = this.element?.querySelector("[data-campaign-act-status-badge]");
+    if (badge) {
+      badge.classList.remove("draft", "ready", "completed");
+      badge.classList.add(status);
+      badge.innerHTML = `<i class="fa-solid ${icons[status] ?? icons.draft}"></i> ${label}`;
+    }
+    const heading = this.element?.querySelector("[data-campaign-act-heading-status]");
+    if (heading) heading.textContent = `Act ${heading.dataset.actRoman} · ${label}`;
+    const rail = this.element?.querySelector(`[data-campaign-act-nav="${this.campaignStep}"]`);
+    if (rail) {
+      rail.classList.toggle("ready", status === "ready");
+      rail.classList.toggle("completed", status === "completed");
+      const railStatus = rail.querySelector("em");
+      if (railStatus) railStatus.textContent = label;
+    }
   }
 
   async syncCampaignJournalAfterActTransition() {
@@ -3170,13 +3201,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   static async markCampaignActReady() {
-    await this.syncCampaignForm();
+    clearTimeout(this.campaignSaveTimer);
+    await this.syncCampaignForm({ persist: false });
     const act = this.campaign.acts[this.campaignStep];
     if (!act) return;
     const missing = campaignActMissingRequirements(this.campaign, act);
     if (missing.length) return ui.notifications.warn(`Before calling this act ready: ${missing.join(" ")}`);
     act.status = "ready";
     act.readyAt = new Date().toISOString();
+    this.applyCampaignActStatusToDom("ready");
     await this.saveCampaignDraft();
     ui.notifications.info(`Act ${act.number} is ready to play.`);
     await this.renderCampaignPreservingScroll();
@@ -3184,17 +3217,20 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   static async reopenCampaignAct() {
-    await this.syncCampaignForm();
+    clearTimeout(this.campaignSaveTimer);
+    await this.syncCampaignForm({ persist: false });
     const act = this.campaign.acts[this.campaignStep];
     if (!act || act.status === "completed") return;
     act.status = "draft";
     act.readyAt = "";
+    this.applyCampaignActStatusToDom("draft");
     await this.saveCampaignDraft();
     await this.renderCampaignPreservingScroll();
   }
 
   static async completeCampaignAct() {
-    await this.syncCampaignForm();
+    clearTimeout(this.campaignSaveTimer);
+    await this.syncCampaignForm({ persist: false });
     const act = this.campaign.acts[this.campaignStep];
     if (!act || act.status !== "ready") return ui.notifications.warn("Call the act ready before completing it.");
     if (!act.actualOutcome.trim()) return ui.notifications.warn("Write what actually happened before completing the act.");
@@ -3206,6 +3242,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!confirmed) return;
     act.status = "completed";
     act.completedAt = new Date().toISOString();
+    this.applyCampaignActStatusToDom("completed");
     if (this.campaign.acts[this.campaignStep + 1]) this.campaignStep += 1;
     await this.saveCampaignDraft();
     ui.notifications.info(`Act ${act.number} completed. The next act is unlocked.`);
