@@ -27,6 +27,9 @@ const nativeScript = await readFile(resolve(root, "scripts/native-workflows.js")
 const template = await readFile(resolve(root, "templates/dashboard.hbs"), "utf8");
 const creatureTemplate = await readFile(resolve(root, "templates/creature-builder.hbs"), "utf8");
 const itemTemplate = await readFile(resolve(root, "templates/item-builder.hbs"), "utf8");
+if (!script.includes("const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;")) {
+  throw new Error("Lore Smith dashboard is missing its Foundry ApplicationV2 runtime bindings.");
+}
 if (manifest.esmodules.some((path) => path.includes("journal-editor"))
   || nativeScript.includes('Hooks.on("renderJournalSheet"')
   || nativeScript.includes('Hooks.on("renderJournalPageSheet"')

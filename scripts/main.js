@@ -1,5 +1,6 @@
 const MODULE_ID = "lore-smith";
 const FLAG_SCOPE = MODULE_ID;
+const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 const ITEM_TYPE_LABELS = {
   action: "Action",
