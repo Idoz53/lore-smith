@@ -22,6 +22,7 @@ for (const relativePath of [...manifest.esmodules, ...manifest.styles, ...templa
 }
 
 const script = await readFile(resolve(root, "scripts/main.js"), "utf8");
+const launcherScript = await readFile(resolve(root, "scripts/launcher.js"), "utf8");
 const nativeScript = await readFile(resolve(root, "scripts/native-workflows.js"), "utf8");
 const template = await readFile(resolve(root, "templates/dashboard.hbs"), "utf8");
 const creatureTemplate = await readFile(resolve(root, "templates/creature-builder.hbs"), "utf8");
@@ -79,11 +80,17 @@ for (const requiredSceneControlFeature of [
   'name: "lore-smith"',
   "order: Object.keys(tools).length",
   "onChange: () => openLoreSmith()",
-  "mountLoreSmithLauncher",
-  'button.id = "lore-smith-launcher"',
-  'Hooks.on("canvasReady"',
 ]) {
   if (!script.includes(requiredSceneControlFeature)) throw new Error(`Foundry V13 Scene control integration missing: ${requiredSceneControlFeature}`);
+}
+for (const requiredLauncherFeature of [
+  'const BUTTON_ID = "lore-smith-launcher"',
+  "game.loreSmith?.open",
+  'Hooks.once("ready"',
+  'Hooks.on("canvasReady"',
+  'zIndex: "100000"',
+]) {
+  if (!launcherScript.includes(requiredLauncherFeature)) throw new Error(`Permanent Lore Smith launcher missing: ${requiredLauncherFeature}`);
 }
 if (/async saveWorldMapDraft\(\)[\s\S]{0,500}this\.worldMap\s*=\s*normalizeWorldMapBuild/.test(script)) {
   throw new Error("World Map Builder saves must not replace gesture state with a detached object graph.");
