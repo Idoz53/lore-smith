@@ -419,6 +419,20 @@ function ensureCampaignActChapters(act) {
   return act;
 }
 
+function campaignActMissingRequirements(campaign, act) {
+  const missing = [];
+  if (!campaign?.name?.trim()) missing.push("Name the campaign.");
+  if (!act?.name?.trim()) missing.push("Name this act.");
+  if (!act?.objective?.trim()) missing.push("Describe what this act must accomplish.");
+  if (!act?.startingSituation?.trim()) missing.push("Describe how the act begins.");
+  if (!act?.endingCondition?.trim()) missing.push("Describe what ends this act.");
+  for (const session of act?.chapters?.flatMap((chapter) => chapter.sessions ?? []) ?? []) {
+    if (!session.title?.trim()) missing.push(`Name Session ${session.number}.`);
+    if (!session.purpose?.trim()) missing.push(`Describe what Session ${session.number} should accomplish.`);
+  }
+  return missing;
+}
+
 function newCampaignAct(number = 1) {
   const defaults = [
     { name: "Introduction", objective: "", guidance: "Introduce the characters to the central problem, give them a reason to act, and end with a decision that carries them into the wider conflict." },
@@ -1754,18 +1768,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       chapterRoman: ["I", "II", "III"][linkedChapter.number - 1],
       sessionNumber: linkedActSession.number,
     } : null;
-    const campaignActValidation = [];
-    if (campaignCurrentAct) {
-      if (!this.campaign.name.trim()) campaignActValidation.push("Name the campaign.");
-      if (!campaignCurrentAct.name.trim()) campaignActValidation.push("Name this act.");
-      if (!campaignCurrentAct.objective.trim()) campaignActValidation.push("Describe what this act must accomplish.");
-      if (!campaignCurrentAct.startingSituation.trim()) campaignActValidation.push("Describe how the act begins.");
-      if (!campaignCurrentAct.endingCondition.trim()) campaignActValidation.push("Describe what ends this act.");
-      for (const session of campaignCurrentAct.chapters.flatMap((chapter) => chapter.sessions)) {
-        if (!session.title.trim()) campaignActValidation.push(`Name Session ${session.number}.`);
-        if (!session.purpose.trim()) campaignActValidation.push(`Describe what Session ${session.number} should accomplish.`);
-      }
-    }
+    const campaignActValidation = campaignCurrentAct ? campaignActMissingRequirements(this.campaign, campaignCurrentAct) : [];
     const campaignValidation = [];
     if (!this.campaign.name.trim()) campaignValidation.push("Name the campaign.");
     if (mapBuilderActive) {
@@ -2161,10 +2164,14 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         const eventName = field.matches("select") ? "change" : "input";
         field.addEventListener(eventName, () => {
           void this.syncCampaignForm({ persist: false });
+          this.refreshCampaignActValidation();
           clearTimeout(this.campaignSaveTimer);
           this.campaignSaveTimer = setTimeout(() => void this.syncCampaignForm(), 300);
         });
-        field.addEventListener("blur", () => void this.syncCampaignForm());
+        field.addEventListener("blur", async () => {
+          await this.syncCampaignForm();
+          this.refreshCampaignActValidation();
+        });
       }
       for (const select of this.element?.querySelectorAll('[name="campaignLength"], [name="campaignSessionCount"], [name="campaignStartLocation"], [data-campaign-act-field="estimatedSessions"]') ?? []) {
         select.addEventListener("change", async () => {
@@ -2804,7 +2811,31 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async renderCampaignPreservingScroll() {
     this.campaignScrollTop = this.element?.querySelector(".ls-main")?.scrollTop ?? this.campaignScrollTop;
-    await this.render();
+    await this.render({ force: true });
+  }
+
+  refreshCampaignActValidation() {
+    if (this.activeTab !== "campaign") return;
+    const container = this.element?.querySelector("[data-campaign-act-validation]");
+    const messages = container?.querySelector("[data-campaign-act-validation-messages]");
+    if (!container || !messages) return;
+    const act = this.campaign.acts?.[this.campaignStep];
+    const missing = act ? campaignActMissingRequirements(this.campaign, act) : [];
+    messages.replaceChildren(...missing.map((message) => {
+      const row = document.createElement("div");
+      row.textContent = message;
+      return row;
+    }));
+    container.hidden = missing.length === 0;
+  }
+
+  async syncCampaignJournalAfterActTransition() {
+    try {
+      await this.createCampaignJournal({ renderJournal: false });
+    } catch (error) {
+      console.error("Lore Smith | Campaign Journal update failed after an Act transition", error);
+      ui.notifications.warn("The Act was saved, but the campaign Journal could not be updated. You can update it later.");
+    }
   }
 
   async syncCampaignForm({ persist = true } = {}) {
@@ -3142,21 +3173,14 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.syncCampaignForm();
     const act = this.campaign.acts[this.campaignStep];
     if (!act) return;
-    const missing = [];
-    if (!this.campaign.name.trim()) missing.push("campaign name");
-    if (!act.name.trim()) missing.push("act name");
-    if (!act.objective.trim()) missing.push("act objective");
-    if (!act.startingSituation.trim()) missing.push("starting situation");
-    if (!act.endingCondition.trim()) missing.push("act ending condition");
-    const incompleteSessions = act.chapters.flatMap((chapter) => chapter.sessions).filter((session) => !session.title.trim() || !session.purpose.trim());
-    if (incompleteSessions.length) missing.push("a title and purpose for every planned session");
-    if (missing.length) return ui.notifications.warn(`Before calling this act ready, add: ${missing.join(", ")}.`);
+    const missing = campaignActMissingRequirements(this.campaign, act);
+    if (missing.length) return ui.notifications.warn(`Before calling this act ready: ${missing.join(" ")}`);
     act.status = "ready";
     act.readyAt = new Date().toISOString();
     await this.saveCampaignDraft();
-    await this.createCampaignJournal({ renderJournal: false });
     ui.notifications.info(`Act ${act.number} is ready to play.`);
     await this.renderCampaignPreservingScroll();
+    await this.syncCampaignJournalAfterActTransition();
   }
 
   static async reopenCampaignAct() {
@@ -3182,12 +3206,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!confirmed) return;
     act.status = "completed";
     act.completedAt = new Date().toISOString();
-    await this.saveCampaignDraft();
-    await this.createCampaignJournal({ renderJournal: false });
     if (this.campaign.acts[this.campaignStep + 1]) this.campaignStep += 1;
     await this.saveCampaignDraft();
     ui.notifications.info(`Act ${act.number} completed. The next act is unlocked.`);
     await this.renderCampaignPreservingScroll();
+    await this.syncCampaignJournalAfterActTransition();
   }
 
   static async removeCampaignActReference(_event, target) {

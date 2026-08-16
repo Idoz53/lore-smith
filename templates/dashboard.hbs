@@ -184,7 +184,7 @@
             </div>
             <section class="ls-structured-section ls-act-rewards"><header><div><strong>Rewards and important items</strong><small>Optional Foundry Item links for this act</small></div></header><div class="ls-document-drop" data-campaign-act-drop="items" data-campaign-act-id="{{id}}"><i class="fa-solid fa-gift"></i><span>Drop PF2e Items here</span></div><div class="ls-reference-list">{{#each itemRefs}}<div><img src="{{img}}"><span>{{name}}<small>{{type}}</small></span><button data-action="openLootDocument" data-uuid="{{uuid}}" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></button><button data-action="removeCampaignActReference" data-act-id="{{../id}}" data-kind="items" data-id="{{id}}"><i class="fa-solid fa-xmark"></i></button></div>{{/each}}</div></section>
             {{#if draft}}
-              {{#if ../campaignActValidation.length}}<div class="ls-warning"><strong>Before this act is ready:</strong>{{#each ../campaignActValidation}}<div>{{this}}</div>{{/each}}</div>{{/if}}
+              <div class="ls-warning" data-campaign-act-validation {{#unless ../campaignActValidation.length}}hidden{{/unless}}><strong>Before this act is ready:</strong><div data-campaign-act-validation-messages>{{#each ../campaignActValidation}}<div>{{this}}</div>{{/each}}</div></div>
               <div class="ls-act-primary-action"><button data-action="markCampaignActReady"><i class="fa-solid fa-dice-d20"></i> Call Act {{roman}} ready to play</button><small>You can reopen the draft until the act is completed.</small></div>
             {{/if}}
             {{#if ready}}
