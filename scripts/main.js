@@ -4104,8 +4104,10 @@ Hooks.on("getSceneControlButtons", (controls) => {
     name: "lore-smith",
     title: "Lore Smith",
     icon: "fa-solid fa-book-sparkles",
+    order: Object.keys(tools).length,
     button: true,
-    onClick: openLoreSmith,
+    visible: true,
+    onChange: () => openLoreSmith(),
   };
   if (Array.isArray(tools)) tools.push(tool);
   else tools["lore-smith"] = tool;

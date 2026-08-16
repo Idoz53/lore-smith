@@ -73,6 +73,15 @@ for (const requiredCampaignActTemplate of [
 ]) {
   if (!template.includes(requiredCampaignActTemplate)) throw new Error(`Act-based Campaign Builder template missing: ${requiredCampaignActTemplate}`);
 }
+
+for (const requiredSceneControlFeature of [
+  'Hooks.on("getSceneControlButtons"',
+  'name: "lore-smith"',
+  "order: Object.keys(tools).length",
+  "onChange: () => openLoreSmith()",
+]) {
+  if (!script.includes(requiredSceneControlFeature)) throw new Error(`Foundry V13 Scene control integration missing: ${requiredSceneControlFeature}`);
+}
 if (/async saveWorldMapDraft\(\)[\s\S]{0,500}this\.worldMap\s*=\s*normalizeWorldMapBuild/.test(script)) {
   throw new Error("World Map Builder saves must not replace gesture state with a detached object graph.");
 }
