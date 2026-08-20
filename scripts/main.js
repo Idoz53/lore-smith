@@ -94,11 +94,32 @@ function numeric(value, fallback = 0) {
 
 
 function newSessionLocation() {
-  return { id: foundry.utils.randomID(), name: "", image: "", purpose: "", sight: "", hearing: "", smell: "", touch: "", taste: "" };
+  return { id: foundry.utils.randomID(), name: "", image: "", imagePlacement: "right", imageSize: "medium", purpose: "", sight: "", hearing: "", smell: "", touch: "", taste: "" };
 }
 
 function newSessionNpc() {
-  return { id: foundry.utils.randomID(), name: "", image: "", role: "", motivation: "", secret: "" };
+  return {
+    id: foundry.utils.randomID(), name: "", description: "", image: "", imagePlacement: "right", imageSize: "medium",
+    actor: null, role: "", motivation: "", secret: "",
+  };
+}
+
+const SESSION_IMAGE_PLACEMENTS = [
+  { value: "right", label: "Right" },
+  { value: "left", label: "Left" },
+  { value: "above", label: "Full width above" },
+  { value: "below", label: "Full width below" },
+];
+
+const SESSION_IMAGE_SIZES = [
+  { value: "small", label: "Small" },
+  { value: "medium", label: "Medium" },
+  { value: "large", label: "Large" },
+];
+
+function sessionImageOptions(value, options, fallback) {
+  const selectedValue = options.some((option) => option.value === value) ? value : fallback;
+  return options.map((option) => ({ ...option, selected: option.value === selectedValue }));
 }
 
 const SESSION_MUSIC_MOMENTS = ["Opening", "Exploration", "Social scene", "Tension", "Combat", "Revelation", "Victory", "Defeat", "Closing", "Custom"];
@@ -121,6 +142,7 @@ function newSessionEncounter() {
 
 function newSessionPrep(campaignLink = null) {
   return {
+    id: foundry.utils.randomID(), journalId: "",
     campaignLink,
     title: "", goal: "", opening: "", ending: "",
     locations: [newSessionLocation(), newSessionLocation()],
@@ -142,20 +164,34 @@ function sessionBlock(title, value) {
   return content ? `<p><strong>${escapeHtml(title)}</strong></p><p>${sessionHtml(content)}</p>` : "";
 }
 
+function sessionImageFigure(entry, label) {
+  const image = String(entry.image ?? "").trim();
+  if (!image) return "";
+  const placement = SESSION_IMAGE_PLACEMENTS.some((option) => option.value === entry.imagePlacement) ? entry.imagePlacement : "right";
+  const size = SESSION_IMAGE_SIZES.some((option) => option.value === entry.imageSize) ? entry.imageSize : "medium";
+  return `<figure class="ls-session-journal-image ${placement} ${size}"><img src="${escapeHtml(image)}" alt="${escapeHtml(label)}"></figure>`;
+}
+
+function sessionImageEntry(entry, label, content) {
+  const figure = sessionImageFigure(entry, label);
+  if (!figure) return `<section class="ls-session-journal-entry">${content}</section>`;
+  if (entry.imagePlacement === "below") return `<section class="ls-session-journal-entry image-below"><div class="ls-session-journal-copy">${content}</div>${figure}</section>`;
+  return `<section class="ls-session-journal-entry image-${escapeHtml(entry.imagePlacement || "right")}">${figure}<div class="ls-session-journal-copy">${content}</div></section>`;
+}
+
 function sessionLocationPage(location) {
   const senses = [["Sight", location.sight], ["Hearing", location.hearing], ["Smell", location.smell], ["Touch", location.touch], ["Taste", location.taste]]
     .filter(([, value]) => String(value ?? "").trim())
     .map(([sense, value]) => `<p><strong>${sense}</strong> ${sessionHtml(value)}</p>`).join("");
-  const image = String(location.image ?? "").trim()
-    ? `<figure><img src="${escapeHtml(location.image)}" alt="${escapeHtml(location.name)}"></figure>` : "";
-  return `${image}${sessionBlock("Why this place matters", location.purpose)}${senses ? `<hr><p><strong>Description</strong></p>${senses}` : ""}` || "<p>Describe this location before play.</p>";
+  const content = `${sessionBlock("Why this place matters", location.purpose)}${senses ? `<hr><p><strong>Description</strong></p>${senses}` : ""}` || "<p>Describe this location before play.</p>";
+  return sessionImageEntry(location, location.name, content);
 }
 
 function sessionNpcPage(npc) {
-  const image = String(npc.image ?? "").trim()
-    ? `<figure><img src="${escapeHtml(npc.image)}" alt="${escapeHtml(npc.name)}"></figure>` : "";
-  return `${image}${sessionBlock("Role in the session", npc.role)}${sessionBlock("Motivation", npc.motivation)}${sessionBlock("Secret or complication", npc.secret)}`
-    || "<p>Add this NPC's role, motivation, and secrets here.</p>";
+  const actorLink = npc.actor?.uuid ? `<p class="ls-session-actor-link"><i class="fa-solid fa-user-shield"></i> @UUID[${npc.actor.uuid}]{${escapeHtml(npc.name || npc.actor.name || "Open Actor")}}</p>` : "";
+  const content = `${actorLink}${sessionBlock("Description", npc.description)}${sessionBlock("Role in the session", npc.role)}${sessionBlock("Motivation", npc.motivation)}${sessionBlock("Secret or complication", npc.secret)}`
+    || "<p>Add this NPC's description and role here.</p>";
+  return sessionImageEntry(npc, npc.name || npc.actor?.name || "NPC", content);
 }
 
 function sessionReferenceLink(reference) {
@@ -178,6 +214,19 @@ function normalizeSessionReference(reference = {}) {
 function normalizeSessionTextEntries(entries, fallback = "") {
   const source = Array.isArray(entries) && entries.length ? entries : [newSessionTextEntry(fallback)];
   return source.map((entry) => ({ ...newSessionTextEntry(), ...entry, id: entry.id || foundry.utils.randomID() }));
+}
+
+function normalizeSessionImageEntry(entry, factory) {
+  const normalized = { ...factory(), ...entry, id: entry?.id || foundry.utils.randomID() };
+  if (!SESSION_IMAGE_PLACEMENTS.some((option) => option.value === normalized.imagePlacement)) normalized.imagePlacement = "right";
+  if (!SESSION_IMAGE_SIZES.some((option) => option.value === normalized.imageSize)) normalized.imageSize = "medium";
+  return normalized;
+}
+
+function normalizeSessionNpc(npc = {}) {
+  const normalized = normalizeSessionImageEntry(npc, newSessionNpc);
+  normalized.actor = npc.actor?.uuid ? normalizeSessionReference(npc.actor) : null;
+  return normalized;
 }
 
 const CAMPAIGN_LENGTHS = {
@@ -255,11 +304,12 @@ function normalizeSessionPrep(stored = {}) {
     ...fresh,
     ...stored,
     campaignLink: stored.campaignLink && typeof stored.campaignLink === "object" ? { ...stored.campaignLink } : null,
+    id: stored.id || fresh.id,
     locations: storedLocations.length
-      ? storedLocations.map((location) => ({ ...newSessionLocation(), ...location, id: location.id || foundry.utils.randomID() }))
+      ? storedLocations.map((location) => normalizeSessionImageEntry(location, newSessionLocation))
       : fresh.locations,
     npcs: Array.isArray(stored.npcs)
-      ? stored.npcs.map((npc) => ({ ...newSessionNpc(), ...npc, id: npc.id || foundry.utils.randomID() }))
+      ? stored.npcs.map(normalizeSessionNpc)
       : fresh.npcs,
     musicCues: Array.isArray(stored.musicCues)
       ? stored.musicCues.map((cue) => ({ ...newSessionMusicCue(), ...cue, id: cue.id || foundry.utils.randomID() }))
@@ -1328,15 +1378,15 @@ function sessionMusicPage(prep) {
 
 function sessionJournalPages(prep) {
   const placeNames = prep.locations.map((location, index) => location.name.trim() || `Important Place ${index + 1}`);
-  const npcs = (prep.npcs ?? []).filter((npc) => [npc.name, npc.image, npc.role, npc.motivation, npc.secret].some((value) => String(value ?? "").trim()));
+  const npcs = (prep.npcs ?? []).filter((npc) => [npc.name, npc.description, npc.image, npc.actor?.uuid, npc.role, npc.motivation, npc.secret].some((value) => String(value ?? "").trim()));
   const npcNames = npcs.map((npc, index) => npc.name.trim() || `Important NPC ${index + 1}`);
   const overview = [
     sessionBlock("Main goal", prep.goal), sessionBlock("Opening situation", prep.opening), sessionBlock("Likely ending or cliffhanger", prep.ending),
     `<hr><p><strong>Important places</strong></p><ul>${placeNames.map((name) => `<li>Place — ${escapeHtml(name)}</li>`).join("")}</ul>`,
     "<p><em>See each place page for its description and table-ready details.</em></p>",
   ].filter(Boolean).join("");
-  const pages = [{ name: "Session Overview", content: overview }];
-  for (const [index, location] of prep.locations.entries()) pages.push({ name: `Place — ${placeNames[index]}`, content: sessionLocationPage({ ...location, name: placeNames[index] }) });
+  const pages = [{ key: "overview", name: "Session Overview", content: overview }];
+  for (const [index, location] of prep.locations.entries()) pages.push({ key: `place-${location.id}`, name: `Place — ${placeNames[index]}`, content: sessionLocationPage({ ...location, name: placeNames[index] }) });
   const peopleRows = (prep.peopleEntries ?? []).filter((entry) => entry.name?.trim() || entry.description?.trim())
     .map((entry) => `<li><strong>${sessionHtml(entry.name || "Unnamed person or faction")}</strong>${entry.description ? ` — ${sessionHtml(entry.description)}` : ""}</li>`).join("");
   const hazardRows = (prep.hazards ?? []).map((entry) => `<li>${sessionReferenceLink(entry)}</li>`).join("");
@@ -1350,15 +1400,42 @@ function sessionJournalPages(prep) {
     hazardRows ? `<p><strong>Hazards</strong></p><ul>${hazardRows}</ul>` : "",
     encounterRows ? `<p><strong>Encounters</strong></p><ul>${encounterRows}</ul>` : "",
   ].filter(Boolean).join("") || "<p>Who can help, hinder, or surprise the party?</p>";
-  pages.push({ name: "People, Hazards & Encounters", content: peopleOverview });
-  for (const [index, npc] of npcs.entries()) pages.push({ name: `NPC - ${npcNames[index]}`, content: sessionNpcPage({ ...npc, name: npcNames[index] }) });
-  pages.push({ name: "Music & Atmosphere", content: sessionMusicPage(prep) });
+  pages.push({ key: "people", name: "People, Hazards & Encounters", content: peopleOverview });
+  for (const [index, npc] of npcs.entries()) pages.push({ key: `npc-${npc.id}`, name: `NPC - ${npcNames[index]}`, content: sessionNpcPage({ ...npc, name: npcNames[index] }) });
+  pages.push({ key: "music", name: "Music & Atmosphere", content: sessionMusicPage(prep) });
   const rewardRows = (prep.rewardItems ?? []).map((entry) => sessionReferenceLink(entry));
   pages.push(
-    { name: "Scenes, Clues & Rewards", content: `${sessionList("Likely scenes", (prep.sceneEntries ?? []).map((entry) => entry.text))}${sessionList("Clues", (prep.clueEntries ?? []).map((entry) => entry.text))}${sessionList("Rewards", rewardRows)}${sessionList("Consequences", (prep.consequenceEntries ?? []).map((entry) => entry.text))}${sessionList("Changes", (prep.changeEntries ?? []).map((entry) => entry.text))}` || "<p>Prepare situations, clues, and consequences here.</p>" },
-    { name: "GM Reminders & Secrets", content: sessionBlock("GM-only notes", prep.reminders) || "<p>Private reminders, secrets, and contingencies.</p>" },
+    { key: "scenes", name: "Scenes, Clues & Rewards", content: `${sessionList("Likely scenes", (prep.sceneEntries ?? []).map((entry) => entry.text))}${sessionList("Clues", (prep.clueEntries ?? []).map((entry) => entry.text))}${sessionList("Rewards", rewardRows)}${sessionList("Consequences", (prep.consequenceEntries ?? []).map((entry) => entry.text))}${sessionList("Changes", (prep.changeEntries ?? []).map((entry) => entry.text))}` || "<p>Prepare situations, clues, and consequences here.</p>" },
+    { key: "reminders", name: "GM Reminders & Secrets", content: sessionBlock("GM-only notes", prep.reminders) || "<p>Private reminders, secrets, and contingencies.</p>" },
   );
   return pages;
+}
+
+async function syncSessionJournalPages(journal, pages) {
+  const desiredKeys = new Set(pages.map((page) => page.key));
+  const byKey = new Map(journal.pages.filter((page) => page.getFlag(FLAG_SCOPE, "sessionPrepPageKey"))
+    .map((page) => [page.getFlag(FLAG_SCOPE, "sessionPrepPageKey"), page]));
+  const claimed = new Set();
+  const creates = [];
+  const updates = [];
+  const htmlFormat = CONST.JOURNAL_ENTRY_PAGE_FORMATS?.HTML ?? 1;
+  for (const [index, page] of pages.entries()) {
+    const existing = byKey.get(page.key) ?? journal.pages.find((candidate) => !claimed.has(candidate.id) && candidate.name === page.name);
+    const data = {
+      name: page.name, type: "text", text: { content: page.content, format: htmlFormat }, sort: (index + 1) * 100000,
+      flags: { [FLAG_SCOPE]: { sessionPrepPage: true, sessionPrepPageKey: page.key } },
+    };
+    if (existing) {
+      claimed.add(existing.id);
+      updates.push({ _id: existing.id, ...data });
+    } else creates.push(data);
+  }
+  if (updates.length) await journal.updateEmbeddedDocuments("JournalEntryPage", updates);
+  if (creates.length) await journal.createEmbeddedDocuments("JournalEntryPage", creates);
+  const stale = journal.pages
+    .filter((page) => page.getFlag(FLAG_SCOPE, "sessionPrepPage") && !desiredKeys.has(page.getFlag(FLAG_SCOPE, "sessionPrepPageKey")))
+    .map((page) => page.id);
+  if (stale.length) await journal.deleteEmbeddedDocuments("JournalEntryPage", stale);
 }
 
 const SESSION_PREP_SECTION_LABELS = new Set([
@@ -1408,9 +1485,12 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       addLocation: LoreSmithDashboard.addLocation,
       removeLocation: LoreSmithDashboard.removeLocation,
       browseLocationImage: LoreSmithDashboard.browseLocationImage,
+      removeLocationImage: LoreSmithDashboard.removeLocationImage,
       addSessionNpc: LoreSmithDashboard.addSessionNpc,
       removeSessionNpc: LoreSmithDashboard.removeSessionNpc,
       browseSessionNpcImage: LoreSmithDashboard.browseSessionNpcImage,
+      removeSessionNpcImage: LoreSmithDashboard.removeSessionNpcImage,
+      removeSessionNpcActor: LoreSmithDashboard.removeSessionNpcActor,
       addMusicCue: LoreSmithDashboard.addMusicCue,
       removeMusicCue: LoreSmithDashboard.removeMusicCue,
       browseMusicAudio: LoreSmithDashboard.browseMusicAudio,
@@ -1529,6 +1609,20 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   _worldAtlasPromise = null;
   dashboardFullscreen = false;
 
+  resolveSessionJournal() {
+    const direct = game.journal.get(this.sessionPrep.journalId);
+    if (direct?.getFlag(FLAG_SCOPE, "sessionPrep")) return direct;
+    const link = this.sessionPrep.campaignLink;
+    if (link) {
+      const act = this.adventureCampaign.acts?.find((entry) => entry.id === link.actId);
+      const chapter = act?.chapters?.find((entry) => entry.id === link.chapterId);
+      const session = chapter?.sessions?.find((entry) => entry.id === link.sessionId);
+      const linked = game.journal.get(session?.journalId);
+      if (linked?.getFlag(FLAG_SCOPE, "sessionPrep")) return linked;
+    }
+    return game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "sessionPrepId") === this.sessionPrep.id) ?? null;
+  }
+
   async getNotebook(create = false) {
     let journal = game.journal.find((entry) => entry.getFlag(FLAG_SCOPE, "notebook"));
     if (!journal) {
@@ -1553,33 +1647,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         const stored = rawDraft ? JSON.parse(rawDraft) : null;
         const storedPrep = stored?.prep ?? stored;
         if (storedPrep && typeof storedPrep === "object") {
-          const fresh = newSessionPrep();
-          const storedLocations = Array.isArray(storedPrep.locations) ? storedPrep.locations : [];
-          this.sessionPrep = {
-            ...fresh,
-            ...storedPrep,
-            locations: storedLocations.length
-              ? storedLocations.map((location) => ({ ...newSessionLocation(), ...location, id: location.id || foundry.utils.randomID() }))
-              : fresh.locations,
-            npcs: Array.isArray(storedPrep.npcs)
-              ? storedPrep.npcs.map((npc) => ({ ...newSessionNpc(), ...npc, id: npc.id || foundry.utils.randomID() }))
-              : fresh.npcs,
-            musicCues: Array.isArray(storedPrep.musicCues)
-              ? storedPrep.musicCues.map((cue) => ({ ...newSessionMusicCue(), ...cue, id: cue.id || foundry.utils.randomID() }))
-              : fresh.musicCues,
-            peopleEntries: Array.isArray(storedPrep.peopleEntries)
-              ? storedPrep.peopleEntries.map((entry) => ({ ...newSessionPeopleEntry(), ...entry, id: entry.id || foundry.utils.randomID() }))
-              : [newSessionPeopleEntry(storedPrep.people ?? "")],
-            hazards: Array.isArray(storedPrep.hazards) ? storedPrep.hazards.map(normalizeSessionReference) : [],
-            encounterEntries: Array.isArray(storedPrep.encounterEntries)
-              ? storedPrep.encounterEntries.map((entry) => ({ ...newSessionEncounter(), ...entry, id: entry.id || foundry.utils.randomID(), actors: (entry.actors ?? []).map(normalizeSessionReference) }))
-              : [newSessionEncounter()],
-            sceneEntries: normalizeSessionTextEntries(storedPrep.sceneEntries, storedPrep.scenes ?? ""),
-            clueEntries: normalizeSessionTextEntries(storedPrep.clueEntries),
-            rewardItems: Array.isArray(storedPrep.rewardItems) ? storedPrep.rewardItems.map(normalizeSessionReference) : [],
-            consequenceEntries: normalizeSessionTextEntries(storedPrep.consequenceEntries, storedPrep.rewards ?? ""),
-            changeEntries: normalizeSessionTextEntries(storedPrep.changeEntries),
-          };
+          this.sessionPrep = normalizeSessionPrep(storedPrep);
           this.sessionStep = Math.max(0, Math.min(5, Number(stored?.step) || 0));
         }
       } catch (error) {
@@ -1666,8 +1734,16 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         .sort((left, right) => String(right.getFlag(FLAG_SCOPE, "createdAt") ?? "").localeCompare(String(left.getFlag(FLAG_SCOPE, "createdAt") ?? "")))[0];
       this.lastSessionJournalId = latestSession?.id ?? null;
     }
-    const locationViews = this.sessionPrep.locations.map((location, index) => ({ ...location, number: index + 1, canRemove: this.sessionPrep.locations.length > 2 }));
-    const npcViews = (this.sessionPrep.npcs ?? []).map((npc, index) => ({ ...npc, number: index + 1 }));
+    const locationViews = this.sessionPrep.locations.map((location, index) => ({
+      ...location, number: index + 1, canRemove: this.sessionPrep.locations.length > 2,
+      placementOptions: sessionImageOptions(location.imagePlacement, SESSION_IMAGE_PLACEMENTS, "right"),
+      sizeOptions: sessionImageOptions(location.imageSize, SESSION_IMAGE_SIZES, "medium"),
+    }));
+    const npcViews = (this.sessionPrep.npcs ?? []).map((npc, index) => ({
+      ...npc, number: index + 1,
+      placementOptions: sessionImageOptions(npc.imagePlacement, SESSION_IMAGE_PLACEMENTS, "right"),
+      sizeOptions: sessionImageOptions(npc.imageSize, SESSION_IMAGE_SIZES, "medium"),
+    }));
     const playlists = [...game.playlists.contents].sort((left, right) => left.name.localeCompare(right.name));
     const musicCueViews = (this.sessionPrep.musicCues ?? []).map((cue, index) => ({
       ...cue,
@@ -1881,6 +1957,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       sessionValidation,
       canSessionBack: this.sessionStep > 0,
       lastSessionJournalId: this.lastSessionJournalId,
+      sessionJournalAvailable: Boolean(this.resolveSessionJournal()),
       hasFoundryPlaylists: game.playlists.size > 0,
       peopleEntries: (this.sessionPrep.peopleEntries ?? []).map((entry, index) => ({ ...entry, number: index + 1 })),
       hazards: this.sessionPrep.hazards ?? [],
@@ -2451,9 +2528,14 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
           clearTimeout(this.sessionSaveTimer);
           this.sessionSaveTimer = setTimeout(() => void this.syncSessionPrepForm(), 350);
         });
+        field.addEventListener("blur", () => {
+          clearTimeout(this.sessionSaveTimer);
+          void this.syncSessionPrepForm();
+        });
       }
-      for (const select of this.element?.querySelectorAll('[name="musicPlaylist"], [name="encounterType"]') ?? []) {
+      for (const select of this.element?.querySelectorAll('[name="musicPlaylist"], [name="encounterType"], [name="locationImagePlacement"], [name="locationImageSize"], [name="npcImagePlacement"], [name="npcImageSize"]') ?? []) {
         select.addEventListener("change", async () => {
+          clearTimeout(this.sessionSaveTimer);
           await this.syncSessionPrepForm();
           if (select.name === "musicPlaylist") {
             const card = select.closest("[data-session-music-id]");
@@ -2563,17 +2645,30 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   async handleSessionDrop(event, zone) {
     event.preventDefault();
     zone.classList.remove("dragover");
+    await this.syncSessionPrepForm();
     let data;
-    try { data = JSON.parse(event.dataTransfer?.getData("text/plain") || "{}"); } catch { return; }
+    try {
+      const reader = foundry.applications?.ux?.TextEditor?.implementation?.getDragEventData;
+      data = reader ? reader(event) : JSON.parse(event.dataTransfer?.getData("text/plain") || "{}");
+    } catch {
+      try { data = JSON.parse(event.dataTransfer?.getData("text/plain") || "{}"); } catch { return; }
+    }
     const uuid = data.uuid || (data.type && data.id ? `${data.type}.${data.id}` : "");
     const document = uuid ? await fromUuid(uuid) : null;
     if (!document) return ui.notifications.warn("Lore Smith could not read that dropped Foundry document.");
     const kind = zone.dataset.sessionDropKind;
+    if (kind === "npc" && document.documentName !== "Actor") return ui.notifications.warn("Drop a Foundry Actor here.");
     if (kind === "hazard" && (document.documentName !== "Actor" || document.type !== "hazard")) return ui.notifications.warn("Drop a PF2e Hazard actor here.");
     if (kind === "encounter" && document.documentName !== "Actor") return ui.notifications.warn("Drop a PF2e Actor here.");
     if (kind === "reward" && document.documentName !== "Item") return ui.notifications.warn("Drop a PF2e Item here.");
     const reference = normalizeSessionReference({ uuid: document.uuid, name: document.name, img: document.img, type: document.type });
-    if (kind === "hazard") {
+    if (kind === "npc") {
+      const npc = (this.sessionPrep.npcs ?? []).find((entry) => entry.id === zone.dataset.parentId);
+      if (!npc) return;
+      npc.actor = reference;
+      if (!npc.name.trim()) npc.name = document.name;
+      if (!npc.image.trim()) npc.image = document.img ?? "";
+    } else if (kind === "hazard") {
       // Each drop is an encounter instance. The same compendium hazard can therefore
       // appear more than once while retaining a unique local id for individual removal.
       this.sessionPrep.hazards.push(reference);
@@ -2652,14 +2747,23 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (cards.length) this.sessionPrep.locations = cards.map((card) => {
       const id = card.dataset.locationId;
       const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
-      return { ...previous.get(id), id, name: field("locationName"), image: field("locationImage"), purpose: field("locationPurpose"), sight: field("locationSight"), hearing: field("locationHearing"), smell: field("locationSmell"), touch: field("locationTouch"), taste: field("locationTaste") };
+      return {
+        ...previous.get(id), id, name: field("locationName"), image: field("locationImage"),
+        imagePlacement: field("locationImagePlacement") || "right", imageSize: field("locationImageSize") || "medium",
+        purpose: field("locationPurpose"), sight: field("locationSight"), hearing: field("locationHearing"),
+        smell: field("locationSmell"), touch: field("locationTouch"), taste: field("locationTaste"),
+      };
     });
     const previousNpcs = new Map((this.sessionPrep.npcs ?? []).map((npc) => [npc.id, npc]));
     const npcCards = [...root.querySelectorAll("[data-session-npc-id]")];
     if (npcCards.length) this.sessionPrep.npcs = npcCards.map((card) => {
       const id = card.dataset.sessionNpcId;
       const field = (name) => card.querySelector(`[name="${name}"]`)?.value.trim() ?? "";
-      return { ...previousNpcs.get(id), id, name: field("npcName"), image: field("npcImage"), role: field("npcRole"), motivation: field("npcMotivation"), secret: field("npcSecret") };
+      return {
+        ...previousNpcs.get(id), id, name: field("npcName"), description: field("npcDescription"), image: field("npcImage"),
+        imagePlacement: field("npcImagePlacement") || "right", imageSize: field("npcImageSize") || "medium",
+        role: field("npcRole"), motivation: field("npcMotivation"), secret: field("npcSecret"),
+      };
     });
     const previousMusicCues = new Map((this.sessionPrep.musicCues ?? []).map((cue) => [cue.id, cue]));
     const musicCards = [...root.querySelectorAll("[data-session-music-id]")];
@@ -3180,6 +3284,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     const link = { actId: act.id, chapterId: chapter.id, sessionId: session.id };
     const prep = session.prep ? normalizeSessionPrep(session.prep) : newSessionPrep(link);
     prep.campaignLink = link;
+    prep.journalId = String(session.journalId ?? prep.journalId ?? "");
     if (!prep.title.trim()) prep.title = session.title.trim() || `${this.adventureCampaign.name || "Campaign"} — Act ${act.number}, Session ${session.number}`;
     if (!prep.goal.trim()) prep.goal = session.purpose.trim();
     this.sessionPrep = prep;
@@ -3680,12 +3785,20 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.syncSessionPrepForm();
     const location = this.sessionPrep.locations.find((entry) => entry.id === target.dataset.id);
     if (!location) return;
-    new FilePicker({ type: "imagevideo", current: location.image, callback: async (path) => {
+    new FilePicker({ type: "image", current: location.image, callback: async (path) => {
       location.image = path;
       await this.saveSessionPrepDraft();
-      const input = this.element?.querySelector(`[data-location-id="${location.id}"] [name="locationImage"]`);
-      if (input) input.value = path;
+      await this.renderSessionPreservingScroll();
     } }).browse();
+  }
+
+  static async removeLocationImage(_event, target) {
+    await this.syncSessionPrepForm();
+    const location = this.sessionPrep.locations.find((entry) => entry.id === target.dataset.id);
+    if (!location) return;
+    location.image = "";
+    await this.saveSessionPrepDraft();
+    await this.renderSessionPreservingScroll();
   }
 
   static async addSessionNpc() {
@@ -3707,18 +3820,29 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.syncSessionPrepForm();
     const npc = (this.sessionPrep.npcs ?? []).find((entry) => entry.id === target.dataset.id);
     if (!npc) return;
-    new FilePicker({ type: "imagevideo", current: npc.image, callback: async (path) => {
+    new FilePicker({ type: "image", current: npc.image, callback: async (path) => {
       npc.image = path;
       await this.saveSessionPrepDraft();
-      const card = this.element?.querySelector(`[data-session-npc-id="${npc.id}"]`);
-      const input = card?.querySelector('[name="npcImage"]');
-      if (input) input.value = path;
-      const portrait = card?.querySelector(".ls-session-npc-portrait");
-      if (portrait) {
-        portrait.replaceChildren();
-        const image = document.createElement("img"); image.src = path; image.alt = npc.name || "NPC"; portrait.append(image);
-      }
+      await this.renderSessionPreservingScroll();
     } }).browse();
+  }
+
+  static async removeSessionNpcImage(_event, target) {
+    await this.syncSessionPrepForm();
+    const npc = (this.sessionPrep.npcs ?? []).find((entry) => entry.id === target.dataset.id);
+    if (!npc) return;
+    npc.image = "";
+    await this.saveSessionPrepDraft();
+    await this.renderSessionPreservingScroll();
+  }
+
+  static async removeSessionNpcActor(_event, target) {
+    await this.syncSessionPrepForm();
+    const npc = (this.sessionPrep.npcs ?? []).find((entry) => entry.id === target.dataset.id);
+    if (!npc) return;
+    npc.actor = null;
+    await this.saveSessionPrepDraft();
+    await this.renderSessionPreservingScroll();
   }
 
   static async addMusicCue() {
@@ -3816,13 +3940,17 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       console.error("Lore Smith | Could not create the session Playlist.", error);
       return ui.notifications.error("Lore Smith could not add the session music to Foundry. Check the selected audio files and try again.");
     }
-    const journal = await JournalEntry.create({
-      name: this.sessionPrep.title.trim(),
-      flags: { [FLAG_SCOPE]: { sessionPrep: true, sessionPrepVersion: 3, createdAt: new Date().toISOString(), sessionGoal: this.sessionPrep.goal.trim(), campaignLink: this.sessionPrep.campaignLink ?? null } },
-      pages: [],
-    });
-    const pages = sessionJournalPages(this.sessionPrep).map((page, index) => ({ name: page.name, type: "text", text: { content: page.content }, sort: (index + 1) * 100000 }));
-    await journal.createEmbeddedDocuments("JournalEntryPage", pages);
+    let journal = this.resolveSessionJournal();
+    const updating = Boolean(journal);
+    const flags = {
+      sessionPrep: true, sessionPrepVersion: 4, sessionPrepId: this.sessionPrep.id,
+      createdAt: journal?.getFlag(FLAG_SCOPE, "createdAt") ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(), sessionGoal: this.sessionPrep.goal.trim(), campaignLink: this.sessionPrep.campaignLink ?? null,
+    };
+    if (journal) await journal.update({ name: this.sessionPrep.title.trim(), [`flags.${FLAG_SCOPE}`]: flags });
+    else journal = await JournalEntry.create({ name: this.sessionPrep.title.trim(), flags: { [FLAG_SCOPE]: flags }, pages: [] });
+    this.sessionPrep.journalId = journal.id;
+    await syncSessionJournalPages(journal, sessionJournalPages(this.sessionPrep));
     this.lastSessionJournalId = journal.id;
     this.activeNoteId = null;
     await this.syncLinkedCampaignSession({ journalId: journal.id });
@@ -3836,7 +3964,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       if (actIndex >= 0) this.campaignStep = this.adventureCampaignStep = actIndex;
       await this.saveCampaignDraft();
     }
-    ui.notifications.info(`Created session Journal: ${journal.name}.`);
+    ui.notifications.info(`${updating ? "Updated" : "Created"} session Journal: ${journal.name}.`);
     journal.sheet.render(true);
     await this.render();
   }

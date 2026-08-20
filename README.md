@@ -50,8 +50,13 @@ The module provides:
   dropped hazards and encounter actors, scenes, clues, rewards, consequences, and GM
   reminders into one linked, editable Foundry Journal, with an automatically
   saved draft that survives navigation and reopening the dashboard;
-- image-backed NPC prep cards with roles, motivations, and secrets, generated as
-  linked portrait pages inside the finished session Journal;
+- image-backed NPC prep cards with descriptions, roles, motivations, secrets,
+  optional native Actor UUID links, and independently removable portraits;
+  portrait size and left, right, above, or below placement are preserved per NPC
+  and rendered responsively in the generated Session Journal;
+- per-location image size and placement controls using the same responsive
+  Session Journal layout, with native Foundry file selection and immediate draft
+  saving that preserves the current form position;
 - a native NPC voice-reference studio available from every PF2e NPC sheet, with
   microphone selection, record, pause, resume, stop, preview-before-upload,
   multiple named samples, a primary voice, playback, downloads, and notes for
