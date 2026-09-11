@@ -138,15 +138,20 @@
             <div class="ls-act-heading"><div><div class="ls-step-kicker" data-campaign-act-heading-status data-act-roman="{{roman}}">Act {{roman}} · {{statusLabel}}</div><h2>{{#if name}}{{name}}{{else}}Untitled Act{{/if}}</h2></div><span class="ls-act-status {{status}}" data-campaign-act-status-badge><i class="fa-solid {{#if completed}}fa-circle-check{{else}}{{#if ready}}fa-dice-d20{{else}}fa-pen-ruler{{/if}}{{/if}}"></i> {{statusLabel}}</span></div>
             <aside class="ls-campaign-guidance"><strong>Guidance for this act</strong><p>{{guidance}}</p>{{#if previousCarryForward}}<p><strong>Carried forward from the previous act:</strong> {{previousCarryForward}}</p>{{/if}}</aside>
             <div class="ls-session-form ls-act-core">
-              <label>Act name<input data-campaign-act-field="name" value="{{name}}" placeholder="Introduction, The Broken Alliance, Final Reckoning..."></label>
-              <label>Expected sessions<input type="number" min="3" max="100" data-campaign-act-field="estimatedSessions" value="{{estimatedSessions}}"></label>
+              <label class="wide">Act name<input data-campaign-act-field="name" value="{{name}}" placeholder="Introduction, The Broken Alliance, Final Reckoning..."></label>
               <label class="wide">What must this act accomplish?<textarea rows="3" data-campaign-act-field="objective" placeholder="The playable purpose of this part of the campaign.">{{objective}}</textarea></label>
               <label class="wide">How does this act begin?<textarea rows="3" data-campaign-act-field="startingSituation" placeholder="Where the party is, what has just changed, and what demands attention.">{{startingSituation}}</textarea></label>
               <label>Important locations<textarea rows="3" data-campaign-act-field="locations" placeholder="Only the places this act is likely to use.">{{locations}}</textarea></label>
               <label>People and factions<textarea rows="3" data-campaign-act-field="people" placeholder="Who wants what during this act?">{{people}}</textarea></label>
             </div>
             <section class="ls-act-chapter-planner">
+              <div class="ls-act-session-toggle-row">
+                <button type="button" class="ls-act-session-toggle" data-action="toggleCampaignSessionPlanner" aria-expanded="{{#if sessionPlannerOpen}}true{{else}}false{{/if}}" aria-controls="ls-act-sessions-{{id}}"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i> Session x Session</button>
+                <small>Optional: plan this act by chapter and session.</small>
+              </div>
+              <div id="ls-act-sessions-{{id}}" class="ls-act-session-planner-content" data-campaign-session-planner {{#unless sessionPlannerOpen}}hidden{{/unless}}>
               <header><div><strong>Act chapters and sessions</strong><small>The planned sessions are distributed across Introduction, Escalation, and Resolution.</small></div></header>
+              <div class="ls-session-form"><label>Expected sessions<input type="number" min="3" max="100" data-campaign-act-field="estimatedSessions" value="{{estimatedSessions}}"></label></div>
               <div class="ls-act-chapter-stack">
                 {{#each chapters}}
                   <article class="ls-act-chapter">
@@ -168,6 +173,7 @@
                     </div>
                   </article>
                 {{/each}}
+              </div>
               </div>
             </section>
             <div class="ls-act-reference-grid">

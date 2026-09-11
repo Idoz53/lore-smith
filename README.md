@@ -7,7 +7,12 @@ The module provides:
 
 - a progressive, act-based Campaign Builder: prepare Act I, call it ready to
   play, record what actually happened, complete it, and unlock Act II without
-  having to write the entire campaign in advance; every Act is divided into
+  having to write the entire campaign in advance; an optional **Session x Session**
+  button expands each Act's chapter and session planner, collapsed by default;
+  existing preparation is preserved, and the planner stays open or closed for
+  each Act while navigating the dashboard; sessions are not required to call an
+  Act ready, and unused session placeholders are omitted from its Journal;
+  every Act's optional planner is divided into
   Chapter I (Introduction), Chapter II (Escalation), and Chapter III
   (Resolution), with its planned sessions distributed across those chapters;
   every individual session links directly to the full Session Prep wizard and
