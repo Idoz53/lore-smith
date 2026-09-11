@@ -476,10 +476,6 @@ function campaignActMissingRequirements(campaign, act) {
   if (!act?.objective?.trim()) missing.push("Describe what this act must accomplish.");
   if (!act?.startingSituation?.trim()) missing.push("Describe how the act begins.");
   if (!act?.endingCondition?.trim()) missing.push("Describe what ends this act.");
-  for (const session of act?.chapters?.flatMap((chapter) => chapter.sessions ?? []) ?? []) {
-    if (!session.title?.trim()) missing.push(`Name Session ${session.number}.`);
-    if (!session.purpose?.trim()) missing.push(`Describe what Session ${session.number} should accomplish.`);
-  }
   return missing;
 }
 
@@ -1097,16 +1093,16 @@ function adventureCampaignJournalPages(campaign) {
     const status = act.status === "completed" ? "Completed" : act.status === "ready" ? "Ready to play" : "Draft";
     const chapterContent = act.chapters.map((chapter) => {
       const roman = ["I", "II", "III"][chapter.number - 1] ?? chapter.number;
-      const sessions = chapter.sessions.map((session) => {
+      const sessions = chapter.sessions.filter((session) => session.title?.trim() || session.purpose?.trim() || session.prep || session.journalId).map((session) => {
         const journal = game.journal.get(session.journalId);
         const link = journal ? `<p>${sessionReferenceLink({ uuid: journal.uuid, name: "Open prepared session Journal" })}</p>` : "";
         return `<section><h4>Session ${session.number}${session.title ? ` — ${escapeHtml(session.title)}` : ""}</h4>${sessionBlock("Purpose", session.purpose)}${link}</section>`;
       }).join("");
-      return `<section><h3>Chapter ${roman} — ${escapeHtml(chapter.name)}</h3><p>${escapeHtml(chapter.guidance)}</p>${sessions}</section>`;
+      return sessions ? `<section><h3>Chapter ${roman} — ${escapeHtml(chapter.name)}</h3><p>${escapeHtml(chapter.guidance)}</p>${sessions}</section>` : "";
     }).join("");
-    const content = `<p><strong>Status</strong> ${status}</p><p><strong>Estimated sessions</strong> ${Number(act.estimatedSessions) || 1}</p>
+    const content = `<p><strong>Status</strong> ${status}</p>${chapterContent ? `<p><strong>Estimated sessions</strong> ${Number(act.estimatedSessions) || 1}</p>` : ""}
       ${sessionBlock("Act objective", act.objective)}${sessionBlock("Starting situation", act.startingSituation)}
-      <h2>Chapters and sessions</h2>${chapterContent}
+      ${chapterContent ? `<h2>Chapters and sessions</h2>${chapterContent}` : ""}
       ${sessionBlock("Important locations", act.locations)}${sessionBlock("People and factions", act.people)}
       ${referenceList("Linked actors", act.actorRefs)}${referenceList("Linked locations and notes", act.journalRefs)}
       ${sessionBlock("Developments and pressure", act.developments)}${sessionBlock("Clues and revelations", act.clues)}
@@ -1535,6 +1531,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       addCampaignCharacter: LoreSmithDashboard.addCampaignCharacter,
       removeCampaignCharacter: LoreSmithDashboard.removeCampaignCharacter,
       addCampaignAct: LoreSmithDashboard.addCampaignAct,
+      toggleCampaignSessionPlanner: LoreSmithDashboard.toggleCampaignSessionPlanner,
       prepareCampaignSession: LoreSmithDashboard.prepareCampaignSession,
       openCampaignSessionJournal: LoreSmithDashboard.openCampaignSessionJournal,
       backToCampaignAct: LoreSmithDashboard.backToCampaignAct,
@@ -1595,6 +1592,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   campaignSaveRevision = 0;
   campaignDeletedLocationIds = new Set();
   campaignScrollTop = 0;
+  campaignSessionPlannerOpen = new Set();
   campaignMapTool = "";
   worldMap = newWorldMapBuild();
   worldMapDraftLoaded = false;
@@ -1832,6 +1830,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       }));
       return {
         ...act, index, roman, locked, active: index === this.campaignStep,
+        sessionPlannerOpen: this.campaignSessionPlannerOpen.has(act.id),
         chapters,
         draft: act.status === "draft", ready: act.status === "ready", completed: act.status === "completed",
         previousCarryForward: this.campaign.acts[index - 1]?.carryForward ?? "",
@@ -3299,6 +3298,17 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     const journal = game.journal.get(target.dataset.journalId);
     if (!journal) return ui.notifications.warn("This session Journal no longer exists.");
     journal.sheet.render(true);
+  }
+
+  static toggleCampaignSessionPlanner(_event, target) {
+    const actId = target.closest("[data-campaign-act-id]")?.dataset.campaignActId;
+    const panel = target.closest(".ls-act-chapter-planner")?.querySelector("[data-campaign-session-planner]");
+    if (!actId || !panel) return;
+    const open = !this.campaignSessionPlannerOpen.has(actId);
+    if (open) this.campaignSessionPlannerOpen.add(actId);
+    else this.campaignSessionPlannerOpen.delete(actId);
+    panel.hidden = !open;
+    target.setAttribute("aria-expanded", String(open));
   }
 
   static async backToCampaignAct() {
