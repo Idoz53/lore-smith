@@ -5,7 +5,19 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- a progressive, act-based Campaign Builder: prepare Act I, call it ready to
+- a Campaign Builder with **Campaign Board**, **Prepare next game**, and
+  **After play** tabs. Track active, dormant, and resolved situations; connect
+  reusable NPCs, places, factions, clues, encounters, rewards, and character
+  hooks; drag existing Foundry documents onto their resource records;
+- preparation gathered from selected situations and their shared resources,
+  with quick table notes Journals and optional access to the detailed Session
+  Prep wizard. Extra places and images are optional for campaign preparation;
+- confirmed after-play changes with before/after history, player intentions,
+  and unused material carried into the next preparation. Faction moves and
+  clue discoveries change only when the GM records them;
+- an optional **Session x Session** area retaining the progressive Act planner.
+  Existing prepared Acts seed board situations on first use, while original
+  Acts, session drafts, and document links remain available. Prepare Act I, call it ready to
   play, record what actually happened, complete it, and unlock Act II without
   having to write the entire campaign in advance; an optional **Session x Session**
   button expands each Act's chapter and session planner, collapsed by default;
@@ -121,6 +133,26 @@ bugs while the module is under active development.
 Use the manifest URL:
 
 `https://raw.githubusercontent.com/Idoz53/lore-smith/main/module.json`
+
+### Campaign workflow (0.38.0)
+
+1. Open Campaign Builder. Add a situation, describe its stakes and available
+   leads, then add resources and link them from the situation editor.
+2. Choose **Prepare this situation**. Adjust the selected resources, write an
+   opening, and create table notes or continue into detailed Session Prep.
+3. After the game, record what happened and the players' next intention. Add
+   explicit changes to situation status, leads, faction state, NPC notes, or
+   clue discovery. Mark used resources and choose **Record play and update the
+   board**. Unused selections remain prepared; all shared records remain saved.
+
+Drafts use the existing campaign save setting and survive closing the
+dashboard. History preserves earlier preparation and before/after values.
+Generated Journals are snapshots: update their notes when you want the latest
+campaign state. Marking a clue discovered does not change document sharing.
+The **Session x Session** button opens the existing Acts and chapter planner.
+
+Validation: module checks, workspace integration regressions, and browser
+workflow checks. A live Foundry/PF2e world still needs in-world verification.
 
 Enable Lore Smith in a world using the PF2e system. A new Lore Smith button is
 added to the Scene controls for GMs.
