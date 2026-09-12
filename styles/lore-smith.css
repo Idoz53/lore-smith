@@ -129,3 +129,45 @@
 .ls-act-session-planner-content > header div { display:grid; gap:3px; }
 .ls-act-session-planner-content > header strong { color:#70211b; font-size:18px; }
 .ls-act-session-planner-content > header small { color:#735534; font:11px/1.4 Arial,sans-serif; }
+
+/* Campaign Board, reusable preparation, and confirmed after-play changes. */
+.lore-smith .ls-cw{color:#38271e;background:#f8e8c2;min-width:0}
+.lore-smith .ls-cw *{box-sizing:border-box}
+.ls-cw h2,.ls-cw h3{color:#70241d;margin:0 0 8px}
+.ls-cw p{margin:7px 0;overflow-wrap:anywhere}
+.ls-cw small{color:#705131;font:12px/1.45 Arial,sans-serif}
+.ls-cw label{display:grid;gap:5px;min-width:0;color:#70241d;font-weight:700}
+.ls-cw input:not([type=checkbox]),.ls-cw textarea,.ls-cw select{width:100%;min-width:0;height:auto;padding:9px;background:#fff8e6;color:#35241a;border:1px solid #b88744;border-radius:3px;font:14px/1.45 Arial,sans-serif}
+.ls-cw textarea{resize:vertical;min-height:78px}
+.lore-smith .ls-cw button{width:auto;max-width:100%;height:auto;padding:9px 12px;background:#f9eac6;color:#70241d;border:1px solid #b88744;border-radius:3px;white-space:normal;font:700 13px/1.35 Arial,sans-serif}
+.lore-smith .ls-cw button.ls-cw-primary{background:#70241d;color:#ffe9b9}
+.ls-cw-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:12px 0;margin-bottom:16px;border-block:1px solid #b88744}
+.lore-smith .ls-cw-tabs button[aria-pressed=true]{background:#70241d;color:#ffe9b9}
+.ls-cw-foundation,.ls-cw-editor{display:grid;gap:13px}
+.ls-cw-foundation{margin-bottom:20px}
+.ls-cw-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.ls-cw-row>label{flex:1;min-width:150px}
+.ls-cw-columns{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:24px;align-items:start}
+.ls-cw-columns>div{min-width:0}
+.ls-cw-editor{background:#f6e2b8;border:1px solid #bd914e;padding:15px}
+.ls-cw-index>div{padding:10px;border-bottom:1px solid #cbaa6f;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 10px}
+.ls-cw-index>div.selected{background:#e7cd96;border-left:3px solid #70241d}
+.ls-cw-index p{flex-basis:100%;font:13px/1.45 Arial,sans-serif}
+.lore-smith .ls-cw button.ls-cw-link{padding:3px 0;border:0;background:transparent;text-decoration:underline;text-align:left}
+.ls-cw-links{display:flex;flex-wrap:wrap;gap:6px 14px}
+.ls-cw-section{display:grid;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #bb914b}
+.ls-cw details{margin:4px 0;padding:8px 0;border-top:1px solid #c4a165}
+.ls-cw summary{cursor:pointer;color:#70241d;font-weight:700;margin-bottom:8px}
+.ls-cw-checklist{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:7px}
+.ls-cw label.ls-cw-check{display:flex;gap:9px;align-items:center;font-weight:400;padding:5px 0;cursor:pointer}
+.ls-cw input[type=checkbox]{width:18px;height:18px;flex:0 0 18px;margin:0;accent-color:#70241d}
+.ls-cw-drop{border:1px dashed #936527;padding:11px;background:#eed6a6}
+.ls-cw-drop button{margin-top:8px}
+.ls-cw-empty{padding:16px;color:#755538;font:14px/1.5 Arial,sans-serif}
+.ls-cw-table-record{padding:10px 0;border-bottom:1px solid #c4a165}
+.ls-cw-table-record details p{font:14px/1.5 Arial,sans-serif}
+.ls-cw-change{display:grid;gap:10px;padding:14px;background:#ffefcb;border:1px solid #bc904a}
+.ls-cw-history{margin:12px 0;padding:12px;border-left:3px solid #70241d;background:#f8e5bb}
+.ls-cw-history li{margin:7px 0;overflow-wrap:anywhere}
+.ls-cw-footer{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:20px;padding-top:14px;border-top:1px solid #bb914b}
+@media(max-width:850px){.ls-cw-columns{grid-template-columns:1fr}.ls-cw-checklist{grid-template-columns:1fr}.ls-cw-row>label{min-width:0;flex-basis:100%}}
