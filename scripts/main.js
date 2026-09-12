@@ -1,3 +1,5 @@
+import { ensureCampaignWorkspace, renderCampaignWorkspace, syncCampaignWorkspace, bindCampaignWorkspace, campaignWorkspaceJournalPages, workspaceSelectedResources } from "./campaign-workspace.js";
+
 const MODULE_ID = "lore-smith";
 const FLAG_SCOPE = MODULE_ID;
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -145,8 +147,8 @@ function newSessionPrep(campaignLink = null) {
     id: foundry.utils.randomID(), journalId: "",
     campaignLink,
     title: "", goal: "", opening: "", ending: "",
-    locations: [newSessionLocation(), newSessionLocation()],
-    npcs: [newSessionNpc()],
+    locations: campaignLink?.workspaceId ? [] : [newSessionLocation(), newSessionLocation()],
+    npcs: campaignLink?.workspaceId ? [] : [newSessionNpc()],
     musicCues: [newSessionMusicCue()],
     peopleEntries: [newSessionPeopleEntry()], hazards: [], encounterEntries: [newSessionEncounter()],
     sceneEntries: [newSessionTextEntry()], clueEntries: [newSessionTextEntry()], rewardItems: [],
@@ -305,7 +307,7 @@ function normalizeSessionPrep(stored = {}) {
     ...stored,
     campaignLink: stored.campaignLink && typeof stored.campaignLink === "object" ? { ...stored.campaignLink } : null,
     id: stored.id || fresh.id,
-    locations: storedLocations.length
+    locations: storedLocations.length || (stored.campaignLink?.workspaceId && Array.isArray(stored.locations))
       ? storedLocations.map((location) => normalizeSessionImageEntry(location, newSessionLocation))
       : fresh.locations,
     npcs: Array.isArray(stored.npcs)
@@ -991,7 +993,9 @@ function normalizeCampaignBuild(stored = {}) {
     openQuestions: (Array.isArray(stored.openQuestions) ? stored.openQuestions : []).map((entry) => typeof entry === "string" ? { ...newCampaignQuestion(), text: entry } : { ...newCampaignQuestion(), ...entry, id: entry.id || foundry.utils.randomID() }),
   };
   normalized.acts = Array.isArray(stored.acts) ? stored.acts : [];
-  return ensureCampaignActs(normalized);
+  ensureCampaignActs(normalized);
+  ensureCampaignWorkspace(normalized);
+  return normalized;
 }
 
 function campaignList(title, entries) {
@@ -1083,11 +1087,15 @@ function adventureCampaignJournalPages(campaign) {
   while (unlockedActCount < campaign.acts.length && campaign.acts[unlockedActCount - 1]?.status === "completed") {
     unlockedActCount += 1;
   }
-  const unlockedActs = campaign.acts.slice(0, unlockedActCount);
+  const meaningfulAct = (act) => act.status !== "draft"
+    || ["objective", "startingSituation", "locations", "people", "developments", "clues", "encounters", "turningPoint", "endingCondition", "gmNotes", "actualOutcome", "carryForward"].some((field) => String(act[field] ?? "").trim())
+    || ["actorRefs", "itemRefs", "journalRefs"].some((field) => act[field]?.length)
+    || act.chapters.some((chapter) => chapter.sessions.some((session) => session.title?.trim() || session.purpose?.trim() || session.prep || session.journalId));
+  const unlockedActs = campaign.acts.slice(0, unlockedActCount).filter(meaningfulAct);
   const referenceList = (title, refs) => refs?.length
     ? `<h2>${escapeHtml(title)}</h2><ul>${refs.map((entry) => `<li>${sessionReferenceLink(entry)}</li>`).join("")}</ul>` : "";
   const completed = campaign.acts.filter((act) => act.status === "completed").length;
-  const overview = `${sessionBlock("Campaign summary", campaign.premise)}<p><strong>Progress</strong> ${completed} of ${campaign.acts.length} acts completed</p><ol>${unlockedActs.map((act) => `<li><strong>Act ${act.number}: ${escapeHtml(act.name || "Untitled")}</strong> — ${escapeHtml(act.status === "completed" ? "Completed" : act.status === "ready" ? "Ready to play" : "Draft")}</li>`).join("")}</ol>`;
+  const overview = `${sessionBlock("Campaign summary", campaign.premise)}${unlockedActs.length ? `<p><strong>Progress</strong> ${completed} of ${campaign.acts.length} acts completed</p><ol>${unlockedActs.map((act) => `<li><strong>Act ${act.number}: ${escapeHtml(act.name || "Untitled")}</strong> — ${escapeHtml(act.status === "completed" ? "Completed" : act.status === "ready" ? "Ready to play" : "Draft")}</li>`).join("")}</ol>` : ""}`;
   const pages = [{ key: "overview", name: "Campaign Overview", content: overview }];
   for (const act of unlockedActs) {
     const status = act.status === "completed" ? "Completed" : act.status === "ready" ? "Ready to play" : "Draft";
@@ -1533,6 +1541,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       addCampaignAct: LoreSmithDashboard.addCampaignAct,
       toggleCampaignSessionPlanner: LoreSmithDashboard.toggleCampaignSessionPlanner,
       prepareCampaignSession: LoreSmithDashboard.prepareCampaignSession,
+      openCampaignWorkspacePrep: LoreSmithDashboard.openCampaignWorkspacePrep,
       openCampaignSessionJournal: LoreSmithDashboard.openCampaignSessionJournal,
       backToCampaignAct: LoreSmithDashboard.backToCampaignAct,
       markCampaignActReady: LoreSmithDashboard.markCampaignActReady,
@@ -1593,6 +1602,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   campaignDeletedLocationIds = new Set();
   campaignScrollTop = 0;
   campaignSessionPlannerOpen = new Set();
+  campaignWorkspaceState = { tab: "board", selectedId: "", planner: false };
   campaignMapTool = "";
   worldMap = newWorldMapBuild();
   worldMapDraftLoaded = false;
@@ -1612,6 +1622,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (direct?.getFlag(FLAG_SCOPE, "sessionPrep")) return direct;
     const link = this.sessionPrep.campaignLink;
     if (link) {
+      const workspace = this.adventureCampaign.workspace;
+      if (link.workspaceId === workspace?.id && link.packetId === workspace?.prep?.id) {
+        const linked = game.journal.get(workspace.prep.detailJournalId);
+        if (linked?.getFlag(FLAG_SCOPE, "sessionPrep")) return linked;
+      }
       const act = this.adventureCampaign.acts?.find((entry) => entry.id === link.actId);
       const chapter = act?.chapters?.find((entry) => entry.id === link.chapterId);
       const session = chapter?.sessions?.find((entry) => entry.id === link.sessionId);
@@ -1733,7 +1748,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       this.lastSessionJournalId = latestSession?.id ?? null;
     }
     const locationViews = this.sessionPrep.locations.map((location, index) => ({
-      ...location, number: index + 1, canRemove: this.sessionPrep.locations.length > 2,
+      ...location, number: index + 1, canRemove: Boolean(this.sessionPrep.campaignLink?.workspaceId) || this.sessionPrep.locations.length > 2,
       placementOptions: sessionImageOptions(location.imagePlacement, SESSION_IMAGE_PLACEMENTS, "right"),
       sizeOptions: sessionImageOptions(location.imageSize, SESSION_IMAGE_SIZES, "medium"),
     }));
@@ -1759,10 +1774,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     const sessionValidation = [];
     if (!this.sessionPrep.title.trim()) sessionValidation.push("Add a session title.");
     if (!this.sessionPrep.goal.trim()) sessionValidation.push("Add the session's main goal.");
-    if (this.sessionPrep.locations.length < 2) sessionValidation.push("Prepare at least two important places.");
+    const workspaceSession = Boolean(this.sessionPrep.campaignLink?.workspaceId);
+    if (!workspaceSession && this.sessionPrep.locations.length < 2) sessionValidation.push("Prepare at least two important places.");
     for (const [index, location] of this.sessionPrep.locations.entries()) {
       if (!location.name.trim()) sessionValidation.push(`Name important place ${index + 1}.`);
-      if (!location.image.trim()) sessionValidation.push(`Choose an image for important place ${index + 1}.`);
+      if (!workspaceSession && !location.image.trim()) sessionValidation.push(`Choose an image for important place ${index + 1}.`);
     }
     const sessionStepEntries = [["goal", "Goal"], ["locations", "Places"], ["people", "People"], ["music", "Music"], ["scenes", "Scenes"], ["review", "Review"]];
     const sessionSteps = Object.fromEntries(sessionStepEntries.map(([key, label], index) => [key, { index, number: index + 1, label, active: this.sessionStep === index }]));
@@ -1952,6 +1968,12 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       itemResults: this.itemResults,
       sessionPrep: { ...this.sessionPrep, locations: locationViews, npcs: npcViews, musicCues: musicCueViews },
       sessionCampaignLink,
+      workspacePrepLink: workspaceSession ? {
+        campaignName: this.adventureCampaign.name,
+        resources: this.adventureCampaign.workspace?.id === this.sessionPrep.campaignLink.workspaceId
+          && this.adventureCampaign.workspace?.prep?.id === this.sessionPrep.campaignLink.packetId
+          ? workspaceSelectedResources(this.adventureCampaign) : [],
+      } : null,
       sessionSteps,
       sessionValidation,
       canSessionBack: this.sessionStep > 0,
@@ -1981,6 +2003,8 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         };
       }),
       campaign: { ...this.campaign, people: campaignPeople },
+      campaignWorkspaceHtml: this.activeTab === "campaign" ? renderCampaignWorkspace(this.campaign, this.campaignWorkspaceState) : "",
+      campaignPlannerVisible: this.campaignWorkspaceState.planner,
       campaignSteps,
       campaignActs,
       campaignCurrentAct,
@@ -2029,6 +2053,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   _onRender(context, options) {
     super._onRender(context, options);
+    if (this.activeTab === "campaign") bindCampaignWorkspace(this);
     this.element?.classList.toggle("ls-dashboard-fullscreen", this.dashboardFullscreen);
     const fullscreenButton = this.element?.querySelector('[data-action="toggleLoreSmithFullscreen"]');
     if (fullscreenButton && this.dashboardFullscreen) fullscreenButton.innerHTML = '<i class="fa-solid fa-compress"></i> Exit full screen';
@@ -2244,7 +2269,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
     if (["campaign", "campaignMap"].includes(this.activeTab)) {
-      const campaignPanel = this.element?.querySelector(".ls-campaign-panel");
+      const campaignPanel = this.element?.querySelector(".ls-main");
       const syncLiveCampaignState = async (event) => {
         if (!event.target?.matches?.("input, textarea, select")) return;
         await this.syncCampaignForm({ persist: false });
@@ -2715,6 +2740,20 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   async syncLinkedCampaignSession({ journalId = undefined } = {}) {
     const link = this.sessionPrep.campaignLink;
     if (!link) return;
+    if (link.workspaceId) {
+      const workspace = ensureCampaignWorkspace(this.adventureCampaign);
+      if (workspace.id !== link.workspaceId || workspace.prep.id !== link.packetId) return;
+      workspace.prep.detail = foundry.utils.deepClone(this.sessionPrep);
+      workspace.prep.title = this.sessionPrep.title;
+      workspace.prep.opening = this.sessionPrep.opening;
+      workspace.prep.notes = this.sessionPrep.reminders;
+      if (journalId !== undefined) workspace.prep.detailJournalId = String(journalId ?? "");
+      const serialized = JSON.stringify({ step: this.adventureCampaignStep, campaign: this.adventureCampaign });
+      const persist = () => game.settings.set(MODULE_ID, "campaignBuilderDraft", serialized);
+      this.campaignSavePromise = this.campaignSavePromise.then(persist, persist);
+      await this.campaignSavePromise;
+      return;
+    }
     ensureCampaignActs(this.adventureCampaign);
     const act = this.adventureCampaign.acts.find((entry) => entry.id === link.actId);
     const chapter = act?.chapters.find((entry) => entry.id === link.chapterId);
@@ -2871,8 +2910,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async close(options = {}) {
     clearTimeout(this.campaignSaveTimer);
+    clearTimeout(this.sessionSaveTimer);
     clearTimeout(this.worldMapSaveTimer);
     if (["campaign", "campaignMap"].includes(this.activeTab)) await this.syncCampaignForm();
+    if (this.activeTab === "session") await this.syncSessionPrepForm();
     if (this.activeTab === "worldMap") await this.syncWorldMapForm();
     await this.campaignSavePromise;
     await this.worldMapSavePromise;
@@ -3102,7 +3143,11 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       this.campaign.locations = this.campaign.locations.filter((entry) => !this.campaignDeletedLocationIds.has(entry.id));
       this.campaign.routes = this.campaign.routes.filter((entry) => !this.campaignDeletedLocationIds.has(entry.fromId) && !this.campaignDeletedLocationIds.has(entry.toId));
     }
-    if (this.activeTab === "campaignMap") ensureCampaignMapScope(this.campaign); else ensureCampaignActs(this.campaign);
+    if (this.activeTab === "campaignMap") ensureCampaignMapScope(this.campaign);
+    else {
+      ensureCampaignActs(this.campaign);
+      syncCampaignWorkspace(this.campaign, root);
+    }
     if (this.activeTab === "campaignMap" && !persist) {
       this.writeCampaignRecoverySnapshot();
     }
@@ -3119,6 +3164,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     });
     if (!confirmed) return;
     this.campaign = this.activeTab === "campaignMap" ? newCampaignMapBuild() : newCampaignBuild();
+    if (this.activeTab === "campaign") this.campaignWorkspaceState = { tab: "board", selectedId: "", planner: false };
     this.campaignStep = 0;
     await this.saveCampaignDraft();
     await this.render();
@@ -3294,6 +3340,28 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     await this.render();
   }
 
+  static async openCampaignWorkspacePrep() {
+    await this.syncCampaignForm();
+    const workspace = ensureCampaignWorkspace(this.adventureCampaign);
+    const packet = workspace.prep;
+    const link = { workspaceId: workspace.id, packetId: packet.id };
+    const prep = packet.detail ? normalizeSessionPrep(packet.detail) : newSessionPrep(link);
+    prep.campaignLink = link;
+    prep.journalId = String(packet.detailJournalId || prep.journalId || "");
+    prep.title = packet.title || prep.title || this.adventureCampaign.name || "Next game";
+    prep.opening = packet.opening;
+    prep.reminders = packet.notes;
+    if (!packet.detail) {
+      prep.goal = workspace.partyIntent || workspace.situations.filter((s) => packet.situationIds.includes(s.id)).map((s) => s.title).join("; ");
+    }
+    this.sessionPrep = prep;
+    this.sessionStep = 0;
+    this.lastSessionJournalId = game.journal.get(prep.journalId)?.id ?? null;
+    this.activeTab = "session";
+    await this.saveSessionPrepDraft();
+    await this.render();
+  }
+
   static async openCampaignSessionJournal(_event, target) {
     const journal = game.journal.get(target.dataset.journalId);
     if (!journal) return ui.notifications.warn("This session Journal no longer exists.");
@@ -3313,12 +3381,15 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async backToCampaignAct() {
     await this.syncSessionPrepForm();
+    const workspaceLink = Boolean(this.sessionPrep.campaignLink?.workspaceId);
     const actId = this.sessionPrep.campaignLink?.actId;
     const index = this.adventureCampaign.acts.findIndex((act) => act.id === actId);
     this.activeTab = "campaign";
     this.campaign = this.adventureCampaign;
     this.campaignStep = index >= 0 ? index : this.adventureCampaignStep;
     this.adventureCampaignStep = this.campaignStep;
+    this.campaignWorkspaceState.planner = !workspaceLink;
+    if (workspaceLink) this.campaignWorkspaceState.tab = "prep";
     await this.saveCampaignDraft();
     await this.render();
   }
@@ -3406,7 +3477,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     } else {
       await journal.update({ name: this.campaign.name.trim() });
     }
-    const generated = mapBuilder ? campaignJournalPages(this.campaign) : adventureCampaignJournalPages(this.campaign);
+    const generated = mapBuilder ? campaignJournalPages(this.campaign) : [...adventureCampaignJournalPages(this.campaign), ...campaignWorkspaceJournalPages(this.campaign)];
     const generatedKeys = new Set(generated.map((page) => page.key));
     const obsoletePages = journal.pages.filter((page) => {
       const key = page.getFlag(FLAG_SCOPE, "campaignSection");
@@ -3785,7 +3856,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static async removeLocation(_event, target) {
     await this.syncSessionPrepForm();
-    if (this.sessionPrep.locations.length <= 2) return;
+    if (!this.sessionPrep.campaignLink?.workspaceId && this.sessionPrep.locations.length <= 2) return;
     this.sessionPrep.locations = this.sessionPrep.locations.filter((location) => location.id !== target.dataset.id);
     await this.saveSessionPrepDraft();
     await this.render();
@@ -3937,12 +4008,14 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   static async createSessionJournal() {
     await this.syncSessionPrepForm();
     const linkedActId = this.sessionPrep.campaignLink?.actId ?? "";
+    const workspaceLink = this.sessionPrep.campaignLink?.workspaceId ?? "";
     const invalid = !this.sessionPrep.title.trim() || !this.sessionPrep.goal.trim()
-      || this.sessionPrep.locations.length < 2 || this.sessionPrep.locations.some((location) => !location.name.trim() || !location.image.trim());
+      || (!workspaceLink && this.sessionPrep.locations.length < 2)
+      || this.sessionPrep.locations.some((location) => !location.name.trim() || (!workspaceLink && !location.image.trim()));
     if (invalid) {
       this.sessionStep = 5;
       await this.render();
-      return ui.notifications.warn("Complete the title, goal, and both important places before creating the Journal.");
+      return ui.notifications.warn(workspaceLink ? "Add a title and goal, and name any places you added." : "Complete the title, goal, and both important places before creating the Journal.");
     }
     try {
       await materializeSessionMusic(this.sessionPrep);
@@ -3960,18 +4033,27 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (journal) await journal.update({ name: this.sessionPrep.title.trim(), [`flags.${FLAG_SCOPE}`]: flags });
     else journal = await JournalEntry.create({ name: this.sessionPrep.title.trim(), flags: { [FLAG_SCOPE]: flags }, pages: [] });
     this.sessionPrep.journalId = journal.id;
-    await syncSessionJournalPages(journal, sessionJournalPages(this.sessionPrep));
+    const pages = sessionJournalPages(this.sessionPrep);
+    if (workspaceLink && this.adventureCampaign.workspace?.id === workspaceLink
+      && this.adventureCampaign.workspace.prep.id === this.sessionPrep.campaignLink.packetId) {
+      pages.push({ key: "campaign-material", name: "Linked campaign material", content: workspaceSelectedResources(this.adventureCampaign).map((resource) =>
+        `<section><h2>${escapeHtml(resource.name)}</h2>${resource.uuid ? `<p>${sessionReferenceLink({ uuid: resource.uuid, name: resource.name })}</p>` : ""}${sessionBlock("Current state", resource.state)}${sessionBlock("GM notes", resource.notes)}</section>`
+      ).join("") });
+    }
+    await syncSessionJournalPages(journal, pages);
     this.lastSessionJournalId = journal.id;
     this.activeNoteId = null;
     await this.syncLinkedCampaignSession({ journalId: journal.id });
     this.sessionPrep = newSessionPrep();
     this.sessionStep = 0;
     await this.saveSessionPrepDraft();
-    if (linkedActId) {
+    if (linkedActId || workspaceLink) {
       this.activeTab = "campaign";
       this.campaign = this.adventureCampaign;
       const actIndex = this.adventureCampaign.acts.findIndex((act) => act.id === linkedActId);
       if (actIndex >= 0) this.campaignStep = this.adventureCampaignStep = actIndex;
+      this.campaignWorkspaceState.planner = !workspaceLink;
+      if (workspaceLink) this.campaignWorkspaceState.tab = "prep";
       await this.saveCampaignDraft();
     }
     ui.notifications.info(`${updating ? "Updated" : "Created"} session Journal: ${journal.name}.`);
