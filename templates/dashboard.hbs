@@ -128,6 +128,8 @@
     {{/if}}
 
     {{#if tabs.campaign}}
+      {{{campaignWorkspaceHtml}}}
+      {{#if campaignPlannerVisible}}
       <section class="ls-panel ls-campaign-panel ls-act-campaign-panel">
         <header><div><span>Prepare, play, and complete one act at a time</span><h1>Campaign Builder</h1></div><div class="ls-header-actions"><button data-action="newCampaignBuild"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openCampaignJournal" {{#unless campaignJournalAvailable}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open campaign</button></div></header>
         <p class="ls-lead">Prepare only the act you are about to play. Calling it ready creates or updates its Foundry Journal page. Completing it records what happened and unlocks the next act.</p>
@@ -199,6 +201,7 @@
         {{/with}}
         <footer class="ls-session-navigation ls-act-footer"><button data-action="createCampaignJournal"><i class="fa-solid fa-book"></i> {{#if campaignJournalAvailable}}Update{{else}}Create{{/if}} campaign Journal</button><span>Every field autosaves. Completing an act unlocks the next one; older acts remain available to read.</span><button data-action="addCampaignAct"><i class="fa-solid fa-plus"></i> Add another act</button></footer>
       </section>
+      {{/if}}
     {{/if}}
 
     {{#if tabs.legacyCampaign}}
@@ -223,6 +226,7 @@
         <header><div><span>Guided next-session preparation</span><h1>Session Prep</h1></div><div class="ls-header-actions"><button data-action="newSessionPrep"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openLastSessionJournal" {{#unless lastSessionJournalId}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open last session</button></div></header>
         <p class="ls-lead">Answer a few focused questions. Lore Smith turns them into a ready-to-run Foundry Journal, with every important place, person, scene, and secret on its own page.</p>
         {{#if sessionCampaignLink}}<aside class="ls-session-campaign-link"><div><span>Campaign session</span><strong>Act {{actRoman}} · Chapter {{chapterRoman}} — {{chapterName}} · Session {{sessionNumber}}</strong><small>{{actName}}</small></div><button type="button" data-action="backToCampaignAct"><i class="fa-solid fa-arrow-left"></i> Back to Act</button></aside>{{/if}}
+        {{#if workspacePrepLink}}<aside class="ls-session-campaign-link"><div><span>Campaign preparation</span><strong>{{workspacePrepLink.campaignName}}</strong><small>Extra detail for your next game. Shared campaign records stay linked below.</small></div><button type="button" data-action="backToCampaignAct">Back to Prepare next game</button></aside><div class="ls-reference-list">{{#each workspacePrepLink.resources}}<div><span>{{name}}<small>{{kind}} · {{state}}</small></span>{{#if uuid}}<button type="button" data-action="openLootDocument" data-uuid="{{uuid}}">Open document</button>{{/if}}</div>{{/each}}</div>{{/if}}
         <div class="ls-session-progress" aria-label="Session prep progress">
           {{#each sessionSteps}}<button data-action="goToSessionStep" data-step="{{index}}" class="{{#if active}}active{{/if}}"><span>{{number}}</span>{{label}}</button>{{/each}}
         </div>
@@ -234,7 +238,7 @@
         {{/if}}
 
         {{#if sessionSteps.locations.active}}
-          <section class="ls-session-step"><div class="ls-step-kicker">Step 2 of 6</div><h2>Prepare at least two important places</h2><p>Give each place a quick image and sensory cues. Small details make a place easy to run, and you can add more places when needed.</p>
+          <section class="ls-session-step"><div class="ls-step-kicker">Step 2 of 6</div><h2>{{#if workspacePrepLink}}Additional places · optional{{else}}Prepare at least two important places{{/if}}</h2><p>{{#if workspacePrepLink}}Your campaign locations are already linked above. Add extra places and images when they help this game.{{else}}Give each place a quick image and sensory cues. Small details make a place easy to run, and you can add more places when needed.{{/if}}</p>
             <div class="ls-location-stack">{{#each sessionPrep.locations}}<article class="ls-location-card" data-location-id="{{id}}"><header><div><span>Important place {{number}}</span><strong>{{#if name}}{{name}}{{else}}Unnamed place{{/if}}</strong></div>{{#if canRemove}}<button class="danger" data-action="removeLocation" data-id="{{id}}" data-tooltip="Remove location"><i class="fa-solid fa-trash"></i></button>{{/if}}</header><div class="ls-session-form">
               <label>Place name<input name="locationName" value="{{name}}" placeholder="The flooded bell tower"></label><label>Portrait or scene image<span class="ls-inline-control"><input name="locationImage" value="{{image}}" placeholder="Choose an image"><button data-action="browseLocationImage" data-id="{{id}}" type="button"><i class="fa-solid fa-folder-open"></i> Browse</button>{{#if image}}<button class="danger" data-action="removeLocationImage" data-id="{{id}}" type="button" data-tooltip="Remove image"><i class="fa-solid fa-xmark"></i></button>{{/if}}</span></label>
               <div class="ls-session-image-preview wide">{{#if image}}<img src="{{image}}" alt="{{name}}">{{else}}<i class="fa-solid fa-image"></i><span>No image chosen</span>{{/if}}</div>
