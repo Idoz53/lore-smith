@@ -70,7 +70,7 @@
             <label>Bulk<select name="bulk">{{#each bulkOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
             {{#if item.hasUsage}}<label>Usage<select name="usage">{{#each usageOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
             <label>Hardness<input name="hardness" type="number" min="0" value="{{item.hardness}}"></label>
-            <label>Hit Points<input name="hpMax" type="number" min="0" value="{{item.hpMax}}"></label>
+            <label>Base maximum HP<input name="hpMax" type="number" min="0" value="{{item.hpMax}}"><small>Damage already taken is preserved. Runes and materials can raise the final maximum.</small></label>
           </div><h4>Price</h4><div class="ls-coin-grid"><label>PP<input name="pricePP" type="number" min="0" value="{{item.price.pp}}"></label><label>GP<input name="priceGP" type="number" min="0" value="{{item.price.gp}}"></label><label>SP<input name="priceSP" type="number" min="0" value="{{item.price.sp}}"></label><label>CP<input name="priceCP" type="number" min="0" value="{{item.price.cp}}"></label></div></section>
         {{/if}}
 
@@ -99,12 +99,27 @@
           <label>Current uses<input name="usesValue" type="number" min="0" value="{{item.usesValue}}"></label><label>Maximum uses<input name="usesMax" type="number" min="1" value="{{item.usesMax}}"></label>
           <label class="ls-check-label"><input name="autoDestroy" type="checkbox" {{#if item.autoDestroy}}checked{{/if}}> Destroy when empty</label>
         </div></section>{{/if}}
+        {{#if hasRunes}}<section class="ls-builder-card"><h3>Runes</h3><p>PF2e calculates the rune benefits. Enter the base damage dice above; do not add striking dice a second time. Property runes normally need an available potency slot.</p><div class="ls-form-grid">
+          <label>Potency<select name="runePotency">{{#each runePotencyOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          <label>{{#if item.weapon}}Striking rune{{else}}Resilient rune{{/if}}<select name="runeTier">{{#each runeTierOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          {{#each propertyRuneSlots}}<label>Property rune<select name="propertyRune"><option value="">None</option>{{#each options}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}
+        </div><p><a href="https://2e.aonprd.com/Rules.aspx?ID=3162" target="_blank" rel="noopener noreferrer">Read the rune rules on Archives of Nethys</a></p></section>{{/if}}
+        {{#if hasShieldRunes}}<section class="ls-builder-card"><h3>Shield reinforcing rune</h3><label>Reinforcing tier<select name="runeReinforcing">{{#each reinforcingOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><p>PF2e applies the increase and durability limits to the base shield. Review the resulting hardness and HP before finishing.</p></section>{{/if}}
+        {{#if hasMaterial}}<section class="ls-builder-card"><h3>Precious material</h3><div class="ls-form-grid">
+          {{#if nativeMaterialOptions}}<label class="wide">Material and grade<select name="nativeMaterial">{{#each nativeMaterialOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+          {{else}}<label>Material<select name="materialType"><option value="">None</option>{{#each materialOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>Grade<select name="materialGrade">{{#each materialGradeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
+        </div><p>Material, grade, Bulk, and item type affect eligibility and price. Specific magic items can restrict changes. <a href="https://2e.aonprd.com/Rules.aspx?ID=3188" target="_blank" rel="noopener noreferrer">Check material rules</a>.</p></section>{{/if}}
+        <section class="ls-builder-card"><h3>Level and price check</h3><p>For a level {{priceGuidance.level}} {{#if priceGuidance.consumable}}consumable{{else}}permanent magic item{{/if}}, the usual price range is <strong>{{priceGuidance.band}}</strong>. Your current final price is {{priceGuidance.gp}} gp. Mundane equipment and specific items may fall outside this guide.</p><p>Compare the strength, action cost, frequency, and restrictions of similar items before setting a level. <a href="{{priceGuidance.url}}" target="_blank" rel="noopener noreferrer">AoN price guidelines</a></p>
+          <button type="button" data-action="compareItems"><i class="fa-solid fa-scale-balanced"></i> Find similar official items</button>
+          {{#if comparisonsLoaded}}<p>These installed PF2e examples have the same item type, nearby levels, and matching traits where possible. They are starting points for comparison, not a balance score.</p><div class="ls-builder-comparisons">{{#each comparisons}}<details><summary>{{name}} — level {{level}} — {{price}}</summary><p>Usage {{usage}} · Bulk {{bulk}}</p><div class="ls-preview-traits">{{#each traits}}<span>{{this}}</span>{{/each}}</div><div class="ls-preview-description">{{{description}}}</div></details>{{else}}<p>No official same-type items within two levels were found in installed PF2e compendiums. Use Starting point to broaden the search.</p>{{/each}}</div>{{/if}}
+        </section>
         <section class="ls-builder-card"><h3>Rules text</h3><textarea name="description" rows="10" placeholder="Describe the item and its constant effects. Structured activation and roll buttons are added in the next steps.">{{item.description}}</textarea></section>
       </section>
     {{/if}}
 
     {{#if steps.activation}}
-      <section class="ls-builder-step"><div class="ls-section-heading"><div><h2>Activations</h2><p>Add every way this item can be activated. Each becomes a native-style PF2e stat-block entry and, when owned, an Action on the actor sheet.</p></div><button data-action="addActivation"><i class="fa-solid fa-plus"></i> Add activation</button></div>
+      <section class="ls-builder-step"><div class="ls-section-heading"><div><h2>Activations</h2><p>Add every way this item can be activated. Each becomes an entry in the item description and an Action on its owner’s sheet. Next, assign bonuses and roll buttons in Effects.</p></div><button data-action="addActivation"><i class="fa-solid fa-plus"></i> Add activation</button></div>
+        <div class="ls-builder-tip"><span><strong>Example:</strong> “Activate on yourself, once per day, for 1 minute” + a fire resistance effect produces an Apply effect button. Clicking it creates a timed Effect on the owner and spends one recorded activation use. It does not apply resistance merely because the item is equipped.</span></div>
         <div class="ls-activation-stack">
           {{#each activations}}
             <section class="ls-builder-card ls-activation-card" data-activation-id="{{id}}">
@@ -121,7 +136,11 @@
                 <label class="wide">Requirements<input name="activationRequirements" value="{{requirements}}" placeholder="What must be true before activation"></label>
                 <label>Range<input name="activationRange" value="{{range}}" placeholder="touch, 30 feet..."></label><label>Targets<input name="activationTarget" value="{{target}}" placeholder="1 creature, all allies..."></label>
                 <label>Area<select name="activationAreaType">{{#each areaOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>Area size (feet)<input name="activationAreaSize" type="number" min="0" value="{{areaSize}}"></label>
-                <label class="wide">Duration<input name="activationDuration" value="{{duration}}" placeholder="until the end of your next turn, 1 minute..."></label>
+                <label class="wide">Who receives automatic bonuses?<select name="activationApplyTo">{{#each applyToOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select><small>Targeted creatures must be editable by the person applying the effect. Ask the GM for other targets.</small></label>
+                <label>Duration amount<input name="activationDurationValue" type="number" min="1" step="1" value="{{durationValue}}"></label>
+                <label>Track duration as<select name="activationDurationUnit">{{#each durationUnitOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label class="wide">In combat, expire at<select name="activationDurationExpiry">{{#each durationExpiryOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label class="wide">Special duration / ending condition<input name="activationDuration" value="{{duration}}" placeholder="Ends early if you attack; handled manually"><small>Track special ending conditions yourself. Foundry uses its world clock and encounter tracking for the duration above; expired-effect handling follows PF2e settings.</small></label>
                 <label class="wide">Effect<textarea name="activationEffectText" rows="4" placeholder="Describe what this activation does. Roll buttons are assigned in the next step.">{{effectText}}</textarea></label>
               </div>
             </section>
@@ -133,18 +152,19 @@
     {{/if}}
 
     {{#if steps.automation}}
-      <section class="ls-builder-step"><h2>Effects and automation</h2><p>Add roll buttons and safe PF2e Rule Elements. Native rules copied from a compendium item stay intact.</p>
+      <section class="ls-builder-step"><h2>Effects and automation</h2><p>Choose <strong>Constant while worn / held correctly</strong> for ongoing benefits. Choose an <strong>activation</strong> for a bonus that starts only after its Apply effect button is clicked. Damage/healing and saves create roll links; conditions remain reminders.</p>
+        <details class="ls-builder-card"><summary>What does Foundry handle?</summary><p>Constant bonuses follow the item’s native equipped and invested state. Activated bonuses become a separate Effect with a tracked duration. Bonuses of the same type follow PF2e stacking rules.</p><p>You still check action costs, range, line of effect, requirements, saves, and special ending conditions. Roll damage/healing and apply the result yourself. Consumable charges and quantity are used from the native item sheet; Apply effect does not consume them.</p></details>
         <div class="ls-effect-add"><select name="effectKindToAdd">{{#each effectKindOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select><button data-action="addEffect"><i class="fa-solid fa-plus"></i> Add effect</button></div>
         <div class="ls-effect-stack">
           {{#each effects}}<article class="ls-effect-card" data-effect-id="{{id}}" data-effect-kind="{{kind}}"><header><div><span>{{kind}}</span><strong>{{#if label}}{{label}}{{else}}New effect{{/if}}</strong></div><button class="danger" data-action="removeEffect" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></header><div class="ls-form-grid stats">
-            <label>Activation<select name="effectActivationId">{{#each activationOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+            <label>When does this happen?<select name="effectActivationId">{{#each activationOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
             <label>Label<input name="effectLabel" value="{{label}}" placeholder="Shown beside the roll or modifier"></label>
             {{#if isDamage}}<label>Damage formula<input name="effectFormula" value="{{formula}}" placeholder="2d6+4"></label><label>Damage type<select name="effectDamageType"><option value="">Untyped</option>{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
             {{#if isHealing}}<label>Healing formula<input name="effectFormula" value="{{formula}}" placeholder="2d8+8"></label>{{/if}}
             {{#if isCheck}}<label>Defense<select name="effectSave">{{#each saves}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>DC<input name="effectDc" type="number" value="{{dc}}" placeholder="Leave blank for a prompt"></label><label class="ls-check-label"><input name="effectBasic" type="checkbox" {{#if basic}}checked{{/if}}> Basic save</label>{{/if}}
             {{#if isCondition}}<label>Condition or effect<input name="effectCondition" value="{{condition}}" placeholder="frightened 1, off-guard..."></label>{{/if}}
-            {{#if isFlatModifier}}<label>PF2e selector<input name="effectSelector" value="{{selector}}" placeholder="athletics, ac, saving-throw..."></label><label>Value<input name="effectValue" type="number" value="{{value}}"></label><label>Modifier type<select name="effectModifierType">{{#each modifierTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
-            {{#if isDamageDice}}<label>PF2e selector<input name="effectSelector" value="{{selector}}" placeholder="strike-damage"></label><label>Extra dice<input name="effectFormula" value="{{formula}}" placeholder="1d6"></label><label>Damage type<select name="effectDamageType"><option value="">Use base damage</option>{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
+            {{#if isFlatModifier}}<label>Statistic to change<input name="effectSelector" list="ls-selector-{{id}}" value="{{selector}}" placeholder="Choose or type a statistic"><datalist id="ls-selector-{{id}}">{{#each selectorOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</datalist><small>For example, ac = Armor Class and athletics = Athletics.</small></label><label>Bonus / penalty<input name="effectValue" type="number" value="{{value}}"></label><label>Bonus type<select name="effectModifierType">{{#each modifierTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
+            {{#if isDamageDice}}<label>Which damage rolls?<input name="effectSelector" value="{{selector}}" placeholder="strike-damage"><small>strike-damage affects all Strikes. Specific weapon selectors are an advanced option.</small></label><label>Extra dice<input name="effectFormula" value="{{formula}}" placeholder="1d6"></label><label>Damage type<select name="effectDamageType"><option value="">Use base damage</option>{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
             {{#if isResistance}}<label>Resistance type<select name="effectDamageType">{{#each effectTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>Value<input name="effectValue" type="number" value="{{value}}"></label>{{/if}}
             {{#if isWeakness}}<label>Weakness type<select name="effectDamageType">{{#each effectTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label><label>Value<input name="effectValue" type="number" value="{{value}}"></label>{{/if}}
             {{#if isImmunity}}<label>Immunity type<select name="effectDamageType">{{#each effectTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/if}}
@@ -153,15 +173,28 @@
             {{#if isDamage}}<label class="wide">Rules note<input name="effectNote" value="{{note}}" placeholder="Critical failure doubles damage..."></label>{{/if}}{{#if isHealing}}<label class="wide">Rules note<input name="effectNote" value="{{note}}"></label>{{/if}}{{#if isCheck}}<label class="wide">Rules note<input name="effectNote" value="{{note}}"></label>{{/if}}{{#if isCondition}}<label class="wide">Rules note<input name="effectNote" value="{{note}}"></label>{{/if}}
           </div></article>{{else}}<div class="ls-builder-empty">No modular effects yet. Constant descriptive effects can remain in the rules text.</div>{{/each}}
         </div>
-        <div class="ls-builder-tip"><i class="fa-solid fa-gears"></i><span>{{nativeRuleCount}} existing native PF2e rules will be preserved. {{generatedRuleCount}} Lore Smith rules are currently generated.</span></div>
+        <div class="ls-builder-tip"><i class="fa-solid fa-gears"></i><span>{{nativeRuleCount}} existing native PF2e rules will be preserved. {{generatedRuleCount}} constant rules and {{activatedRuleCount}} activation-bound rules are configured.</span></div>
       </section>
     {{/if}}
 
     {{#if steps.review}}
       <section class="ls-builder-step ls-builder-review"><i class="fa-solid fa-hammer"></i><h2>{{item.name}}</h2><p>Level {{item.level}} &middot; {{item.rarity}} {{item.typeLabel}}</p>
         <div class="ls-validation {{#if valid}}valid{{else}}warning{{/if}}"><h3>{{#if valid}}Ready for the native sheet{{else}}Check these fields{{/if}}</h3>{{#each validation}}<p><i class="fa-solid fa-triangle-exclamation"></i> {{this}}</p>{{else}}<p><i class="fa-solid fa-check"></i> The required fields and modular effects are valid.</p>{{/each}}</div>
-        <p>Lore Smith will save the activation block, Foundry inline rolls and templates, and valid Rule Elements, then reopen the normal PF2e item sheet.</p>
-        <button data-action="finish"><i class="fa-solid fa-check"></i> Finish item</button>
+        <article class="ls-final-statblock ls-builder-card"><header><h3>{{item.name}}</h3><span>{{item.typeLabel}} {{item.level}}</span></header><div class="ls-preview-traits"><span>{{item.rarity}}</span>{{#each item.traits}}<span>{{label}}</span>{{/each}}</div>
+          <p><strong>Price</strong> {{item.price.pp}} pp, {{item.price.gp}} gp, {{item.price.sp}} sp, {{item.price.cp}} cp; <strong>Bulk</strong> {{item.bulk}}; <strong>Usage</strong> {{item.usage}}</p>
+          {{#if item.weapon}}<p><strong>Damage</strong> {{item.damageDice}}{{item.damageDie}} {{item.damageType}}; <strong>Category</strong> {{item.category}}; <strong>Group</strong> {{item.group}}; <strong>Range</strong> {{item.range}}; <strong>Reload</strong> {{item.reload}}; <strong>Splash</strong> {{item.splashDamage}}</p>{{/if}}
+          {{#if item.armor}}<p><strong>AC bonus</strong> {{item.acBonus}}; <strong>Dex cap</strong> {{item.dexCap}}; <strong>Strength</strong> {{item.strength}}; <strong>Check penalty</strong> {{item.checkPenalty}}; <strong>Speed penalty</strong> {{item.speedPenalty}}</p>{{/if}}
+          {{#if item.shield}}<p><strong>AC bonus</strong> {{item.acBonus}}; <strong>Speed penalty</strong> {{item.speedPenalty}}</p>{{/if}}
+          <p><strong>Hardness</strong> {{item.hardness}}; <strong>HP</strong> {{item.hpValue}} / {{item.hpMax}}; <strong>Quantity</strong> {{item.quantity}}</p>
+          {{#if item.consumable}}<p><strong>Uses</strong> {{item.usesValue}} / {{item.usesMax}}</p>{{/if}}
+          {{#if hasRunes}}<p><strong>Potency</strong> +{{item.runePotency}}; <strong>{{#if item.weapon}}Striking{{else}}Resilient{{/if}} tier</strong> {{item.runeTier}}; <strong>Property runes</strong> {{item.runeNames}}</p>{{/if}}
+          {{#if item.materialType}}<p><strong>Material</strong> {{item.materialType}} ({{item.materialGrade}})</p>{{/if}}
+          <div class="ls-preview-description">{{{previewDescription}}}</div>
+        </article>
+        <section class="ls-builder-card"><h3>What happens at the table</h3>{{#each resultRows}}<p><strong>{{label}}</strong> — {{behavior}}</p>{{else}}<p>The item’s normal PF2e statistics and copied native rules apply. No additional Lore Smith effects are configured.</p>{{/each}}<p>Written requirements, action costs, range, special endings, saving-throw outcomes, and consumable charges still need a player or GM. Test the item on a spare actor before handing it to players.</p></section>
+        {{#if hasWarnings}}<section class="ls-validation warning"><h3>GM review</h3>{{#each warnings}}<p>{{this}}</p>{{/each}}</section>{{/if}}
+        <p>Finish saves the reviewed automation and reopens the native PF2e item sheet. Existing copied rules are preserved.</p>
+        <button data-action="finish" {{#unless valid}}disabled{{/unless}}><i class="fa-solid fa-check"></i> Finish item</button>
       </section>
     {{/if}}
   </main>

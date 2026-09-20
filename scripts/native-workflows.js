@@ -1,4 +1,8 @@
 import { creatureTableRow, safeItemGuidance } from "./building-creatures-data.js";
+import { installBuilderSession } from "./builder-session.js";
+import { lsBuilderGuide } from "./builder-guides.js";
+import { cloneCreatureItems, creatureHpAfterMaximum, creatureScalePlan, creatureOffenseReview } from "./creature-builder-support.js";
+import { lsItemRule, lsItemDurationLabel, lsItemConstantRules, lsPreserveItemDamage, lsItemPriceGuidance, lsValidateItemBuilder, lsItemResultRows, lsItemRuneOptions, lsItemActivationButtons, lsBindItemActivationButtons } from "./item-builder-support.js";
 
 const LS_MODULE_ID = "lore-smith";
 const { ApplicationV2: LSApplicationV2, HandlebarsApplicationMixin: LSHandlebarsMixin, DialogV2: LSDialogV2 } = foundry.applications.api;
@@ -94,7 +98,7 @@ function lsClosestTier(value, values, labels) {
   values.forEach((candidate, index) => {
     if (Math.abs(Number(value) - Number(candidate)) < Math.abs(Number(value) - Number(values[best]))) best = index;
   });
-  return { label: labels[best], rank: best, value: values[best] };
+  return { label: labels[best], rank: best, value: Number(value), benchmark: values[best] };
 }
 
 function lsHpTier(value, level) {
@@ -151,11 +155,13 @@ function lsBalanceReport(actor, concept) {
   if (minimumSizeLevel != null && level < minimumSizeLevel) issues.push({ severity: "info", text: "This size is uncommon at the selected level. It can work, but review reach, space, and encounter impact." });
   const roadmap = LS_CREATURE_ROADMAPS[concept.roadmap];
   if (roadmap && ["spellcaster", "magicalStriker"].includes(concept.roadmap) && !actor.items.some((item) => item.type === "spell")) issues.push({ severity: "info", text: `${roadmap.label} expects a magical toolkit, but no spells are attached yet.` });
-  if (!issues.some((issue) => issue.severity === "warning")) issues.unshift({ severity: "good", text: "The visible core statistics follow the GM Core push-and-pull guidance." });
+  const offenseReport = creatureOffenseReview(actor);
+  issues.push(...offenseReport.issues);
+  if (!issues.some((issue) => issue.severity === "warning")) issues.unshift({ severity: "info", text: "No benchmark warning was found. Review tactics and test a sample encounter before treating this creature as finished." });
   return {
     core: [...core, { name: "HP", label: hp.label, value: lsNumber(system.attributes?.hp?.max, 1) }],
     issues: issues.map((issue) => ({ ...issue, icon: issue.severity === "warning" ? "fa-triangle-exclamation" : issue.severity === "good" ? "fa-circle-check" : "fa-circle-info" })),
-    reference: lsBenchmarkReference(level), roadmap,
+    reference: lsBenchmarkReference(level), roadmap, offense: offenseReport.offense,
   };
 }
 
@@ -221,21 +227,27 @@ function lsAbilityDescription(link, level) {
   const template = hasArea && link.areaShape && link.areaDistance
     ? `@Template[type:${link.areaShape}|distance:${Number(link.areaDistance)}]`
     : "";
-  const check = hasSave && Number.isFinite(dc) ? `@Check[${save}|dc:${dc}|basic]` : "";
+  const basic = link.saveMode !== "degrees";
+  const check = hasSave && Number.isFinite(dc) ? `@Check[${save}|dc:${dc}${basic ? "|basic" : ""}]` : "";
   const damage = formula ? `@Damage[${formula}[${link.damageType ?? "untyped"}]]` : "";
   const requirements = link.requirements ? `<p><strong>Requirements</strong> ${lsEscapeHtml(link.requirements)}</p>` : "";
   const trigger = link.trigger ? `<p><strong>Trigger</strong> ${lsEscapeHtml(link.trigger)}</p>` : "";
   const duration = link.duration ? `<p><strong>Duration</strong> ${lsEscapeHtml(link.duration)}</p>` : "";
-  const condition = link.condition ? ` On the specified result, it gains <strong>${lsEscapeHtml(link.condition)}</strong>${link.conditionValue ? ` ${Number(link.conditionValue)}` : ""}.` : "";
+  const conditionResult = { failure: "failure or critical failure", criticalFailure: "critical failure", always: "every result" }[link.conditionResult] ?? "failure or critical failure";
+  const condition = link.condition ? ` ${hasSave ? `On ${conditionResult}, the target gains` : "The target gains"} <strong>${lsEscapeHtml(link.condition)}</strong>${link.conditionValue ? ` ${Number(link.conditionValue)}` : ""}.` : "";
   const area = hasArea ? `<p><strong>Area</strong> ${Number(link.areaDistance) || 5}-foot ${lsEscapeHtml(link.areaShape ?? "burst")} ${template}</p>` : "";
   const range = link.delivery === "target" && Number(link.range) > 0 ? `<p><strong>Range</strong> ${Number(link.range)} feet</p>` : "";
   const target = link.delivery === "self" ? "<p><strong>Targets</strong> Self</p>" : "";
-  const defense = hasSave ? `<p><strong>Defense</strong> basic ${lsEscapeHtml(save)} ${check}</p>` : "";
+  const defense = hasSave ? `<p><strong>Defense</strong> ${basic ? "basic " : ""}${lsEscapeHtml(save)} ${check}</p>` : "";
   const defaultEffect = formula
     ? `${hasArea ? "Creatures in the area" : "The target"} take the listed damage.`
     : "Apply the listed effect.";
   const effect = link.effectText ? lsEscapeHtml(link.effectText) : defaultEffect;
-  return `${requirements}${trigger}${range}${target}${area}${defense}<p><strong>Effect</strong> ${effect} ${damage}${condition}</p>${duration}`;
+  const degrees = hasSave && !basic ? [
+    ["criticalSuccess", "Critical Success"], ["success", "Success"], ["failure", "Failure"], ["criticalFailure", "Critical Failure"],
+  ].map(([key, label]) => `<p><strong>${label}</strong> ${lsEscapeHtml(link.outcomes?.[key] || "No additional effect.")}</p>`).join("") : "";
+  const basicNote = hasSave && basic && formula ? "<p><em>Basic save: critical success—no damage; success—half damage; failure—full damage; critical failure—double damage.</em></p>" : "";
+  return `${requirements}${trigger}${range}${target}${area}${defense}<p><strong>Effect</strong> ${effect} ${damage}${condition}</p>${basicNote}${degrees}${duration}`;
 }
 
 function lsAbilityActionData(usage, actions) {
@@ -260,6 +272,10 @@ async function lsRecalculateLinkedCreatureEntries(actor, level, { notify = false
       if (link.attackTier !== "custom") update["system.bonus.value"] = lsTierValue("strikeAttack", level, link.attackTier);
       if (link.damageTier !== "custom" && link.primaryDamageId) update[`system.damageRolls.${link.primaryDamageId}.damage`] = lsStrikeFormula(lsTierValue("strikeDamage", level, link.damageTier));
       updates.push(update);
+    } else if (link.kind === "spellcasting" && item.type === "spellcastingEntry" && link.dcTier !== "custom") {
+      const values = creatureTableRow("spell", level);
+      const index = { extreme: 0, high: 2, moderate: 4 }[link.dcTier];
+      if (index != null) updates.push({ _id: item.id, "system.spelldc.dc": values[index], "system.spelldc.value": values[index + 1], [`flags.${LS_MODULE_ID}.creatureDamageLink.levelApplied`]: level });
     } else if (link.kind === "ability" && item.type === "action") {
       updates.push({
         _id: item.id,
@@ -523,6 +539,39 @@ async function lsBuildContentPreview(uuid) {
   };
 }
 
+async function lsCreatureFinalPreview(actor) {
+  const system = actor.system;
+  const enrich = (text) => TextEditor.enrichHTML(String(text ?? ""), { async: true, secrets: true, relativeTo: actor });
+  const nameOf = (record, key) => game.i18n.localize(record?.[key]?.label ?? record?.[key] ?? key);
+  const defenseList = (values) => (values ?? []).map((entry) => `${nameOf(CONFIG.PF2E.immunityTypes, entry.type)}${entry.value != null ? ` ${entry.value}` : ""}${entry.exceptions?.length ? ` (except ${entry.exceptions.join(", ")})` : ""}`).join("; ");
+  const entries = await Promise.all(actor.items.map(async (item) => ({
+    id: item.id, name: item.name, type: item.type,
+    traits: (item.system?.traits?.value ?? []).join(", "),
+    cost: item.system?.actionType?.value === "action" ? `${item.system?.actions?.value ?? 1} action(s)` : item.system?.actionType?.value ?? "",
+    frequency: item.system?.frequency?.max ? `${item.system.frequency.max} per ${item.system.frequency.per}` : "",
+    attack: item.type === "melee" ? lsNumber(item.system?.bonus) : null,
+    damage: Object.values(item.system?.damageRolls ?? {}).map((roll) => `${roll.damage} ${roll.damageType}${roll.category ? ` (${roll.category})` : ""}`).join(" + "),
+    range: item.system?.range?.increment ? `${item.system.range.increment} ft. increment` : item.system?.range?.max ? `${item.system.range.max} ft.` : item.system?.range?.value ?? "",
+    effects: (item.system?.attackEffects?.value ?? []).join(", "),
+    description: await enrich(item.system?.description?.value),
+    isStrike: item.type === "melee", isEntry: item.type === "spellcastingEntry", isSpell: item.type === "spell",
+    rank: lsNumber(item.system?.location?.heightenedLevel, lsNumber(item.system?.level, 1)),
+    entryName: item.type === "spell" ? actor.items.get(item.system?.location?.value)?.name ?? "Unassigned" : "",
+    spellDc: item.system?.spelldc?.dc, spellAttack: item.system?.spelldc?.value,
+    spellStyle: item.system?.prepared?.value, tradition: item.system?.tradition?.value,
+    slots: Object.entries(item.system?.slots ?? {}).filter(([, slot]) => slot.max > 0).map(([key, slot]) => `${key.replace("slot", "rank ")}: ${slot.value}/${slot.max}`).join("; "),
+  })));
+  return {
+    currentHp: system.attributes?.hp?.value,
+    languages: (system.details?.languages?.value ?? []).map((key) => nameOf(CONFIG.PF2E.languages, key)).join(", "),
+    languageDetails: system.details?.languages?.details ?? "",
+    immunities: defenseList(system.attributes?.immunities), resistances: defenseList(system.attributes?.resistances), weaknesses: defenseList(system.attributes?.weaknesses),
+    publicNotes: await enrich(system.details?.publicNotes), privateNotes: await enrich(system.details?.privateNotes),
+    strikes: entries.filter((entry) => entry.isStrike), spells: entries.filter((entry) => entry.isSpell),
+    spellcasting: entries.filter((entry) => entry.isEntry), abilities: entries.filter((entry) => !entry.isStrike && !entry.isSpell && !entry.isEntry),
+  };
+}
+
 class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static DEFAULT_OPTIONS = {
     id: "lore-smith-creature-builder-{id}",
@@ -539,6 +588,10 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       useSource: LoreSmithCreatureBuilder.useSource,
       useCurrent: LoreSmithCreatureBuilder.useCurrent,
       applyRoadmap: LoreSmithCreatureBuilder.applyRoadmap,
+      applyLevelScale: LoreSmithCreatureBuilder.applyLevelScale,
+      editLinkedAbility: LoreSmithCreatureBuilder.editLinkedAbility,
+      cancelAbilityEdit: LoreSmithCreatureBuilder.cancelAbilityEdit,
+      openEmbedded: LoreSmithCreatureBuilder.openEmbedded,
       createLinkedStrike: LoreSmithCreatureBuilder.createLinkedStrike,
       createLinkedAbility: LoreSmithCreatureBuilder.createLinkedAbility,
       createLinkedPassive: LoreSmithCreatureBuilder.createLinkedPassive,
@@ -591,6 +644,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   sourcePreview = null;
   contentPreview = null;
   contentResults = [];
+  editingAbility = null;
 
   async _prepareContext(options) {
     const oldViewport = this.element?.querySelector?.(".ls-builder-body") ?? this.element?.closest?.(".window-content");
@@ -723,6 +777,8 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       intendedUseOptions: [["combatant", "Combatant"], ["social", "Social creature"], ["ally", "Trusted ally"]].map(([value, label]) => ({ value, label, selected: value === concept.intendedUse })),
       complexityOptions: [["simple", "Simple / group creature"], ["standard", "Standard"], ["solo", "Solo / complex"]].map(([value, label]) => ({ value, label, selected: value === concept.complexity })),
       balance: lsBalanceReport(actor, concept),
+      finalPreview: this.step === 6 ? await lsCreatureFinalPreview(actor) : null,
+      editingAbilityName: this.editingAbility ? actor.items.get(this.editingAbility)?.name : "",
       damageWorkshop,
       damageTypes: Object.entries(CONFIG.PF2E.damageTypes ?? {}).map(([value, label]) => ({ value, label: game.i18n.localize(label), selected: value === "slashing" })).sort((left, right) => left.label.localeCompare(right.label)),
       conditionOptions: Object.entries(CONFIG.PF2E.conditionTypes ?? {}).map(([value, label]) => ({ value, label: game.i18n.localize(label) })).sort((left, right) => left.label.localeCompare(right.label)),
@@ -732,7 +788,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         const primary = Object.values(item.system?.damageRolls ?? {})[0];
         const formula = link.kind === "strike" ? primary?.damage ?? "—" : link.damageTier === "custom" ? link.customDamage : lsAreaDamageFormula(level, link.damageTier);
         const attack = link.kind === "strike" ? lsNumber(item.system?.bonus, 0) : null;
-        return { id: item.id, name: item.name, img: item.img, kind: link.kind, formula, attack, damageType: link.damageType, attackTier: LS_BENCHMARK_LABELS[link.attackTier] ?? "", damageTier: LS_BENCHMARK_LABELS[link.damageTier] ?? link.damageTier, autoScale: Boolean(link.autoScale), levelApplied: link.levelApplied };
+        return { id: item.id, name: item.name, img: item.img, kind: link.kind, formula, attack, damageType: link.damageType, attackTier: LS_BENCHMARK_LABELS[link.attackTier] ?? "", damageTier: LS_BENCHMARK_LABELS[link.damageTier] ?? link.damageTier, autoScale: Boolean(link.autoScale), levelApplied: link.levelApplied, editableAbility: link.kind === "ability" };
       }).filter(Boolean),
       benchmarks: {
         attributes: Object.fromEntries(["str", "dex", "con", "int", "wis", "cha"].map((ability) => [ability, markSelected(benchmarkRows.attributes, lsNumber(system.abilities?.[ability], 0))])),
@@ -823,6 +879,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         if (search) search.value = "";
         redraw();
       };
+      hidden?.addEventListener("change", () => { selected = lsSplitTraits(hidden.value); redraw(); });
       picker.querySelector("[data-ls-trait-add]")?.addEventListener("click", add);
       search?.addEventListener("keydown", (event) => {
         if (event.key !== "Enter") return;
@@ -849,8 +906,17 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       setEnabled("abilityAreaDistance", delivery === "area");
       setEnabled("abilityCustomDamage", field("abilityDamageTier")?.value === "custom");
       setEnabled("abilityCustomDc", field("abilityDcTier")?.value === "custom");
+      const hasSave = field("abilitySave")?.value !== "none";
+      const degrees = hasSave && field("abilitySaveMode")?.value === "degrees";
+      setEnabled("abilitySaveMode", hasSave);
+      setEnabled("abilityDcTier", hasSave);
+      setEnabled("abilityCustomDc", hasSave && field("abilityDcTier")?.value === "custom");
+      setEnabled("abilityConditionResult", hasSave);
+      const outcomes = root?.querySelector("[data-ability-outcomes]");
+      if (outcomes) outcomes.hidden = !degrees;
+      for (const name of ["abilityCriticalSuccess", "abilitySuccess", "abilityFailure", "abilityCriticalFailure"]) setEnabled(name, degrees);
     };
-    for (const name of ["strikeAttackTier", "strikeDamageTier", "abilityUsage", "abilityDelivery", "abilityDamageTier", "abilityDcTier"]) {
+    for (const name of ["strikeAttackTier", "strikeDamageTier", "abilityUsage", "abilityDelivery", "abilityDamageTier", "abilityDcTier", "abilitySave", "abilitySaveMode"]) {
       field(name)?.addEventListener("change", syncWorkshop);
     }
     field("abilityDelivery")?.addEventListener("change", () => {
@@ -891,9 +957,8 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         weaknesses: root.querySelector('[name="weaknesses"]')?.value.trim() ?? "",
       };
       const conceptLevel = Math.max(-1, Math.min(24, lsNumber(root.querySelector('[name="conceptLevel"]')?.value, 0)));
-      await this.actor.update({
-        "system.details.level.value": conceptLevel,
-      });
+      await this.actor.update({ "system.details.level.value": conceptLevel }, { loreSmithBuilderManaged: true });
+      await lsRecalculateLinkedCreatureEntries(this.actor, conceptLevel);
       await this.actor.setFlag(LS_MODULE_ID, "creatureConcept", conceptData);
       if (conceptData.roadmap && conceptData.roadmap !== previousConcept.roadmap) {
         await this.applyRoadmapDefaults(conceptData.roadmap, { notify: false, render: false });
@@ -901,12 +966,14 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     }
     if (this.step === 2) {
       const traitField = root.querySelector('[name="creatureTraits"]');
+      const nextLevel = Math.max(-1, Math.min(24, lsNumber(root.querySelector('[name="level"]')?.value, 0)));
       await this.actor.update({
         name: root.querySelector('[name="name"]')?.value.trim() || this.actor.name,
-        "system.details.level.value": Math.max(-1, Math.min(24, lsNumber(root.querySelector('[name="level"]')?.value, 0))),
+        "system.details.level.value": nextLevel,
         "system.traits.size.value": root.querySelector('[name="size"]')?.value || "med",
         ...(traitField ? { "system.traits.value": lsParseTagify(traitField.value) } : {}),
-      });
+      }, { loreSmithBuilderManaged: true });
+      await lsRecalculateLinkedCreatureEntries(this.actor, nextLevel);
     }
     if (this.step === 3) {
       const otherSpeeds = [...root.querySelectorAll("[data-speed-type]")].filter((input) => input.dataset.speedType !== "land").map((input) => ({
@@ -928,7 +995,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         ...Object.fromEntries(["str", "dex", "con", "int", "wis", "cha"].map((ability) => [`system.abilities.${ability}.mod`, lsNumber(root.querySelector(`[name="${ability}"]`)?.value, 0)])),
         "system.attributes.ac.value": lsNumber(root.querySelector('[name="ac"]')?.value, 10),
         "system.attributes.hp.max": Math.max(1, lsNumber(root.querySelector('[name="hp"]')?.value, 1)),
-        "system.attributes.hp.value": Math.max(1, lsNumber(root.querySelector('[name="hp"]')?.value, 1)),
+        "system.attributes.hp.value": creatureHpAfterMaximum(this.actor._source?.system?.attributes?.hp ?? this.actor.system.attributes?.hp, root.querySelector('[name="hp"]')?.value),
         "system.perception.mod": lsNumber(root.querySelector('[name="perception"]')?.value, 0),
         "system.saves.fortitude.value": lsNumber(root.querySelector('[name="fortitude"]')?.value, 0),
         "system.saves.reflex.value": lsNumber(root.querySelector('[name="reflex"]')?.value, 0),
@@ -993,33 +1060,84 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     if (!source?.isOfType?.("npc") && source?.type !== "npc") return ui.notifications.error("That compendium entry is not a PF2e NPC.");
     const confirmed = await LSDialogV2.confirm({
       window: { title: "Use creature as the starting point?" },
-      content: `<p>This replaces the current NPC’s statistics and embedded actions with <strong>${source.name}</strong>. You can edit every field afterward.</p>`,
+      content: `<p>This replaces the current NPC’s statistics and embedded actions with <strong>${lsEscapeHtml(source.name)}</strong>. You can edit every field afterward.</p>`,
       yes: { label: "Use this creature" },
       no: { label: "Cancel" },
     });
     if (!confirmed) return;
     const sourceData = source.toObject();
+    const currentIds = this.actor.items.map((item) => item.id);
+    const itemData = cloneCreatureItems(source.items, () => foundry.utils.randomID(), source.uuid, this.actor.uuid);
+    // Validate and create the replacements before removing any existing entries.
+    if (itemData.length) await this.actor.createEmbeddedDocuments("Item", itemData, { keepId: true });
     await this.actor.update({
       name: source.name,
       img: source.img,
       system: sourceData.system,
       prototypeToken: sourceData.prototypeToken,
       [`flags.${LS_MODULE_ID}.sourceUuid`]: source.uuid,
-    });
-    const currentIds = this.actor.items.map((item) => item.id);
+    }, { loreSmithBuilderManaged: true, recursive: false });
     if (currentIds.length) await this.actor.deleteEmbeddedDocuments("Item", currentIds);
-    const itemData = source.items.map((item) => {
-      const data = item.toObject();
-      delete data._id;
-      return data;
-    });
-    if (itemData.length) await this.actor.createEmbeddedDocuments("Item", itemData);
     this.step = 1;
     await this.render();
   }
 
   static async useCurrent() {
     this.step = 1;
+    await this.render();
+  }
+
+  static async applyLevelScale() {
+    const requested = this.element.querySelector('[name="conceptLevel"], [name="level"]')?.value;
+    const plan = creatureScalePlan(this.actor, requested);
+    if (plan.from === plan.to) return ui.notifications.info("Choose a different level first, then preview the changes.");
+    const lines = plan.rows.map((row) => `<tr><td>${lsEscapeHtml(row.label)}</td><td>${lsEscapeHtml(row.before)}</td><td>${lsEscapeHtml(row.after)}</td></tr>`).join("");
+    const confirmed = await LSDialogV2.confirm({
+      window: { title: `Rescale level ${plan.from} → ${plan.to}` },
+      content: `<p>Values that match a GM Core benchmark follow that same benchmark at the new level. Custom values stay unchanged. Linked Strikes, abilities, and spellcasting entries also recalculate; custom damage and DC choices stay fixed.</p><table><thead><tr><th>Statistic</th><th>Now</th><th>After</th></tr></thead><tbody>${lines}</tbody></table><p><strong>Preserved for manual review:</strong> ${lsEscapeHtml(plan.skipped.join(", ") || "No unmatched numeric fields.")}</p><p>Existing damage is preserved. Spell ranks, slots, uses, movement, senses, resistances, and written effects need your review at the new level.</p>`,
+      yes: { label: "Apply these changes" }, no: { label: "Keep current statistics" },
+    });
+    if (!confirmed) return;
+    await this.actor.update(plan.actorUpdate, { loreSmithBuilderManaged: true });
+    if (plan.itemUpdates.length) await this.actor.updateEmbeddedDocuments("Item", plan.itemUpdates, { loreSmithAutoScale: true });
+    await lsRecalculateLinkedCreatureEntries(this.actor, plan.to);
+    await this.saveStep();
+    await this.render();
+  }
+
+  static async openEmbedded(_event, target) {
+    this.actor.items.get(target.dataset.id)?.sheet.render(true);
+  }
+
+  static async editLinkedAbility(_event, target) {
+    const item = this.actor.items.get(target.dataset.id);
+    const link = item ? lsCreatureDamageLink(item) : null;
+    if (!item || link?.kind !== "ability") return;
+    this.editingAbility = item.id;
+    this.step = 4;
+    await this.render();
+    const values = {
+      Name: item.name, Usage: link.usage, Actions: link.actions ?? 2, Delivery: link.delivery,
+      Range: link.range, DamageTier: link.damageTier, CustomDamage: link.customDamage, DamageType: link.damageType,
+      Save: link.save, SaveMode: link.saveMode ?? "basic", DcTier: link.dcTier, CustomDc: link.customDc,
+      AreaShape: link.areaShape, AreaDistance: link.areaDistance, FrequencyMax: item.system.frequency?.max ?? "", FrequencyPer: item.system.frequency?.per ?? "day",
+      Traits: (item.system.traits?.value ?? []).join(","), Requirements: link.requirements, Trigger: link.trigger, Duration: link.duration,
+      EffectText: link.effectText, Condition: link.condition, ConditionValue: link.conditionValue,
+      ConditionResult: link.conditionResult ?? "failure", CriticalSuccess: link.outcomes?.criticalSuccess ?? "", Success: link.outcomes?.success ?? "",
+      Failure: link.outcomes?.failure ?? "", CriticalFailure: link.outcomes?.criticalFailure ?? "",
+    };
+    for (const [name, value] of Object.entries(values)) {
+      const field = this.element.querySelector(`[name="ability${name}"]`);
+      if (field) { field.value = value ?? ""; field.dispatchEvent(new Event("change", { bubbles: true })); }
+    }
+    const autoScale = this.element.querySelector('[name="abilityAutoScale"]');
+    if (autoScale) { autoScale.checked = Boolean(link.autoScale); autoScale.dispatchEvent(new Event("change", { bubbles: true })); }
+    const editor = this.element.querySelector('[name="abilityName"]')?.closest("details");
+    if (editor) { editor.open = true; editor.scrollIntoView({ block: "start", behavior: "smooth" }); }
+  }
+
+  static async cancelAbilityEdit() {
+    this.editingAbility = null;
     await this.render();
   }
 
@@ -1040,7 +1158,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     await this.actor.update({
       "system.attributes.ac.value": find("ac", stats.ac),
       "system.attributes.hp.max": hp,
-      "system.attributes.hp.value": hp,
+      "system.attributes.hp.value": creatureHpAfterMaximum(this.actor._source?.system?.attributes?.hp ?? this.actor.system.attributes?.hp, hp),
       "system.perception.mod": find("perception", stats.perception),
       "system.saves.fortitude.value": find("saves", stats.fortitude),
       "system.saves.reflex.value": find("saves", stats.reflex),
@@ -1144,6 +1262,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         spelldc: { value: attack, dc }, tradition: { value: tradition }, prepared: { value: prepared },
         showSlotlessLevels: { value: true }, proficiency: { value: 1 }, autoHeightenLevel: { value: null },
       },
+      flags: { [LS_MODULE_ID]: { creatureDamageLink: { kind: "spellcasting", dcTier: tier, autoScale: tier !== "custom", levelApplied: level } } },
     }]);
     this.spellcastingEntryId = entry?.id ?? "";
     ui.notifications.info("Created a native PF2e spellcasting entry.");
@@ -1213,6 +1332,8 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       delivery: root.querySelector('[name="abilityDelivery"]')?.value || "area",
       range: Math.max(0, lsNumber(root.querySelector('[name="abilityRange"]')?.value, 0)),
       save: root.querySelector('[name="abilitySave"]')?.value || "reflex",
+      saveMode: root.querySelector('[name="abilitySaveMode"]')?.value || "basic",
+      outcomes: Object.fromEntries(["criticalSuccess", "success", "failure", "criticalFailure"].map((key) => [key, root.querySelector(`[name="ability${key[0].toUpperCase()}${key.slice(1)}"]`)?.value.trim() ?? ""])),
       areaShape: root.querySelector('[name="abilityAreaShape"]')?.value || "burst",
       areaDistance: Math.max(5, lsNumber(root.querySelector('[name="abilityAreaDistance"]')?.value, 5)),
       requirements: root.querySelector('[name="abilityRequirements"]')?.value.trim() ?? "",
@@ -1221,8 +1342,12 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       effectText: root.querySelector('[name="abilityEffectText"]')?.value.trim() ?? "",
       condition: root.querySelector('[name="abilityCondition"]')?.value ?? "",
       conditionValue: Math.max(0, lsNumber(root.querySelector('[name="abilityConditionValue"]')?.value, 0)),
+      conditionResult: root.querySelector('[name="abilityConditionResult"]')?.value || "failure",
       autoScale: Boolean(root.querySelector('[name="abilityAutoScale"]')?.checked), levelApplied: level,
     };
+    if (link.save !== "none" && link.saveMode === "degrees" && Object.values(link.outcomes).some((value) => !value)) return ui.notifications.warn("Describe all four save results. Use ‘No effect’ for a result that does nothing.");
+    if (link.save !== "none" && link.saveMode === "basic" && link.damageTier === "none") return ui.notifications.warn("A basic save scales damage. For an ability with no damage, choose ‘Write each result’ and describe its outcomes.");
+    if (usage === "reaction" && !link.trigger) return ui.notifications.warn("Add a trigger so the GM knows when this reaction is available.");
     const traits = lsParseTagify(root.querySelector('[name="abilityTraits"]')?.value);
     if (damageTier !== "none" && !traits.includes(damageType) && damageType !== "untyped") traits.push(damageType);
     const system = {
@@ -1231,14 +1356,18 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     };
     if (frequencyMax) system.frequency = { max: frequencyMax, per: root.querySelector('[name="abilityFrequencyPer"]')?.value || "day" };
     if (link.delivery === "target" && link.range > 0) system.range = { increment: null, max: link.range };
-    await this.actor.createEmbeddedDocuments("Item", [{
-      name: root.querySelector('[name="abilityName"]')?.value.trim() || "New Ability",
-      type: "action",
-      img: `systems/pf2e/icons/actions/${actionData.icon}`,
-      system,
-      flags: { [LS_MODULE_ID]: { creatureDamageLink: link } },
-    }]);
-    ui.notifications.info("Created a native PF2e ability with the selected action, target, roll, and effect modules.");
+    const name = root.querySelector('[name="abilityName"]')?.value.trim() || "New Ability";
+    const existing = this.editingAbility ? this.actor.items.get(this.editingAbility) : null;
+    if (this.editingAbility && !existing) return ui.notifications.warn("That ability no longer exists. Cancel editing to start another ability.");
+    if (existing) {
+      await existing.update({ name, "system.description.value": system.description.value, "system.traits.value": traits,
+        "system.actionType.value": actionData.actionType, "system.actions.value": actionData.actions,
+        "system.frequency": system.frequency ?? null, "system.range": system.range ?? null,
+        [`flags.${LS_MODULE_ID}.creatureDamageLink`]: link,
+      }, { loreSmithAutoScale: true });
+    } else await this.actor.createEmbeddedDocuments("Item", [{ name, type: "action", img: `systems/pf2e/icons/actions/${actionData.icon}`, system, flags: { [LS_MODULE_ID]: { creatureDamageLink: link } } }]);
+    this.editingAbility = null;
+    ui.notifications.info(`${existing ? "Updated" : "Created"} ${name}. The description provides save and damage rolls; conditions and written outcomes are applied by the GM.`);
     await this.render();
   }
 
@@ -1346,7 +1475,7 @@ class LoreSmithCreatureBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static async finish() {
     await this.saveStep();
     await this.actor.setFlag(LS_MODULE_ID, "builderComplete", true);
-    await this.close();
+    await this.close({ loreSmithBuilderFinish: true });
     this.actor.sheet.render(true);
   }
 }
@@ -1374,12 +1503,14 @@ function lsCoinValue(price, denomination) {
 function lsNewItemActivation(overrides = {}) {
   return {
     id: foundry.utils.randomID(), name: "", type: "action", actions: "1", traits: [], frequencyMax: "", frequencyPer: "day",
-    trigger: "", requirements: "", range: "", target: "", areaType: "none", areaSize: "", duration: "", effectText: "", ...overrides,
+    trigger: "", requirements: "", range: "", target: "", areaType: "none", areaSize: "", duration: "", effectText: "",
+    applyTo: "self", durationValue: 1, durationUnit: "minutes", durationExpiry: "turn-start", ...overrides,
   };
 }
 
 function lsEmptyItemBuilderFlags() {
   return {
+    schemaVersion: 2,
     activations: [],
     effects: [],
     generatedRules: [],
@@ -1392,8 +1523,12 @@ function lsItemBuilderFlags(item) {
   if (!Array.isArray(stored.activations) && stored.activation?.type && stored.activation.type !== "none") {
     flags.activations = [lsNewItemActivation(stored.activation)];
   }
-  flags.activations = (flags.activations ?? []).map((activation) => lsNewItemActivation({ ...activation, id: activation.id || foundry.utils.randomID(), traits: Array.isArray(activation.traits) ? activation.traits : [] }));
+  flags.activations = (flags.activations ?? []).map((activation) => lsNewItemActivation({
+    ...(stored.schemaVersion !== 2 ? { durationUnit: "manual", applyTo: "manual" } : {}),
+    ...activation, id: activation.id || foundry.utils.randomID(), traits: Array.isArray(activation.traits) ? activation.traits : [],
+  }));
   flags.effects = (flags.effects ?? []).map((effect) => ({ ...effect, id: effect.id || foundry.utils.randomID(), activationId: effect.activationId ?? "" }));
+  flags.legacyReview = Boolean(stored.legacyReview || (stored.schemaVersion !== 2 && (flags.activations.length || flags.effects.length)));
   delete flags.activation;
   return flags;
 }
@@ -1412,20 +1547,7 @@ function lsEffectView(effect) {
 }
 
 function lsGeneratedRule(effect, itemName) {
-  const value = String(effect.value ?? "").trim() === "" ? Number.NaN : Number(effect.value);
-  switch (effect.kind) {
-    case "flat-modifier": return effect.selector && Number.isFinite(value) ? { key: "FlatModifier", selector: effect.selector, type: effect.modifierType || "item", value, label: effect.label || itemName } : null;
-    case "damage-dice": {
-      const match = String(effect.formula ?? "").trim().match(/^(\d+)d(4|6|8|10|12)$/i);
-      return effect.selector && match ? { key: "DamageDice", selector: effect.selector, diceNumber: Number(match[1]), dieSize: `d${match[2]}`, ...(effect.damageType ? { damageType: effect.damageType } : {}), label: effect.label || itemName } : null;
-    }
-    case "resistance": return effect.damageType && Number.isFinite(value) ? { key: "Resistance", type: effect.damageType, value } : null;
-    case "weakness": return effect.damageType && Number.isFinite(value) ? { key: "Weakness", type: effect.damageType, value } : null;
-    case "immunity": return effect.damageType ? { key: "Immunity", type: effect.damageType } : null;
-    case "fast-healing": return Number.isFinite(value) ? { key: "FastHealing", value, ...(effect.option === "regeneration" ? { type: "regeneration" } : {}) } : null;
-    case "roll-option": return effect.option ? { key: "RollOption", domain: effect.selector || "all", option: effect.option, label: effect.label || itemName, toggleable: true } : null;
-    default: return null;
-  }
+  return lsItemRule(effect, itemName);
 }
 
 function lsActionGlyph(activation) {
@@ -1461,13 +1583,14 @@ function lsCompileActivationRows(activation, effects, { includeHeading = true } 
     const traits = activation.traits.length ? ` (${activation.traits.map((trait) => lsEscapeHtml(game.i18n.localize(CONFIG.PF2E.actionTraits?.[trait] ?? trait))).join(", ")})` : "";
     rows.push(`<p><strong>${title}</strong> ${lsActionGlyph(activation)}${traits}</p>`);
   }
-  for (const [label, value] of [["Frequency", lsActivationFrequency(activation)], ["Trigger", activation.trigger], ["Requirements", activation.requirements], ["Range", activation.range], ["Targets", activation.target], ["Duration", activation.duration]]) {
+  for (const [label, value] of [["Frequency", lsActivationFrequency(activation)], ["Trigger", activation.trigger], ["Requirements", activation.requirements], ["Range", activation.range], ["Targets", activation.target], ["Duration", lsItemDurationLabel(activation)]]) {
     if (value) rows.push(`<p><strong>${label}</strong> ${lsEscapeHtml(value)}</p>`);
   }
   if (activation.areaType !== "none" && activation.areaSize) rows.push(`<p>@Template[type:${activation.areaType}|distance:${Math.max(0, lsNumber(activation.areaSize, 0))}]</p>`);
   const effectParts = [];
   if (activation.effectText) effectParts.push(lsEscapeHtml(activation.effectText).replaceAll("\n", "<br>"));
   effectParts.push(...effects.map(lsInlineItemEffect).filter(Boolean));
+  effectParts.push(...effects.filter((effect) => lsGeneratedRule(effect, "")).map((effect) => `${lsEscapeHtml(effect.label || effect.kind)}: ${lsEscapeHtml(effect.formula || effect.value || effect.option || effect.damageType)}${effect.damageType && effect.value ? ` ${lsEscapeHtml(effect.damageType)}` : ""}${effect.selector ? ` (${lsEscapeHtml(effect.selector)})` : ""}.`));
   if (effectParts.length) rows.push(`<p><strong>Effect</strong> ${effectParts.join(" ")}</p>`);
   return rows;
 }
@@ -1477,12 +1600,12 @@ function lsCompileItemBuilderDescription(baseDescription, flags) {
   const clean = String(baseDescription ?? "").replace(new RegExp(`${start}[\\s\\S]*?${end}`, "g"), "").trim();
   const rows = [];
   for (const [index, activation] of flags.activations.entries()) {
-    const effects = flags.effects.filter((effect) => effect.activationId === activation.id || (!effect.activationId && index === 0));
+    const effects = flags.effects.filter((effect) => effect.activationId === activation.id);
     if (index > 0) rows.push("<hr>");
     rows.push(...lsCompileActivationRows(activation, effects));
   }
-  if (!flags.activations.length) {
-    const standalone = flags.effects.map(lsInlineItemEffect).filter(Boolean);
+  {
+    const standalone = flags.effects.filter((effect) => !effect.activationId).map(lsInlineItemEffect).filter(Boolean);
     if (standalone.length) rows.push(`<p><strong>Effect</strong> ${standalone.join(" ")}</p>`);
   }
   return rows.length ? `${clean}${clean ? "\n" : ""}${start}${rows.join("")}${end}` : clean;
@@ -1497,7 +1620,7 @@ function lsActivationActionSource(item, activation, effects) {
     type: "action",
     img: item.img,
     system: {
-      description: { value: lsCompileActivationRows(activation, effects, { includeHeading: false }).join("") },
+      description: { value: lsCompileActivationRows(activation, effects, { includeHeading: false }).join("") + lsItemActivationButtons({ ...item, actor: item.actor, uuid: item.uuid, getFlag: () => ({ activations: [activation], effects }) }) },
       actionType: { value: actionType }, actions: { value: actionCount },
       traits: { value: foundry.utils.deepClone(activation.traits), otherTags: [] },
       frequency: frequencyMax ? { max: frequencyMax, per: activation.frequencyPer || "day", value: frequencyMax } : null,
@@ -1507,7 +1630,17 @@ function lsActivationActionSource(item, activation, effects) {
   };
 }
 
+const lsOwnedActivationQueues = new Map();
 async function lsSyncOwnedItemActivations(item) {
+  const key = item.uuid || item.id;
+  const previous = lsOwnedActivationQueues.get(key) || Promise.resolve();
+  const pending = previous.catch(() => {}).then(() => lsSyncOwnedItemActivationsNow(item));
+  lsOwnedActivationQueues.set(key, pending);
+  try { return await pending; }
+  finally { if (lsOwnedActivationQueues.get(key) === pending) lsOwnedActivationQueues.delete(key); }
+}
+
+async function lsSyncOwnedItemActivationsNow(item) {
   const actor = item.actor;
   if (!actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type)) return;
   const flags = lsItemBuilderFlags(item);
@@ -1516,7 +1649,7 @@ async function lsSyncOwnedItemActivations(item) {
   const linkedByActivation = new Map(linked.map((candidate) => [candidate.getFlag(LS_MODULE_ID, "itemActivation")?.activationId, candidate]));
   const updates = [], creates = [];
   for (const [index, activation] of desired.entries()) {
-    const source = lsActivationActionSource(item, activation, flags.effects.filter((effect) => effect.activationId === activation.id || (!effect.activationId && index === 0)));
+    const source = lsActivationActionSource(item, activation, flags.effects.filter((effect) => effect.activationId === activation.id));
     const existing = linkedByActivation.get(activation.id);
     if (existing) {
       if (source.system.frequency) {
@@ -1553,6 +1686,7 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       previewSource: LoreSmithItemBuilder.previewSource,
       useSource: LoreSmithItemBuilder.useSource,
       useCurrent: LoreSmithItemBuilder.useCurrent,
+      compareItems: LoreSmithItemBuilder.compareItems,
       addTrait: LoreSmithItemBuilder.addTrait,
       removeTrait: LoreSmithItemBuilder.removeTrait,
       addActivation: LoreSmithItemBuilder.addActivation,
@@ -1586,10 +1720,17 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   sourcesLoaded = false;
   results = [];
   sourcePreview = null;
+  comparisons = [];
+  comparisonsLoaded = false;
+  nativeItemOptions = null;
 
   async _prepareContext(options) {
     if (this.step === 0 && !this.sourcesLoaded) await this.loadSources();
-    const item = this.item, system = item.system ?? {}, traitConfig = lsItemTraitConfig();
+    const item = this.item, system = ([1, 2].includes(this.step) ? item.toObject().system : item.system) ?? {}, traitConfig = lsItemTraitConfig();
+    if (this.step === 2 && ["weapon", "armor", "shield"].includes(item.type) && typeof item.sheet?.getData === "function") {
+      try { this.nativeItemOptions = await item.sheet.getData(); }
+      catch (error) { console.warn("Lore Smith | Could not load native rune options", error); }
+    }
     const price = system.price?.value ?? {};
     const typeFlags = {
       weapon: item.type === "weapon", armor: item.type === "armor", shield: item.type === "shield",
@@ -1606,7 +1747,9 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       saves: lsSelectOptions(null, effect.save, [["fortitude", "Fortitude"], ["reflex", "Reflex"], ["will", "Will"]]),
       modifierTypes: lsSelectOptions(null, effect.modifierType, [["item", "Item"], ["status", "Status"], ["circumstance", "Circumstance"], ["untyped", "Untyped"]]),
       regeneration: effect.option === "regeneration",
-      activationOptions: [{ value: "", label: "Constant / unassigned", selected: !effect.activationId }, ...activationChoices.map((choice) => ({ ...choice, selected: choice.value === effect.activationId }))],
+      activationOptions: [{ value: "", label: "Constant while worn / held correctly", selected: !effect.activationId }, ...activationChoices.map((choice) => ({ ...choice, label: `Activate: ${choice.label}`, selected: choice.value === effect.activationId })),
+        ...(effect.activationId && !activationChoices.some((choice) => choice.value === effect.activationId) ? [{ value: effect.activationId, label: "Missing activation — choose another", selected: true }] : [])],
+      selectorOptions: lsSelectOptions(null, effect.selector, [["ac", "Armor Class"], ["saving-throw", "All saving throws"], ["fortitude", "Fortitude"], ["reflex", "Reflex"], ["will", "Will"], ["perception", "Perception"], ["initiative", "Initiative"], ["athletics", "Athletics"], ["acrobatics", "Acrobatics"], ["stealth", "Stealth"], ["medicine", "Medicine"], ["crafting", "Crafting"], ["diplomacy", "Diplomacy"], ["intimidation", "Intimidation"], ["deception", "Deception"], ["survival", "Survival"], ["nature", "Nature"], ["arcana", "Arcana"], ["religion", "Religion"], ["occultism", "Occultism"], ["society", "Society"], ["thievery", "Thievery"], ["performance", "Performance"], ["strike-attack-roll", "All Strike attack rolls"], ["strike-damage", "All Strike damage"]]),
     }));
     const activations = this.builderFlags.activations.map((activation, index) => ({
       ...activation,
@@ -1617,19 +1760,13 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       activationActionOptions: lsSelectOptions(null, activation.actions, [["1", "One action"], ["2", "Two actions"], ["3", "Three actions"], ["varies", "One to three actions"]]),
       frequencyOptions: lsSelectOptions(null, activation.frequencyPer, [["round", "round"], ["minute", "minute"], ["hour", "hour"], ["day", "day"], ["week", "week"]]),
       areaOptions: lsSelectOptions(null, activation.areaType, [["none", "No area"], ["burst", "Burst"], ["cone", "Cone"], ["emanation", "Emanation"], ["line", "Line"]]),
+      applyToOptions: lsSelectOptions(null, activation.applyTo, [["self", "Apply to item owner"], ["target", "Apply to one targeted creature"], ["manual", "Description only — resolve manually"]]),
+      durationUnitOptions: lsSelectOptions(null, activation.durationUnit, [["rounds", "Rounds"], ["minutes", "Minutes"], ["hours", "Hours"], ["days", "Days"], ["encounter", "Until encounter ends"], ["unlimited", "Until removed manually"], ["manual", "Written duration only"]]),
+      durationExpiryOptions: lsSelectOptions(null, activation.durationExpiry, [["turn-start", "Start of originating turn"], ["turn-end", "End of originating turn"], ["round-end", "End of round"]]),
     }));
     const generatedRules = this.builderFlags.generatedRules ?? [], rules = Array.isArray(system.rules) ? system.rules : [];
-    const validation = [];
-    if (!item.name?.trim()) validation.push("Add an item name.");
-    if (typeFlags.weapon && !system.damage?.die) validation.push("Choose a weapon damage die.");
-    if (typeFlags.armor && !system.category) validation.push("Choose an armor category.");
-    if (typeFlags.consumable && lsNumber(system.uses?.max, 0) < 1) validation.push("Consumables need at least one use.");
-    for (const effect of this.builderFlags.effects) {
-      if (["flat-modifier", "damage-dice"].includes(effect.kind) && !effect.selector) validation.push(`${effect.label || "An automation effect"} needs a PF2e selector.`);
-      if (["damage", "healing", "damage-dice"].includes(effect.kind) && !effect.formula) validation.push(`${effect.label || "An effect"} needs a dice formula.`);
-      if (["resistance", "weakness", "immunity"].includes(effect.kind) && !effect.damageType) validation.push(`${effect.label || "An IWR effect"} needs a damage or condition type.`);
-      if (["flat-modifier", "resistance", "weakness", "fast-healing"].includes(effect.kind) && String(effect.value ?? "").trim() === "") validation.push(`${effect.label || "An automation effect"} needs a numeric value.`);
-    }
+    const review = lsValidateItemBuilder(item, this.builderFlags), validation = review.errors;
+    const previewDescription = this.step === 5 ? await TextEditor.enrichHTML(lsCompileItemBuilderDescription(system.description?.value, this.builderFlags), { async: true, secrets: item.isOwner, relativeTo: item }) : "";
     return {
       ...await super._prepareContext(options),
       item: {
@@ -1643,8 +1780,16 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         damageType: system.damage?.damageType ?? "", range: system.range ?? "", reload: system.reload?.value ?? "", splashDamage: lsNumber(system.splashDamage, 0),
         acBonus: lsNumber(system.acBonus, item.type === "shield" ? 2 : 0), strength: lsNumber(system.strength, 0), dexCap: lsNumber(system.dexCap, 0),
         checkPenalty: lsNumber(system.checkPenalty, 0), speedPenalty: lsNumber(system.speedPenalty, 0), usesValue: lsNumber(system.uses?.value, 1), usesMax: lsNumber(system.uses?.max, 1), autoDestroy: system.uses?.autoDestroy !== false,
+        hpValue: lsNumber(system.hp?.value, 0), materialType: system.material?.type || "", materialGrade: system.material?.grade || "",
+        invested: lsTraits(item).includes("invested"), runeNames: (system.runes?.property || []).join(", "), runePotency: system.runes?.potency || 0,
+        runeTier: typeFlags.weapon ? system.runes?.striking || 0 : system.runes?.resilient || 0,
       },
       activations, effects, query: this.query, results: this.results, sourcePreview: this.sourcePreview,
+      ...lsItemRuneOptions({ type: item.type, system }, CONFIG.PF2E, this.nativeItemOptions), materialOptions: lsSelectOptions(CONFIG.PF2E.preciousMaterials, system.material?.type),
+      nativeMaterialOptions: this.nativeItemOptions?.preciousMaterials?.materials?.map((entry) => ({ ...entry, label: entry.label || "No precious material", selected: entry.value === JSON.stringify({ type: system.material?.type || null, grade: system.material?.grade || null }) })),
+      materialGradeOptions: lsSelectOptions(CONFIG.PF2E.preciousMaterialGrades, system.material?.grade),
+      priceGuidance: lsItemPriceGuidance(item), comparisons: this.comparisons, comparisonsLoaded: this.comparisonsLoaded,
+      warnings: review.warnings, hasWarnings: review.warnings.length > 0, previewDescription, resultRows: lsItemResultRows(item, this.builderFlags),
       sourceLevel: this.sourceLevel, sourceTrait: this.sourceTrait, sourceCount: this.sourceAllResults.length,
       sourcePageLabel: `${this.sourcePage + 1} / ${Math.max(1, Math.ceil(this.sourceAllResults.length / this.sourcePageSize))}`,
       hasPreviousSources: this.sourcePage > 0, hasNextSources: (this.sourcePage + 1) * this.sourcePageSize < this.sourceAllResults.length,
@@ -1662,7 +1807,8 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       consumableCategories: lsSelectOptions(CONFIG.PF2E.consumableCategories, system.category, [["ammunition", "Ammunition"], ["elixir", "Elixir"], ["oil", "Oil"], ["other", "Other"], ["poison", "Poison"], ["potion", "Potion"], ["scroll", "Scroll"], ["snare", "Snare"], ["talisman", "Talisman"], ["tool", "Tool"]]),
       bulkOptions: [["0", "Negligible"], ["0.1", "Light"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"], ["10", "10"]].map(([value, label]) => ({ value, label, selected: Number(value) === lsNumber(system.bulk, 0) })),
       dieOptions: ["d4", "d6", "d8", "d10", "d12"].map((value) => ({ value, selected: value === system.damage?.die })),
-      nativeRuleCount: Math.max(0, rules.length - generatedRules.length), generatedRuleCount: this.builderFlags.effects.map((effect) => lsGeneratedRule(effect, item.name)).filter(Boolean).length, validation, valid: validation.length === 0,
+      nativeRuleCount: Math.max(0, rules.length - generatedRules.length), generatedRuleCount: lsItemConstantRules(this.builderFlags, item.name).length,
+      activatedRuleCount: this.builderFlags.effects.filter((effect) => effect.activationId && lsGeneratedRule(effect, item.name)).length, validation, valid: validation.length === 0,
       step: this.step, stepNumber: this.step + 1,
       steps: { source: this.step === 0, basics: this.step === 1, mechanics: this.step === 2, activation: this.step === 3, automation: this.step === 4, review: this.step === 5 },
       canBack: this.step > 0, canNext: this.step > 0 && this.step < 5,
@@ -1693,13 +1839,13 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
       });
     }
     if (this.step === 2) {
+      const previousHP = { ...this.item.system.hp };
       const updates = { "system.description.value": root.querySelector('[name="description"]')?.value ?? "" };
       if (LS_PHYSICAL_ITEM_TYPES.has(this.item.type)) Object.assign(updates, {
         "system.quantity": Math.max(1, lsNumber(root.querySelector('[name="quantity"]')?.value, 1)),
         "system.bulk.value": lsNumber(root.querySelector('[name="bulk"]')?.value, 0),
         "system.hardness": Math.max(0, lsNumber(root.querySelector('[name="hardness"]')?.value, 0)),
         "system.hp.max": Math.max(0, lsNumber(root.querySelector('[name="hpMax"]')?.value, 0)),
-        "system.hp.value": Math.max(0, lsNumber(root.querySelector('[name="hpMax"]')?.value, 0)),
         "system.price.value": Object.fromEntries(["pp", "gp", "sp", "cp"].map((coin) => [coin, Math.max(0, lsNumber(root.querySelector(`[name="price${coin.toUpperCase()}"]`)?.value, 0))])),
       });
       if (this.item.system?.usage) updates["system.usage.value"] = root.querySelector('[name="usage"]')?.value || this.item.system.usage.value;
@@ -1715,12 +1861,36 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         "system.dexCap": lsNumber(root.querySelector('[name="dexCap"]')?.value, 0), "system.checkPenalty": lsNumber(root.querySelector('[name="checkPenalty"]')?.value, 0), "system.speedPenalty": lsNumber(root.querySelector('[name="speedPenalty"]')?.value, 0),
       });
       if (this.item.type === "shield") Object.assign(updates, { "system.acBonus": lsNumber(root.querySelector('[name="acBonus"]')?.value, 2), "system.speedPenalty": lsNumber(root.querySelector('[name="speedPenalty"]')?.value, 0) });
+      if (this.item.type === "shield" && root.querySelector('[name="runeReinforcing"]')) updates["system.runes.reinforcing"] = lsNumber(root.querySelector('[name="runeReinforcing"]').value, 0);
+      if (["weapon", "armor"].includes(this.item.type) && this.item.system.runes) {
+        updates["system.runes.potency"] = lsNumber(root.querySelector('[name="runePotency"]')?.value, this.item.system.runes.potency);
+        updates[`system.runes.${this.item.type === "weapon" ? "striking" : "resilient"}`] = lsNumber(root.querySelector('[name="runeTier"]')?.value, 0);
+        updates["system.runes.property"] = [...new Set([...root.querySelectorAll('[name="propertyRune"]')].map((field) => field.value).filter(Boolean))];
+      }
+      if (this.item.system.material && root.querySelector('[name="materialType"]')) {
+        const materialType = root.querySelector('[name="materialType"]').value;
+        updates["system.material.type"] = materialType || null;
+        updates["system.material.grade"] = materialType ? root.querySelector('[name="materialGrade"]')?.value || "standard" : null;
+      }
+      if (root.querySelector('[name="nativeMaterial"]')) {
+        const choice = this.nativeItemOptions?.preciousMaterials?.materials?.find((entry) => entry.value === root.querySelector('[name="nativeMaterial"]').value);
+        if (choice) {
+          const material = JSON.parse(choice.value);
+          updates["system.material.type"] = material.type;
+          updates["system.material.grade"] = material.grade;
+        }
+      }
       if (["consumable", "ammo"].includes(this.item.type)) Object.assign(updates, {
         ...(this.item.type === "consumable" ? { "system.category": root.querySelector('[name="category"]')?.value || "other" } : {}),
         "system.uses.value": Math.max(0, lsNumber(root.querySelector('[name="usesValue"]')?.value, 1)), "system.uses.max": Math.max(1, lsNumber(root.querySelector('[name="usesMax"]')?.value, 1)),
         "system.uses.autoDestroy": Boolean(root.querySelector('[name="autoDestroy"]')?.checked),
       });
       await this.item.update(updates);
+      if (LS_PHYSICAL_ITEM_TYPES.has(this.item.type)) {
+        const hp = lsPreserveItemDamage(previousHP, this.item.system.hp?.max);
+        if (hp !== this.item.system.hp?.value) await this.item.update({ "system.hp.value": hp });
+      }
+      this.comparisonsLoaded = false;
     }
     if (this.step === 3) {
       this.syncActivationsFromForm();
@@ -1747,6 +1917,10 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
         range: card.querySelector('[name="activationRange"]')?.value.trim() || "", target: card.querySelector('[name="activationTarget"]')?.value.trim() || "",
         areaType: card.querySelector('[name="activationAreaType"]')?.value || "none", areaSize: card.querySelector('[name="activationAreaSize"]')?.value ?? "",
         duration: card.querySelector('[name="activationDuration"]')?.value.trim() || "", effectText: card.querySelector('[name="activationEffectText"]')?.value.trim() || "",
+        applyTo: card.querySelector('[name="activationApplyTo"]')?.value || "manual",
+        durationValue: card.querySelector('[name="activationDurationValue"]')?.value || "",
+        durationUnit: card.querySelector('[name="activationDurationUnit"]')?.value || "manual",
+        durationExpiry: card.querySelector('[name="activationDurationExpiry"]')?.value || "turn-start",
       });
     });
   }
@@ -1772,8 +1946,10 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   async persistBuilderAutomation() {
     const previous = this.builderFlags.generatedRules ?? [];
     const existing = (this.item.system.rules ?? []).filter((rule) => !previous.some((generated) => JSON.stringify(generated) === JSON.stringify(rule)));
-    const generated = this.builderFlags.effects.map((effect) => lsGeneratedRule(effect, this.item.name)).filter(Boolean);
+    const generated = lsItemConstantRules(this.builderFlags, this.item.name);
     this.builderFlags.generatedRules = generated;
+    this.builderFlags.schemaVersion = 2;
+    this.builderFlags.legacyReview = false;
     await this.item.update({
       "system.rules": [...existing, ...generated],
       "system.description.value": lsCompileItemBuilderDescription(this.item.system.description?.value, this.builderFlags),
@@ -1830,24 +2006,37 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
     if (!source || source.type !== this.item.type) return ui.notifications.error("That source is not the same PF2e item type.");
     const confirmed = await LSDialogV2.confirm({
       window: { title: "Use item as the starting point?" },
-      content: `<p>This replaces the current item’s mechanics with <strong>${source.name}</strong>. You can edit it afterward.</p>`,
+      content: `<p>This replaces the current item’s mechanics with <strong>${lsEscapeHtml(source.name)}</strong>. You can edit it afterward.</p>`,
       yes: { label: "Use this item" },
       no: { label: "Cancel" },
     });
     if (!confirmed) return;
+    const sourceFlags = lsItemBuilderFlags(source);
     await this.item.update({
       name: source.name,
       img: source.img,
       system: source.toObject().system,
       [`flags.${LS_MODULE_ID}.sourceUuid`]: source.uuid,
-    });
-    this.builderFlags = lsEmptyItemBuilderFlags();
+      [`flags.${LS_MODULE_ID}.itemBuilder`]: sourceFlags,
+    }, { recursive: false });
+    this.builderFlags = sourceFlags;
     this.step = 1;
     await this.render();
   }
 
   static async useCurrent() {
     this.step = 1;
+    await this.render();
+  }
+
+  static async compareItems() {
+    await this.saveStep();
+    const level = lsNumber(this.item.system.level, 0), traits = new Set(lsTraits(this.item));
+    const matches = (await lsSearchPacks({ documentName: "Item", types: [this.item.type] }))
+      .filter((entry) => entry.uuid.startsWith("Compendium.pf2e.") && Math.abs(entry.level - level) <= 2)
+      .sort((a, b) => (Math.abs(a.level - level) * 10 - a.traits.filter((trait) => traits.has(trait)).length) - (Math.abs(b.level - level) * 10 - b.traits.filter((trait) => traits.has(trait)).length));
+    this.comparisons = (await Promise.all(matches.slice(0, 6).map((entry) => lsBuildSourcePreview(entry.uuid)))).filter(Boolean);
+    this.comparisonsLoaded = true;
     await this.render();
   }
 
@@ -1893,14 +2082,14 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
   static async removeActivation(_event, target) {
     this.syncActivationsFromForm();
     this.builderFlags.activations = this.builderFlags.activations.filter((activation) => activation.id !== target.dataset.id);
-    this.builderFlags.effects = this.builderFlags.effects.map((effect) => effect.activationId === target.dataset.id ? { ...effect, activationId: "" } : effect);
+    if (this.builderFlags.effects.some((effect) => effect.activationId === target.dataset.id)) ui.notifications.warn("Effects from the removed activation need reassignment in Effects. They have not become constant bonuses.");
     await this.render();
   }
 
   static async addEffect() {
     this.syncEffectsFromForm();
     const kind = this.element.querySelector('[name="effectKindToAdd"]')?.value || "damage";
-    this.builderFlags.effects.push({ id: foundry.utils.randomID(), kind, basic: true });
+    this.builderFlags.effects.push({ id: foundry.utils.randomID(), kind, basic: true, activationId: this.builderFlags.activations[0]?.id || "" });
     await this.render();
   }
 
@@ -1912,13 +2101,22 @@ class LoreSmithItemBuilder extends LSHandlebarsMixin(LSApplicationV2) {
 
   static async finish() {
     await this.saveStep();
+    const review = lsValidateItemBuilder(this.item, this.builderFlags);
+    if (review.errors.length) {
+      this.step = 5;
+      ui.notifications.error("Resolve the fields listed in Review before finishing this item.");
+      return this.render();
+    }
     await this.persistBuilderAutomation();
     await this.item.setFlag(LS_MODULE_ID, "builderComplete", true);
     await lsSyncOwnedItemActivations(this.item);
-    await this.close();
+    await this.close({ loreSmithBuilderFinish: true });
     this.item.sheet.render(true);
   }
 }
+
+installBuilderSession(LoreSmithCreatureBuilder, "creature", lsBuilderGuide);
+installBuilderSession(LoreSmithItemBuilder, "item", lsBuilderGuide, { afterRestore: (app) => lsSyncOwnedItemActivations(app.item) });
 
 function lsActivateJournalWikiLinks(container) {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
@@ -2443,7 +2641,36 @@ function lsAddSheetButton(app, html, { kind, icon, title, onClick }) {
 
 
 
+function lsBindNativeItemEffects(app, html) {
+  const root = lsRoot(html) ?? lsRoot(app.element);
+  if (!root) return;
+  lsBindItemActivationButtons(root);
+  const item = app.item ?? (app.document?.documentName === "Item" ? app.document : null);
+  if (!item?.actor || !item.isOwner) return;
+  const linked = item.type === "action" ? item.getFlag(LS_MODULE_ID, "itemActivation") : null;
+  const source = linked ? item.actor.items.get(linked.sourceItemId) : item;
+  if (!source) return;
+  const buttons = lsItemActivationButtons(source);
+  root.querySelector(".ls-item-runtime-actions")?.remove();
+  if (!buttons) return;
+  const actions = document.createElement("div");
+  actions.className = "ls-item-runtime-actions";
+  actions.innerHTML = buttons;
+  if (linked) for (const button of [...actions.querySelectorAll("[data-ls-item-activate]")]) {
+    if (button.dataset.lsItemActivate !== linked.activationId) button.remove();
+  }
+  if (!actions.childElementCount) return;
+  (root.querySelector(".window-content") ?? root).append(actions);
+}
+
+function lsIsBuilderSyncGM() {
+  if (!game.user.isGM) return false;
+  const active = game.users?.activeGM ?? game.users?.contents?.find((user) => user.active && user.isGM);
+  return !active || active.id === game.user.id;
+}
+
 Hooks.on("renderActorSheet", (app, html) => {
+  lsBindNativeItemEffects(app, html);
   const actor = app.actor ?? app.document;
   if (actor?.type !== "npc") return;
   lsAddSheetButton(app, html, {
@@ -2455,6 +2682,7 @@ Hooks.on("renderActorSheet", (app, html) => {
 });
 
 Hooks.on("renderItemSheet", (app, html) => {
+  lsBindNativeItemEffects(app, html);
   const item = app.item ?? app.document;
   if (!item || item.documentName !== "Item" || !LS_PHYSICAL_ITEM_TYPES.has(item.type)) return;
   lsAddSheetButton(app, html, {
@@ -2465,19 +2693,19 @@ Hooks.on("renderItemSheet", (app, html) => {
   });
 });
 
-Hooks.on("createItem", (item) => {
-  if (!game.user.isGM || !item.actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type) || !item.getFlag(LS_MODULE_ID, "itemBuilder")) return;
+Hooks.on("createItem", (item, options) => {
+  if (options?.loreSmithBuilderRestore || !lsIsBuilderSyncGM() || !item.actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type) || !item.getFlag(LS_MODULE_ID, "itemBuilder")) return;
   queueMicrotask(() => lsSyncOwnedItemActivations(item).catch((error) => console.error("Lore Smith | Failed to create linked item activations", error)));
 });
 
-Hooks.on("updateItem", (item) => {
-  if (!game.user.isGM || !item.actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type) || !item.getFlag(LS_MODULE_ID, "itemBuilder")) return;
+Hooks.on("updateItem", (item, changed, options) => {
+  if (options?.loreSmithBuilderRestore || !lsIsBuilderSyncGM() || !item.actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type) || !item.getFlag(LS_MODULE_ID, "itemBuilder")) return;
   queueMicrotask(() => lsSyncOwnedItemActivations(item).catch((error) => console.error("Lore Smith | Failed to update linked item activations", error)));
 });
 
-Hooks.on("deleteItem", (item) => {
+Hooks.on("deleteItem", (item, options) => {
   const actor = item.actor;
-  if (!game.user.isGM || !actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type)) return;
+  if (options?.loreSmithBuilderRestore || !lsIsBuilderSyncGM() || !actor || !LS_PHYSICAL_ITEM_TYPES.has(item.type)) return;
   const linkedIds = actor.items.filter((candidate) => candidate.type === "action" && candidate.getFlag(LS_MODULE_ID, "itemActivation")?.sourceItemId === item.id).map((candidate) => candidate.id);
   if (linkedIds.length) queueMicrotask(() => actor.deleteEmbeddedDocuments("Item", linkedIds).catch((error) => console.error("Lore Smith | Failed to remove linked item activations", error)));
 });
@@ -2488,14 +2716,16 @@ Hooks.on("preUpdateItem", (item, changed, options) => {
   const paths = Object.keys(foundry.utils.flattenObject(changed));
   const changesGeneratedValue = link.kind === "strike"
     ? paths.some((path) => path === "system.bonus.value" || path.startsWith("system.damageRolls."))
+    : link.kind === "spellcasting"
+      ? paths.some((path) => path === "system.spelldc.dc" || path === "system.spelldc.value")
     : paths.includes("system.description.value");
   if (!changesGeneratedValue) return;
   foundry.utils.setProperty(changed, `flags.${LS_MODULE_ID}.creatureDamageLink.autoScale`, false);
   queueMicrotask(() => ui.notifications.info(`${item.name} was changed manually, so its level scaling is now Custom. You can relink it from the Creature Builder.`));
 });
 
-Hooks.on("updateActor", (actor, changed) => {
-  if (!game.user.isGM || actor.type !== "npc") return;
+Hooks.on("updateActor", (actor, changed, options) => {
+  if (options?.loreSmithBuilderRestore || options?.loreSmithBuilderManaged || !lsIsBuilderSyncGM() || actor.type !== "npc") return;
   const flattened = foundry.utils.flattenObject(changed);
   if (!("system.details.level.value" in flattened)) return;
   const level = Math.max(-1, Math.min(24, lsNumber(flattened["system.details.level.value"], lsNumber(actor.system.details?.level, 0))));
@@ -2503,6 +2733,7 @@ Hooks.on("updateActor", (actor, changed) => {
 });
 
 Hooks.on("renderApplicationV2", (app, html) => {
+  if (!(app instanceof LoreSmithCreatureBuilder) && !(app instanceof LoreSmithItemBuilder)) lsBindNativeItemEffects(app, html);
   const document = app.document ?? app.object ?? app.actor ?? app.item;
   if (document?.documentName === "Actor" && document.type === "npc") {
     lsAddSheetButton(app, html, {
@@ -2521,13 +2752,16 @@ Hooks.on("renderApplicationV2", (app, html) => {
   }
 });
 
+Hooks.on("renderChatMessageHTML", (_message, html) => lsBindItemActivationButtons(lsRoot(html)));
+Hooks.on("renderChatMessage", (_message, html) => lsBindItemActivationButtons(lsRoot(html)));
+
 Hooks.once("ready", async () => {
   if (game.system.id !== "pf2e") return;
   Object.assign(game.loreSmith ??= {}, {
     openCreatureBuilder: (actor) => new LoreSmithCreatureBuilder(actor).render(true),
     openItemBuilder: (item) => new LoreSmithItemBuilder(item).render(true),
   });
-  if (game.user.isGM) {
+  if (lsIsBuilderSyncGM()) {
     const existingBuilderItems = game.actors.contents.flatMap((actor) => actor.items.filter((item) => LS_PHYSICAL_ITEM_TYPES.has(item.type) && item.getFlag(LS_MODULE_ID, "itemBuilder")));
     const results = await Promise.allSettled(existingBuilderItems.map((item) => lsSyncOwnedItemActivations(item)));
     for (const failure of results.filter((result) => result.status === "rejected")) console.error("Lore Smith | Failed to migrate an existing item activation", failure.reason);

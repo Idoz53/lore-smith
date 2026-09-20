@@ -27,6 +27,11 @@ const nativeScript = await readFile(resolve(root, "scripts/native-workflows.js")
 const template = await readFile(resolve(root, "templates/dashboard.hbs"), "utf8");
 const creatureTemplate = await readFile(resolve(root, "templates/creature-builder.hbs"), "utf8");
 const itemTemplate = await readFile(resolve(root, "templates/item-builder.hbs"), "utf8");
+const itemSupport = await readFile(resolve(root, "scripts/item-builder-support.js"), "utf8");
+for (const file of ["builder-session.js", "builder-guides.js", "creature-builder-support.js", "item-builder-support.js"]) {
+  await access(resolve(root, "scripts", file), constants.R_OK);
+  if (!nativeScript.includes(`from "./${file}"`)) throw new Error(`Builder support is not loaded: ${file}`);
+}
 if (!script.includes("const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;")) {
   throw new Error("Lore Smith dashboard is missing its Foundry ApplicationV2 runtime bindings.");
 }
@@ -139,7 +144,7 @@ for (const requiredItemBuilderFeature of [
   'key: "RollOption"',
   "persistBuilderAutomation",
 ]) {
-  if (!nativeScript.includes(requiredItemBuilderFeature)) throw new Error(`Native item builder feature missing: ${requiredItemBuilderFeature}`);
+  if (!(nativeScript + itemSupport).includes(requiredItemBuilderFeature)) throw new Error(`Native item builder feature missing: ${requiredItemBuilderFeature}`);
 }
 for (const requiredStep of ["Starting point", "Identity", "Activations", "Effects", "Review"]) {
   if (!itemTemplate.includes(requiredStep)) throw new Error(`Item builder step missing: ${requiredStep}`);
