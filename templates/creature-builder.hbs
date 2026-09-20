@@ -60,7 +60,7 @@
     {{#if steps.concept}}
       <section class="ls-builder-step">
         <h2>Concept & combat role</h2>
-        <p>Start with what the creature should feel like at the table. The official GM Core road maps provide a balanced foundation; they are suggestions, not locked presets.</p>
+        <p>Start with what the creature should feel like at the table. GM Core road maps suggest a starting profile. Review its weaknesses, offensive combinations, and tactics before play.</p>
         <div class="ls-builder-card">
           <div class="ls-form-grid">
             <label class="wide">Core concept<textarea name="concept" rows="3" placeholder="An armored temple guardian that pins intruders in place...">{{concept.concept}}</textarea></label>
@@ -77,6 +77,8 @@
           {{#each roadmapOptions}}<article class="{{#if selected}}selected{{/if}}"><strong>{{label}}</strong><span>{{description}}</span></article>{{/each}}
         </div>
         <button type="button" data-action="applyRoadmap"><i class="fa-solid fa-wand-magic-sparkles"></i> Apply this road map's level-based suggestions</button>
+        <button type="button" class="secondary" data-action="applyLevelScale">Preview statistics at the selected level</button>
+        <p class="ls-field-help">Changing level normally updates only linked attacks, abilities, and spell DCs. Use the preview to also rescale matching core benchmarks. Custom numbers, spells, slots, and written effects stay yours to review.</p>
         <div class="ls-builder-tip"><i class="fa-solid fa-scale-balanced"></i><span>Applying a road map gives one-time suggestions for attributes, AC, HP, Perception, saves, and Speed. Every field remains editable afterward.</span></div>
       </section>
     {{/if}}
@@ -85,6 +87,7 @@
       <section class="ls-builder-step">
         <h2>Identity</h2>
         <p>These values write directly to the native PF2e NPC actor.</p>
+        <button type="button" class="secondary" data-action="applyLevelScale">Preview statistics at the selected level</button>
         <div class="ls-form-grid">
           <label class="wide">Creature name<input name="name" value="{{actor.name}}"></label>
           <label>Level<select name="level">{{#each creatureLevels}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
@@ -118,7 +121,7 @@
         <h3>Defenses and Perception</h3>
         <div class="ls-form-grid stats">
           <label>Armor Class<select data-benchmark-target="ac"><option value="">Custom</option>{{#each benchmarks.ac}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} ({{value}})</option>{{/each}}</select><input name="ac" type="number" value="{{actor.ac}}"></label>
-          <label>Hit Points<select data-benchmark-target="hp"><option value="">Custom</option>{{#each benchmarks.hp}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} ({{value}})</option>{{/each}}</select><input name="hp" type="number" min="1" value="{{actor.hp}}"></label>
+          <label>Maximum Hit Points<select data-benchmark-target="hp"><option value="">Custom</option>{{#each benchmarks.hp}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} ({{value}})</option>{{/each}}</select><input name="hp" type="number" min="1" value="{{actor.hp}}"><small>Existing damage is preserved. A creature at 0 HP stays at 0.</small></label>
           <label>Perception<select data-benchmark-target="perception"><option value="">Custom</option>{{#each benchmarks.perception}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="perception" type="number" value="{{actor.perception}}"></label>
           <label>Fortitude<select data-benchmark-target="fortitude"><option value="">Custom</option>{{#each benchmarks.fortitude}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="fortitude" type="number" value="{{actor.fortitude}}"></label>
           <label>Reflex<select data-benchmark-target="reflex"><option value="">Custom</option>{{#each benchmarks.reflex}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} (+{{value}})</option>{{/each}}</select><input name="reflex" type="number" value="{{actor.reflex}}"></label>
@@ -171,14 +174,23 @@
             <summary><i class="fa-solid fa-burst"></i> Actions & reactions</summary>
             <div class="ls-module-grid">
               <label class="wide">Ability name<input name="abilityName" value="New Ability"></label>
-              <label>Usage<select name="abilityUsage"><option value="action" selected>Action</option><option value="reaction">Reaction</option><option value="free">Free action</option></select></label>
+              {{#if editingAbilityName}}<p class="wide ls-builder-tip">Editing {{editingAbilityName}}. Save replaces this ability; it does not add a second copy.</p>{{/if}}
+              <label>Usage<select name="abilityUsage"><option value="action" selected>Action</option><option value="reaction">Reaction</option><option value="free">Free action</option><option value="passive">Passive</option></select></label>
               <label>Actions<select name="abilityActions"><option value="1">One action</option><option value="2" selected>Two actions</option><option value="3">Three actions</option></select></label>
               <label>Targeting<select name="abilityDelivery"><option value="self">Self</option><option value="target">One target</option><option value="area" selected>Area</option><option value="none">No target / utility</option></select></label>
               <label>Range (feet)<input name="abilityRange" type="number" min="0" step="5" placeholder="For one target"></label>
               <label>Damage benchmark<select name="abilityDamageTier">{{#each damageWorkshop.areaTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
               <label>Custom damage formula<input name="abilityCustomDamage" placeholder="Used only for Custom"></label>
               <label>Damage type<select name="abilityDamageType">{{#each damageTypes}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-              <label>Defense<select name="abilitySave"><option value="none">No saving throw</option><option value="reflex" selected>Basic Reflex</option><option value="fortitude">Basic Fortitude</option><option value="will">Basic Will</option></select></label>
+              <label>Defense<select name="abilitySave"><option value="none">No saving throw</option><option value="reflex" selected>Reflex</option><option value="fortitude">Fortitude</option><option value="will">Will</option></select></label>
+              <label>Saving throw results<select name="abilitySaveMode"><option value="basic">Basic save: damage varies by result</option><option value="degrees">Write each result</option></select><small>A basic save means no / half / full / double damage. Choose “Write each result” for custom effects.</small></label>
+              <div class="wide ls-form-grid" data-ability-outcomes hidden>
+                <label>Critical success<textarea name="abilityCriticalSuccess" rows="2" placeholder="e.g. No effect."></textarea></label>
+                <label>Success<textarea name="abilitySuccess" rows="2" placeholder="e.g. Half damage, no condition."></textarea></label>
+                <label>Failure<textarea name="abilityFailure" rows="2" placeholder="e.g. Full damage and frightened 1."></textarea></label>
+                <label>Critical failure<textarea name="abilityCriticalFailure" rows="2" placeholder="e.g. Double damage and frightened 2."></textarea></label>
+                <p class="wide ls-field-help">These results are written on the ability. The GM applies damage and conditions after reading the roll; the builder does not resolve them automatically.</p>
+              </div>
               <label>DC benchmark<select name="abilityDcTier">{{#each damageWorkshop.dcTiers}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
               <label>Custom DC<input name="abilityCustomDc" type="number" placeholder="Used only for Custom"></label>
               <label>Area shape<select name="abilityAreaShape"><option value="burst">Burst</option><option value="cone">Cone</option><option value="line">Line</option><option value="emanation">Emanation</option></select></label>
@@ -191,9 +203,11 @@
               <label>Duration<input name="abilityDuration" placeholder="e.g. 1 round"></label>
               <label>Condition<select name="abilityCondition"><option value="">No condition</option>{{#each conditionOptions}}<option value="{{value}}">{{label}}</option>{{/each}}</select></label>
               <label>Condition value<input name="abilityConditionValue" type="number" min="0" value="1"></label>
+              <label>When to apply the condition<select name="abilityConditionResult"><option value="failure">Failure or critical failure</option><option value="criticalFailure">Critical failure only</option><option value="always">Every save result</option></select><small>For different conditions on different results, leave Condition blank and describe each result above.</small></label>
               <label class="wide">Effect text<textarea name="abilityEffectText" rows="3" placeholder="Describe what happens. Foundry save, damage, and template buttons are generated automatically."></textarea></label>
               <label class="ls-check-label wide"><input name="abilityAutoScale" type="checkbox" checked> Automatically scale the linked damage and DC with creature level</label>
-              <button class="wide" type="button" data-action="createLinkedAbility"><i class="fa-solid fa-plus"></i> Create native PF2e ability</button>
+              <button class="wide" type="button" data-action="createLinkedAbility"><i class="fa-solid fa-check"></i> {{#if editingAbilityName}}Save changes to ability{{else}}Create native PF2e ability{{/if}}</button>
+              {{#if editingAbilityName}}<button class="wide secondary" type="button" data-action="cancelAbilityEdit">Cancel editing / start a new ability</button>{{/if}}
             </div>
           </details>
           <details>
@@ -221,7 +235,7 @@
             </div>
           </details>
           {{#if linkedDamageEntries.length}}
-            <div class="ls-linked-offense"><h4>Level-linked entries on this creature</h4>{{#each linkedDamageEntries}}<article><img src="{{img}}"><div><strong>{{name}}</strong><span>{{kind}} · {{damageTier}} · {{formula}} {{damageType}}{{#if attack}} · attack +{{attack}}{{/if}}</span><small>Last calculated at level {{levelApplied}}</small></div><button type="button" data-action="toggleLinkedScaling" data-id="{{id}}" class="{{#unless autoScale}}secondary{{/unless}}"><i class="fa-solid {{#if autoScale}}fa-link{{else}}fa-link-slash{{/if}}"></i> {{#if autoScale}}Linked{{else}}Custom{{/if}}</button></article>{{/each}}</div>
+            <div class="ls-linked-offense"><h4>Level-linked entries on this creature</h4>{{#each linkedDamageEntries}}<article><img src="{{img}}"><div><strong>{{name}}</strong><span>{{kind}} · {{damageTier}} · {{formula}} {{damageType}}{{#if attack}} · attack +{{attack}}{{/if}}</span><small>Last calculated at level {{levelApplied}}</small></div>{{#if editableAbility}}<button type="button" data-action="editLinkedAbility" data-id="{{id}}">Edit ability</button>{{else}}<button type="button" data-action="openEmbedded" data-id="{{id}}">Edit on sheet</button>{{/if}}<button type="button" data-action="toggleLinkedScaling" data-id="{{id}}" class="{{#unless autoScale}}secondary{{/unless}}"><i class="fa-solid {{#if autoScale}}fa-link{{else}}fa-link-slash{{/if}}"></i> {{#if autoScale}}Linked{{else}}Custom{{/if}}</button></article>{{/each}}</div>
           {{/if}}
         </section>
         <div class="ls-builder-filters content">
@@ -250,7 +264,7 @@
         </div>
         <section class="ls-attached-content"><h3>On this creature</h3><div class="ls-builder-results compact">
           {{#each actor.actionItems}}
-            <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}}</small></div><button class="danger" data-action="removeContent" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></article>
+            <article><img src="{{img}}"><div><strong>{{name}}</strong><small>{{type}}</small></div><button type="button" data-action="openEmbedded" data-id="{{id}}">Open / edit</button><button class="danger" data-action="removeContent" data-id="{{id}}"><i class="fa-solid fa-trash"></i></button></article>
           {{else}}<div class="ls-builder-empty">No embedded actions or items yet.</div>{{/each}}
         </div></section>
       </section>
@@ -260,6 +274,8 @@
       <section class="ls-builder-step">
         <h2>Native PF2e spellcasting</h2>
         <p>Create or choose a native spellcasting entry, then add installed PF2e spells to it. Lore Smith links each spell to that entry instead of creating loose action items.</p>
+        <p class="ls-field-help">Benchmark spell DCs and attacks follow creature level. Custom values stay fixed. After adding spells, open the entry to set prepared slots, spontaneous slots, or innate uses. Adding a spell alone does not grant a spell slot.</p>
+        <div class="ls-builder-results compact">{{#each spellcastingEntries}}<article><strong>{{name}}</strong><button type="button" data-action="openEmbedded" data-id="{{id}}">Configure slots and uses</button></article>{{/each}}</div>
         <section class="ls-damage-workshop">
           <header><div><span>Spell DC and spell attack table</span><h3>Spellcasting entry</h3></div></header>
           <div class="ls-module-grid">
@@ -293,19 +309,39 @@
     {{#if steps.review}}
       <section class="ls-builder-step ls-builder-review">
         <i class="fa-solid fa-dragon"></i>
-        <h2>{{actor.name}} is ready</h2>
-        <p>Level {{actor.level}} &middot; AC {{actor.ac}} &middot; HP {{actor.hp}} &middot; Perception {{actor.perception}}</p>
-        <p>{{actor.items.length}} native PF2e embedded entries are attached. Finish to return to the regular PF2e NPC sheet.</p>
+        <h2>Review {{actor.name}}</h2>
+        <p>This is the current native creature, including its saved attacks, spells, and ability text. Check the advisory notes and try its intended turn before using it in an encounter.</p>
+        <article class="ls-creature-statblock">
+          <header><h3>{{actor.name}}</h3><strong>Creature {{actor.level}}</strong></header>
+          <div class="ls-preview-traits"><span>{{actor.size}}</span>{{#each actor.traits}}<span>{{label}}</span>{{/each}}</div>
+          <p><strong>Perception</strong> {{actor.perception}}{{#each actor.senses}}; {{label}} ({{acuity}}) {{range}}{{/each}}</p>
+          <p><strong>Languages</strong> {{#if finalPreview.languages}}{{finalPreview.languages}}{{else}}None listed{{/if}} {{finalPreview.languageDetails}}</p>
+          <p><strong>Skills</strong> {{#each actor.skills}}{{label}} {{value}}; {{else}}None listed{{/each}}</p>
+          <p><strong>Str</strong> {{actor.abilities.str}}; <strong>Dex</strong> {{actor.abilities.dex}}; <strong>Con</strong> {{actor.abilities.con}}; <strong>Int</strong> {{actor.abilities.int}}; <strong>Wis</strong> {{actor.abilities.wis}}; <strong>Cha</strong> {{actor.abilities.cha}}</p>
+          <hr>
+          <p><strong>AC</strong> {{actor.ac}}; <strong>Fort</strong> {{actor.fortitude}}; <strong>Ref</strong> {{actor.reflex}}; <strong>Will</strong> {{actor.will}}</p>
+          <p><strong>HP</strong> {{actor.hp}} maximum ({{finalPreview.currentHp}} current){{#if finalPreview.immunities}}; <strong>Immunities</strong> {{finalPreview.immunities}}{{/if}}{{#if finalPreview.resistances}}; <strong>Resistances</strong> {{finalPreview.resistances}}{{/if}}{{#if finalPreview.weaknesses}}; <strong>Weaknesses</strong> {{finalPreview.weaknesses}}{{/if}}</p>
+          <p><strong>Speed</strong> {{#each actor.speeds}}{{label}} {{value}} feet; {{/each}}</p>
+          <hr>
+          {{#each finalPreview.strikes}}<section><h4>{{name}} <small>Strike +{{attack}}</small></h4><p>{{traits}}{{#if range}}; {{range}}{{/if}}</p><p><strong>Damage</strong> {{damage}}{{#if effects}}; {{effects}}{{/if}}</p><div>{{{description}}}</div><button type="button" data-action="openEmbedded" data-id="{{id}}">Open / edit Strike</button></section>{{/each}}
+          {{#each finalPreview.abilities}}<section><h4>{{name}} <small>{{cost}}</small></h4><p>{{traits}}{{#if frequency}}; {{frequency}}{{/if}}</p><div>{{{description}}}</div><button type="button" data-action="openEmbedded" data-id="{{id}}">Open / edit {{type}}</button></section>{{/each}}
+          {{#each finalPreview.spellcasting}}<section><h4>{{name}}</h4><p>{{tradition}} {{spellStyle}}; DC {{spellDc}}; spell attack +{{spellAttack}}</p><p>{{#if slots}}{{slots}}{{else}}No spell slots configured. Innate and focus casting use their own resources.{{/if}}</p><button type="button" data-action="openEmbedded" data-id="{{id}}">Configure spellcasting</button></section>{{/each}}
+          {{#each finalPreview.spells}}<details><summary>{{name}} — rank {{rank}} · {{entryName}}</summary><p>{{traits}}</p><div>{{{description}}}</div><button type="button" data-action="openEmbedded" data-id="{{id}}">Open spell / set uses</button></details>{{/each}}
+          {{#if finalPreview.publicNotes}}<details><summary>Public description</summary>{{{finalPreview.publicNotes}}}</details>{{/if}}
+          {{#if finalPreview.privateNotes}}<details><summary>GM notes</summary>{{{finalPreview.privateNotes}}}</details>{{/if}}
+        </article>
+        <p>Finish marks this build complete and opens its PF2e sheet. Save and damage buttons roll using PF2e; the GM applies written outcomes and conditions.</p>
         <button data-action="finish"><i class="fa-solid fa-check"></i> Finish creature</button>
       </section>
     {{/if}}
 
     {{#unless steps.source}}
       <aside class="ls-balance-assistant">
-        <header><span>GM Core balance assistant</span><strong>Level {{actor.level}}</strong></header>
+        <header><span>GM Core review · advisory</span><strong>Level {{actor.level}}</strong></header>
         {{#if balance.roadmap}}<div class="ls-assistant-roadmap"><b>{{balance.roadmap.label}}</b><span>{{balance.roadmap.description}}</span></div>{{/if}}
         <div class="ls-assistant-stats">{{#each balance.core}}<span><b>{{name}}</b><em>{{label}}</em><small>{{value}}</small></span>{{/each}}</div>
         <div class="ls-assistant-issues">{{#each balance.issues}}<p class="{{severity}}"><i class="fa-solid {{icon}}"></i>{{text}}</p>{{/each}}</div>
+        {{#if balance.offense.length}}<details open><summary>Offense and spellcasting</summary>{{#each balance.offense}}<p><strong>{{name}}</strong><br>{{summary}}</p>{{/each}}</details>{{/if}}
         <details><summary>All level {{actor.level}} tables</summary><dl>{{#each balance.reference}}<div><dt>{{name}}</dt><dd>{{values}}</dd></div>{{/each}}</dl></details>
         <a href="https://2e.aonprd.com/Rules.aspx?ID=2874" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square"></i> Building Creatures on Archives of Nethys</a>
       </aside>
