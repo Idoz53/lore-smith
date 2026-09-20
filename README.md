@@ -134,6 +134,58 @@ Use the manifest URL:
 
 `https://raw.githubusercontent.com/Idoz53/lore-smith/main/module.json`
 
+### Guided item and creature builders (0.39.0)
+
+Open a native PF2e item or NPC sheet and choose its Lore Smith builder button.
+Each step has a **Guide** with examples, practical checks, and links to the
+relevant Archives of Nethys rules. **Review result** shows the native statistics,
+written abilities, and what the GM or player will do at the table.
+
+**Items:** set the base statistics, runes, and precious material, then compare
+nearby official items from installed PF2e compendiums. Price ranges and permanent
+bonus benchmarks are advice, not a balance certification. A copied item's
+native rules remain intact.
+
+In **Activations**, choose the action cost, frequency, recipient, and duration.
+In **Effects**, assign each benefit to **Constant while worn / held correctly**
+or to a named activation. For example, a once-per-day activation with a one-minute
+duration and fire resistance 5 creates an **Apply effect** button. Using it
+creates or refreshes a timed native PF2e Effect and spends one activation use.
+The resistance is not applied just for holding the item.
+
+Constant rules follow PF2e equipment and investment requirements. Activated
+effects can affect the owner or one targeted creature the user can edit; a GM
+can apply effects to other targets. Duration follows the world clock and PF2e's
+expired-effect settings. Range, action costs, requirements, saving throws,
+written conditions, and special ending conditions remain table decisions.
+Damage/healing and save links roll; the GM applies their outcomes. Consumable
+charges and quantity remain separate native-sheet controls. Review older builds
+and finish them once to remove old always-on copies of activation bonuses.
+
+**Creatures:** copying a starting creature now remaps its spellcasting, prepared
+spell, grant, and container links to the new embedded items. Saving statistics
+preserves damage already taken. A level-change preview lists benchmark changes
+before applying them and leaves unmatched custom values alone. Spell ranks,
+slots, and written effects still need review after rescaling.
+
+The ability workshop supports a basic save or separately written critical
+success, success, failure, and critical failure outcomes. Generated abilities
+can be edited in place. The advisory panel checks Strike accuracy and damage,
+spellcasting, spell assignment, area damage, frequency, and action combinations.
+The final preview includes defenses, movement, Strikes, abilities, spellcasting
+entries, slots, and spells, with native-sheet edit controls.
+
+Unfinished fields and up to ten undo operations are saved locally for each
+world, user, and document. Leaving a step or closing saves its ordinary fields;
+**Finish** applies the final item automation. Undo changes only fields touched
+by that operation and stops if those fields were edited elsewhere. An older
+draft is offered explicitly if its source sheet has changed. Local drafts do
+not transfer to another browser or device.
+
+Validation includes automated item, creature, draft/undo, campaign, and map
+regressions, plus all thirteen builder steps rendered in a browser with Foundry
+API stubs. A live Foundry/PF2e world was not available for in-world verification.
+
 ### Campaign workflow (0.38.0)
 
 1. Open Campaign Builder. Add a situation, describe its stakes and available
