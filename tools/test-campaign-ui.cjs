@@ -35,21 +35,23 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     const action=a=>page.locator(`[data-pl-action="${a}"]`);
     const record=(type,id)=>page.locator(`[data-pl-record="${type}"][data-id="${id}"]`);
     const field=(label)=>page.getByLabel(label,{exact:true});
-    async function fold(key){const d=page.locator(`[data-pl-fold="${key}"]`);if(!await d.evaluate(el=>el.open))await d.locator(':scope > summary').click();}
+    async function fold(key){const d=page.locator(`[data-pl-fold="${key}"]`);if(!await d.count())return;if(!await d.evaluate(el=>el.open))await d.locator(':scope > summary').click();}
+    async function choose(kind,id,value){await page.locator(`[data-pl-action=choose-link][data-kind="${kind}"][data-id="${id}"]`).first().click();if(value!==undefined)await page.locator(`[data-pl-action=pick-link][data-value="${value}"]`).click();}
+    async function done(){await action('close-picker').click();}
     async function view(key){await page.locator(`[data-pl-action=view][data-view="${key}"]`).click();}
     async function open(type,id){await view({adventure:'adventures',session:'sessions',person:'people'}[type]);await page.locator(`[data-pl-action=open][data-type="${type}"][data-id="${id}"]`).first().click();}
     await field('The party is at').fill('Cassardis');await field('They plan to').fill('Ask about the expedition');await field('Facts to remember').fill('Quina knows the fishermen');
     await action('new-adventure').click();await field('Adventure name').fill('La Stella del Tevrar');
     const a=await page.evaluate(()=>app.campaignWorkspaceState.selectedId);
     assert.equal(await page.evaluate(()=>app.campaign.workspace.situations.length),1);
-    await field('The current problem').fill('A fallen star is changing the lake');await field('Why the party might become involved').fill('Quina asks for help');
+    await field('The problem').fill('A fallen star is changing the lake');await field('Why the party might get involved').fill('Quina asks for help');
     await fold(`who-${a}`);await action('add-participant').click();
     await field('Person or group').fill('Severin Vhal');await field('What they want').fill('Recover the star');await field('Resources they can use').fill('Boats, divers, equipment');
     await fold(`actions-${a}`);await action('add-action').click();
-    await field('Name, if no shared entry').fill('Severin');await field('Intended action').fill('Send the divers into the lake');await field('Time or condition').fill('At dawn, if the crew is ready');
+    await field('NPC action').fill('At dawn, Severin sends the divers into the lake if the crew is ready.');
     const actionId=await page.evaluate(()=>app.campaign.workspace.actions[0].id);
     await action('add-visit').click();await field('Name of place or contact').fill('Tavern of the Old Aboleth');
-    await field('What is happening there now').fill('Severin is recruiting divers');await field('What the NPCs want or what obstacle is present').fill('The captain wants reliable help');await field('What the party can investigate, learn, or attempt').fill('Negotiate, ask questions, or inspect equipment');
+    await field('What happens here?').fill('Severin is recruiting divers. The captain wants reliable help. Negotiate, ask questions, or inspect equipment.');
     const tavern=await page.evaluate(()=>app.campaign.workspace.situations[0].visitIds[0]);
     await record('resource',tavern).locator('[data-pl-drop]').dispatchEvent('drop',await page.evaluateHandle(()=>{const dt=new DataTransfer();dt.setData('text/plain',JSON.stringify({uuid:'Scene.tavern'}));return {dataTransfer:dt};}));
     await page.waitForFunction(()=>app.campaign.workspace.resources.some(r=>r.uuid==='Scene.tavern'));
@@ -59,35 +61,35 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     const discoveryId=await page.evaluate(()=>app.campaign.workspace.revelations[0].id);
     for(let i=0;i<3;i++){await record('resource',clueIds[i]).getByLabel('Clue',{exact:true}).fill(['A letter names the abbey','A witness saw the abbot pay','The ledger records the payment'][i]);await record('resource',clueIds[i]).getByLabel('Where the characters can find it',{exact:true}).fill('Quina');}
     await field('What have the players worked out so far?').fill('They suspect a wealthy patron');
-    await page.waitForFunction(()=>document.querySelector('[data-pl-coverage]')?.textContent.includes('3 distinct clues with a source · 1 sources'));
+    await page.waitForFunction(()=>document.querySelector('[data-pl-coverage]')?.textContent.includes('3 clues · 1 sources'));
     await record('resource',clueIds[0]).getByLabel('Where the characters can find it',{exact:true}).fill('Severin’s tent');
     await record('resource',clueIds[2]).getByLabel('Where the characters can find it',{exact:true}).fill('Abbey ledger');
     await fold(`material-${a}`);await action('add-material').click();await field('Material name').fill('Lake map and diving rules');await field('Notes or rules reference').fill('Map, depths, hazard statistics, and diving rules');
     const material=await page.evaluate(()=>app.campaign.workspace.situations[0].materialIds[0]);
-    await record('resource',material).getByLabel('Foundry document (optional)',{exact:true}).fill('JournalEntry.diving');
+    await choose('document',material);await field('Foundry document (optional)').fill('JournalEntry.diving');await done();
     await action('new-person').click();await field('Person or Group name').fill('Quina');
     const person=await page.evaluate(()=>app.campaignWorkspaceState.selectedId);
     await field('Who they are').fill('A local guide');await field('Where to find them').fill('Cassardis tavern');await field('One detail that helps portray them').fill('Folds sailcloth while speaking');await field('What they want').fill('Find who paid for the expedition');await field('Resources they can use').fill('Fishing contacts and a boat');await field('What they know').fill('The western road reaches the abbey');await field('How they feel about the party, and why').fill('Trusts them because they helped Tomas');
     await open('adventure',a);
-    await page.locator('[data-pl-record=participant] [data-pl-field=personId]').selectOption(person);
-    assert.match(await page.locator('[data-pl-record=participant]').textContent(),/Trusts them because/);
+    const participant=await page.evaluate(()=>app.campaign.workspace.situations[0].participants[0].id);await choose('participant-person',participant,person);
+    assert.match(await page.locator('[data-pl-record=participant]').textContent(),/Find who paid for the expedition/);
     await action('new-adventure').click();await field('Adventure name').fill('The Silent Abbey');
     const secondAdventure=await page.evaluate(()=>app.campaignWorkspaceState.selectedId);
-    await action('add-visit').click();await field('Name of place or contact').fill('The abbey gate');await field('What is happening there now').fill('The gates are closing');
+    await action('add-visit').click();await field('Name of place or contact').fill('The abbey gate');await field('What happens here?').fill('The gates are closing');
     const abbey=await page.evaluate(()=>app.campaign.workspace.situations.find(a=>a.id===app.campaignWorkspaceState.selectedId).visitIds[0]);
-    await open('adventure',a);await fold(`routes-${tavern}`);await action('add-route').click();await field('Leads to').selectOption(abbey);await field('How they can get there or learn about it').fill('Follow the western road from the tavern');await field('Use an existing clue (optional)').selectOption(clueIds[0]);
+    await open('adventure',a);await fold(`routes-${tavern}`);await choose('route-new',tavern,abbey);await field('How they can get there or learn about it').fill('Follow the western road from the tavern');const routeId=await page.evaluate(()=>app.campaign.workspace.connections[0].id);await choose('route-clue',routeId,clueIds[0]);
     assert.match(await page.locator('[data-pl-record=connection]').textContent(),/A letter names the abbey/);
     const counts=await page.evaluate(()=>[app.campaign.workspace.situations.length,app.campaign.workspace.resources.length,app.campaign.workspace.revelations.length]);
     await page.locator(`[data-pl-action=new-session][data-adventure="${a}"]`).click();
     const session=await page.evaluate(()=>app.campaignWorkspaceState.selectedId);
-    assert.equal(await field('Linked Adventure').inputValue(),a);assert.equal(await field('Where are the characters now?').inputValue(),'Cassardis');
+    assert.equal(await page.evaluate(()=>app.campaign.workspace.sessions.find(s=>s.id===app.campaignWorkspaceState.selectedId).adventureId),a);assert.equal(await field('Where are the characters now?').inputValue(),'Cassardis');
     assert.deepEqual(await page.evaluate(()=>[app.campaign.workspace.situations.length,app.campaign.workspace.resources.length,app.campaign.workspace.revelations.length]),counts);
-    assert.equal(await page.locator(`[data-pl-select=visitIds][value="${abbey}"]`).count(),1,'Reachable destinations from another Adventure are available.');
+    await choose('session-visits',session);assert.equal(await page.locator(`[data-pl-select=visitIds][value="${abbey}"]`).count(),1,'Reachable destinations from another Adventure are available.');
     await page.locator(`[data-pl-select=visitIds][value="${tavern}"]`).check();
-    await page.locator(`[data-pl-select=visitIds][value="${person}"]`).check();
-    await fold(`session-actions-${session}`);await page.locator(`[data-pl-select=actionIds][value="${actionId}"]`).check();
+    await page.locator(`[data-pl-select=visitIds][value="${person}"]`).check();await done();
+    await choose('session-actions',session);await page.locator(`[data-pl-select=actionIds][value="${actionId}"]`).check();await done();
     await fold(`session-ready-${session}`);await action('add-check').click();await field('Preparation item').fill('Read the diving rules');
-    await page.locator(`[data-pl-select=materialIds][value="${material}"]`).check();await page.locator(`[data-pl-select=clueIds][value="${clueIds[0]}"]`).check();
+    await choose('session-material',session);await page.locator(`[data-pl-select=materialIds][value="${material}"]`).check();await done();await choose('session-clues',session);await page.locator(`[data-pl-select=clueIds][value="${clueIds[0]}"]`).check();await done();
     await field('Notes during the game').fill('The party negotiated with Severin and spoke to Quina.');
     await action('journal').click();await page.waitForFunction(()=>Boolean(window.createdJournal));
     assert.equal(await page.evaluate(()=>createdJournal.ownership.default),0);assert.match(await page.evaluate(()=>createdJournal.pages[0].text.content),/Scene.tavern/);
@@ -98,14 +100,14 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     assert.equal(await field('Notes during the game').inputValue(),'The party negotiated with Severin and spoke to Quina.');
     await fold(`session-after-${session}`);await field('What happened and what changed?').fill('They found the letter and took the western road');await field('Which clues did they find, and what did they work out?').fill('They know the abbey paid for the expedition');
     await page.locator(`[data-pl-found][value="${clueIds[0]}"]`).check();await field('What have the players worked out so far?').fill('They know the patron but not the purpose');await field('Update this discovery when completing the Session').check();
-    await field('What does the party intend to do next?').fill('Talk to the abbot');await field('Party location after the game').fill('The western road');await field('New facts to remember (optional)').fill('The abbey paid for the expedition');
+    await field('What does the party intend to do next?').fill('Talk to the abbot');await fold(`session-overview-${session}`);await field('Party location after the game').fill('The western road');await field('New facts to remember (optional)').fill('The abbey paid for the expedition');
     await page.evaluate(()=>{window.failComplete=true;});await action('complete-session').click();await page.waitForFunction(()=>notifications.some(([kind,text])=>kind==='error'&&text.includes('Simulated')));
     assert.equal(await page.evaluate(id=>app.campaign.workspace.sessions.find(s=>s.id===id).status,session),'planned');
     await page.evaluate(()=>{window.failComplete=false;window.notifications=[];});await action('complete-session').click();await page.waitForFunction(id=>app.campaign.workspace.sessions.find(s=>s.id===id).status==='complete',session);
     const saved=await page.evaluate(()=>JSON.parse(savedCampaign).workspace);
     assert.equal(saved.resources.find(r=>r.id===clueIds[0]).clueStatus,'delivered');assert.equal(saved.resources.find(r=>r.id===clueIds[1]).clueStatus,'prepared');assert.equal(saved.revelations[0].understanding,'They know the patron but not the purpose');assert.equal(saved.partyIntent,'Talk to the abbot');
     const frozen=saved.sessions.find(s=>s.id===session).snapshot.content;
-    await open('adventure',a);await record('resource',tavern).getByLabel('What is happening there now',{exact:true}).fill('The expedition has left');
+    await open('adventure',a);await record('resource',tavern).getByLabel('What happens here?',{exact:true}).fill('The expedition has left');
     await page.locator(`[data-pl-action=new-session][data-adventure="${a}"]`).click();
     const next=await page.evaluate(()=>app.campaignWorkspaceState.selectedId);
     assert.deepEqual(await page.evaluate(()=>[app.campaign.workspace.situations.length,app.campaign.workspace.resources.length,app.campaign.workspace.revelations.length]),counts);
@@ -135,11 +137,11 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     await action('delete-entry').click();await page.evaluate(()=>app.campaignWorkspacePending);
     assert.equal(await page.locator(`[data-pl-action=open][data-type=adventure][data-id="${a}"]`).count(),0);
     assert.ok(await page.evaluate(id=>JSON.parse(savedCampaign).workspace.situations.find(r=>r.id===id).deletedAt,a));
-    await open('session',next);assert.equal(await field('Linked Adventure').inputValue(),a);
-    assert.match(await field('Linked Adventure').locator('option:checked').textContent(),/deleted/);
+    await open('session',next);assert.equal(await page.evaluate(()=>app.campaign.workspace.sessions.find(s=>s.id===app.campaignWorkspaceState.selectedId).adventureId),a);
+    assert.match(await page.locator('.ls-cw-editor').textContent(),/deleted/);
     assert.match(await page.locator('.ls-cw-editor').textContent(),/The expedition has left/);
     await page.evaluate(async()=>{await app.syncCampaignForm();app.campaign=JSON.parse(savedCampaign);await app.renderCampaignPreservingScroll();});
-    assert.equal(await field('Linked Adventure').inputValue(),a);
+    assert.equal(await page.evaluate(()=>app.campaign.workspace.sessions.find(s=>s.id===app.campaignWorkspaceState.selectedId).adventureId),a);
     await fold('deleted-entries');
     await page.screenshot({path:path.join(output,'campaign-entry-delete.png'),fullPage:true});
     await page.locator(`[data-pl-action=restore-entry][data-type=adventure][data-id="${a}"]`).click();await page.evaluate(()=>app.campaignWorkspacePending);
@@ -147,7 +149,7 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     assert.equal(await page.evaluate(id=>app.campaign.workspace.sessions.find(r=>r.id===id).adventureId,next),a);
     await open('person',person);await action('delete-entry').click();await page.evaluate(()=>app.campaignWorkspacePending);
     await open('adventure',a);await fold(`who-${a}`);
-    assert.equal(await page.locator('[data-pl-record=participant] [data-pl-field=personId]').inputValue(),person);
+    assert.equal(await page.evaluate(()=>app.campaign.workspace.situations[0].participants[0].personId),person);
     assert.match(await page.locator('[data-pl-record=participant]').textContent(),/Quina \(deleted\)/);
     await view('overview'); // Save the retained shared reference.
     assert.equal(await page.evaluate(id=>JSON.parse(savedCampaign).workspace.situations.find(r=>r.id===id).participants[0].personId,a),person);
@@ -164,7 +166,50 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     assert.equal(await page.evaluate(id=>JSON.stringify(app.campaign.workspace.sessions.find(r=>r.id===id)),session),completedRecord);
     assert.equal(await action('reopen-session').count(),1);
 
+
+    await open('adventure',a);
+    assert.equal(await page.locator('table[aria-label="Who is involved"]').count(),1);
+    assert.equal(await page.locator('table[aria-label="Clues to this discovery"]').count(),1);
+    assert.equal(await page.locator('[data-pl-fold^="who-"], [data-pl-fold^="visits-"]').count(),0);
+    assert.equal(await page.locator('[data-campaign-workspace] select').count(),0);
+    // Reused clues in several visible tables still edit the same record, in input order.
+    await action('add-discovery').click();const secondDiscovery=await page.evaluate(()=>app.campaign.workspace.revelations.at(-1).id);
+    await record('discovery',secondDiscovery).getByLabel('What do the characters need to learn?',{exact:true}).fill('Who else is helping the expedition?');
+    await choose('discovery-clue',secondDiscovery,clueIds[0]);
+    const repeated=page.locator(`[data-pl-record=resource][data-id="${clueIds[0]}"] textarea[data-pl-field=notes]`);
+    assert.equal(await repeated.count(),2);
+    await repeated.first().fill('The letter names the abbey and a second patron.');
+    await page.evaluate(()=>app.syncCampaignForm());
+    assert.deepEqual(await repeated.evaluateAll(els=>els.map(e=>e.value)),['The letter names the abbey and a second patron.','The letter names the abbey and a second patron.']);
+    await repeated.last().fill('The letter is signed by the abbot and the lake captain.');await page.evaluate(()=>app.syncCampaignForm());
+    assert.equal(await page.evaluate(id=>JSON.parse(savedCampaign).workspace.resources.find(r=>r.id===id).notes,clueIds[0]),'The letter is signed by the abbot and the lake captain.');
+    await choose('clue-details',clueIds[0]);await choose('clue-source',clueIds[0],person);
+    const repeatedSources=page.locator(`[data-pl-record=resource][data-id="${clueIds[0]}"] [data-pl-source]`);
+    assert.equal(await repeatedSources.first().inputValue(),'Quina');
+    await repeatedSources.last().fill('The ledger in the harbour office');await page.evaluate(()=>app.syncCampaignForm());
+    assert.equal(await page.evaluate(id=>app.campaign.workspace.resources.find(r=>r.id===id).sourceId,clueIds[0]),'');
+    assert.equal(await repeatedSources.first().inputValue(),'The ledger in the harbour office');
+    await record('resource',clueIds[0]).locator('[data-pl-clue-found]').first().uncheck();await page.evaluate(()=>app.syncCampaignForm());
+    assert.equal(await record('resource',clueIds[0]).locator('[data-pl-clue-found]').last().isChecked(),false);
+    // Search stays in place while selecting multiple shared records.
+    await open('session',next);await choose('session-visits',next);await field('Find an entry').fill('abbey');
+    await page.locator(`[data-pl-select=visitIds][value="${abbey}"]`).check();
+    assert.equal(await field('Find an entry').inputValue(),'abbey');await done();
+    // Long prose grows instead of becoming another scroll box. Old structured notes survive.
+    await page.evaluate(async({a,tavern})=>{const w=app.campaign.workspace;const r=w.resources.find(r=>r.id===tavern);r.visitNote=('The characters can talk to the recruiters, compare their explanations with the fishermen, and learn how to reach the expedition camp.\n').repeat(5);const legacy={id:'old-plan',adventureId:a,actorId:'',who:'The Secta',action:'Prepares the diving equipment',when:'Tonight',reason:'The party delayed the expedition',status:'planned'};w.actions.push(legacy);w.situations.find(r=>r.id===a).actionIds.push(legacy.id);await app.saveCampaignDraft();}, {a,tavern});
+    await open('adventure',a);assert.match(await record('action','old-plan').getByLabel('NPC action').inputValue(),/Tonight/);
+    await view('overview');assert.equal(await page.evaluate(()=>Object.hasOwn(app.campaign.workspace.actions.find(r=>r.id==='old-plan'),'prose')),false);
+    await open('adventure',a);
+    assert.ok(await page.locator('.ls-pl-note-page textarea').evaluateAll(els=>els.filter(el=>el.getClientRects().length).every(el=>el.scrollHeight<=el.clientHeight+3)),'Notes fit their content.');
+    assert.equal(await page.locator('.ls-pl-note-list').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+    await page.screenshot({path:path.join(output,'campaign-notebook-adventure.png'),fullPage:true});
+    await page.setViewportSize({width:640,height:1000});
+    await page.screenshot({path:path.join(output,'campaign-notebook-small.png'),fullPage:true});
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth+1));
+    assert.equal(await page.locator('.ls-pl-note-list').first().evaluate(el=>getComputedStyle(el).maxHeight),'none','Existing note sidebar CSS cannot clip the notebook.');
+
+    assert.equal(await page.locator('[data-campaign-workspace] select').count(),0);
     assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>notifications.filter(([kind])=>kind==='error')),[]);
-    console.log('Browser campaign entries passed: immediate creation, editing, shared linking, reachable destinations, Foundry drops, Journal protection/permissions, save/reopen, failed completion retry, history revisions, reuse, narrow layout, and reversible entry deletion (cancel, failed save, links, and history).');
+    console.log('Browser campaign entries passed: immediate creation, editing, shared linking, reachable destinations, Foundry drops, Journal protection/permissions, save/reopen, failed completion retry, history revisions, reuse, narrow layout, reversible entry deletion, notebook layout, shared table edits, search, and expanding notes.');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

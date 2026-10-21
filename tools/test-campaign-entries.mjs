@@ -88,7 +88,7 @@ assert.ok(!workspace.campaignWorkspaceJournalPages(campaign).some(p=>p.key===`en
 assert.equal(JSON.stringify(session),originalSession,'Deleting an Adventure must not modify its Sessions.');
 assert.equal(next.adventureId,adventure.id);
 const linkedSessionUI=workspace.renderCampaignWorkspace(campaign,{view:'sessions',selectedId:next.id});
-assert.ok(linkedSessionUI.includes(`<option value="${adventure.id}" selected>${adventure.title} (deleted)</option>`),'Existing links remain selected when saved.');
+assert.ok(linkedSessionUI.includes(`${adventure.title} (deleted)`),'Existing links remain readable without an extra selector.');
 planner.setPlannerEntryDeleted(campaign,'person',person.id);
 assert.equal(adventure.participants[0].personId,person.id);
 assert.equal(other.participants[0].personId,person.id);
@@ -96,7 +96,7 @@ assert.equal(fresh.resources.find(r=>r.id==='evidence-1').sourceId,person.id);
 assert.equal(JSON.stringify(fresh.connections),originalConnections);
 assert.equal(person.uuid,'Actor.quina');
 const linkedPersonUI=workspace.renderCampaignWorkspace(campaign,{view:'adventures',selectedId:other.id});
-assert.ok(linkedPersonUI.includes(`<option value="${person.id}" selected>`));
+assert.ok(linkedPersonUI.includes('(deleted)'));assert.equal(other.participants[0].personId,person.id);
 assert.ok(!workspace.campaignWorkspaceJournalPages(campaign).some(p=>p.key===`entry-person-${person.id}`));
 assert.ok(!planner.plannerSessionOptions(fresh,{...next,visitIds:[]}).some(r=>r.id===person.id),'Deleted people are not offered as new visits.');
 assert.ok(planner.plannerSessionOptions(fresh,{...next,visitIds:[person.id]}).some(r=>r.id===person.id),'Existing selected details remain accessible.');
@@ -127,3 +127,15 @@ assert.equal(JSON.stringify(campaign),intact);
 console.log('Entry deletion passed: hidden lists/exports, safe existing selections, shared content, completed history, restore, save/reopen, migration, and carry-forward.');
 
 console.log('Campaign entries passed: additive migration, three entry types, shared records, reachable destinations, clue diagnostics, one-clue progress, completion, history revisions, carry-forward, exports and escaping.');
+
+const notebook=workspace.renderCampaignWorkspace(campaign,{view:'adventures',selectedId:adventure.id});
+assert.ok(!notebook.includes('<select'),'The notebook does not present dropdown menus.');
+assert.ok(notebook.includes('aria-label="Who is involved"'));assert.ok(notebook.includes('aria-label="Clues to this discovery"'));
+assert.ok(!notebook.includes('data-pl-fold="who-'));assert.ok(!notebook.includes('data-pl-fold="visits-'));
+const priorPlan={...planner.newPlannerAction(adventure.id),who:'The expedition',action:'Begins diving',when:'At dawn',reason:'The party supplied a boat'};fresh.actions.push(priorPlan);adventure.actionIds.push(priorPlan.id);
+const originalPlan=JSON.stringify(priorPlan);workspace.renderCampaignWorkspace(campaign,{view:'adventures',selectedId:adventure.id});assert.equal(JSON.stringify(priorPlan),originalPlan,'Displaying legacy structured notes never rewrites them.');
+priorPlan.prose='At sunset, the expedition leaves the lake.';location.visitNote='The recruits have left. The ferryman knows the western road.';
+const exportedNotes=workspace.campaignWorkspaceJournalPages(campaign).find(p=>p.key===`entry-adventure-${adventure.id}`).content;
+assert.ok(exportedNotes.includes('At sunset, the expedition leaves the lake.'));assert.ok(!exportedNotes.includes('Begins diving'));
+assert.ok(exportedNotes.includes('The recruits have left.'));assert.ok(!exportedNotes.includes('No divers remain'));
+console.log('Notebook checks passed: visible sections, people/clue tables, no dropdowns, legacy data preservation and current note exports.');

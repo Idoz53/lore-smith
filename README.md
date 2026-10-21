@@ -171,7 +171,7 @@ Validation includes automated item, creature, draft/undo, campaign, and map
 regressions, plus all thirteen builder steps rendered in a browser with Foundry
 API stubs. A live Foundry/PF2e world was not available for in-world verification.
 
-### Campaign Planner (0.41.1)
+### Campaign Planner (0.42.0)
 
 The planner follows the Alexandrian's situation preparation, clue design,
 preparation load, and campaign status methods. Its forms adapt the supplied
@@ -179,11 +179,28 @@ Obsidian Campaign Planner template to editable Foundry records. The former
 8-step workflow is retired from this interface. No template duplication,
 scheduling, attendance, table agreements, or onboarding forms are required.
 
+**Notebook layout (0.42.0):** the main planner pages read like the Obsidian
+forms: visible headings, editable paragraphs, a three-column people table,
+bullet notes for plans and places, and a clue/source/found table. Click a note
+or table cell to write; it grows with its contents and saves automatically.
+The main pages contain no dropdown menus. Linking a shared record opens a
+small searchable chooser only when requested. Source details, attachments,
+help, older notes, and the recycle list remain secondary.
+
+NPC plans use one note for who acts, what they do, and when. Places use one
+note for the situation, available actions, and directions. Existing structured
+notes are presented together without rewriting their stored fields. Editing
+these notes adds the current prose while retaining older fields; Journal
+exports and linked Sessions use the current prose. Shared people and clues
+remain single records, including when shown in multiple tables. Found status
+remains separate from player understanding. No import or manual migration is
+needed; permissions, completed history, and Delete/Restore are unchanged.
+
 1. Update **Campaign Overview** with the premise, where the party is, what they
    intend next, NPC actions with their in-world triggers, and facts to remember.
 2. Choose **New Adventure** for a problem the party can engage with. Record the
    problem and involvement, who wants what and the resources available, intended
-   actions, places or contacts, and useful material. Optional details collapse.
+   actions, places or contacts, and useful material. The main headings stay visible.
    Keep this same Adventure across games; there is no required visiting order.
 3. From that Adventure choose **New Session for this Adventure**. The Adventure
    is preselected. Select the people and places the party might reach, NPC plans,

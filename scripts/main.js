@@ -2910,6 +2910,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async close(options = {}) {
     await this.campaignWorkspacePending;
+    this.campaignNoteObserver?.disconnect();
     clearTimeout(this.campaignSaveTimer);
     clearTimeout(this.sessionSaveTimer);
     clearTimeout(this.worldMapSaveTimer);

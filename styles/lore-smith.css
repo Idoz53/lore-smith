@@ -231,3 +231,70 @@
 .ls-planner .ls-cw-editor .ls-cw-change{background:#fff0cd}
 .ls-planner .ls-cw-editor details .ls-cw-change{border-color:#c4a165}
 @media(max-width:850px){.ls-planner-columns{grid-template-columns:minmax(0,1fr)}.ls-planner .ls-planner-create>button{flex:1 1 180px}}
+
+
+/* Campaign notebook: visible headings and editable notes, with tools kept secondary. */
+.ls-notebook{--note-ink:#392e25;--note-muted:#786651;--note-line:#ceb98f}
+.ls-notebook .ls-planner-columns{grid-template-columns:160px minmax(0,1fr);gap:28px}
+.ls-notebook .ls-cw-editor.ls-pl-note-page{display:block;background:transparent;border:0;border-radius:0;padding:0 12px;box-shadow:none;max-width:940px;color:var(--note-ink);font:15px/1.6 Arial,sans-serif}
+.ls-notebook .ls-pl-note-page h2{font:700 21px/1.3 Arial,sans-serif;color:#6f3028;margin:0 0 20px;border:0;text-transform:none}
+.ls-notebook .ls-pl-note-section{margin:32px 0 40px;padding:0;border:0}
+.ls-notebook .ls-pl-note-page label{font:600 14px/1.5 Arial,sans-serif;color:var(--note-ink);display:block;margin:14px 0}
+.ls-notebook .ls-pl-note-page input:not([type=checkbox]),.ls-notebook .ls-pl-note-page textarea{display:block;box-sizing:border-box;width:100%;min-height:32px;height:auto;padding:4px 5px;margin:3px 0;border:1px solid transparent;border-radius:3px;background:transparent;box-shadow:none;color:var(--note-ink);font:400 15px/1.6 Arial,sans-serif;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;transition:background .12s,border-color .12s}
+.ls-notebook .ls-pl-note-page textarea:hover,.ls-notebook .ls-pl-note-page input:not([type=checkbox]):hover{background:#fff8e640;border-color:#ceb98f80}
+.ls-notebook .ls-pl-note-page textarea:focus,.ls-notebook .ls-pl-note-page input:not([type=checkbox]):focus{background:#fff9eb;border-color:#ae814a;outline:2px solid #ae814a30;outline-offset:1px}
+.ls-notebook .ls-pl-note-page textarea::placeholder,.ls-notebook .ls-pl-note-page input::placeholder{color:#8d7c65;font-style:italic;opacity:1}
+.ls-notebook .ls-pl-note-title{margin:4px 0 12px}
+.ls-notebook .ls-pl-note-title>textarea,.ls-notebook .ls-pl-note-title input{font:bold 27px/1.3 Arial,sans-serif!important;padding:3px 0!important}
+.ls-notebook .ls-pl-note-title>label{font-size:0;margin:0}
+.ls-notebook .ls-pl-note-item-title textarea{font-weight:700!important;color:#603329!important;padding-left:0!important}
+.ls-notebook .ls-pl-note-table-wrap{width:100%;overflow-x:auto;margin:12px 0}
+.ls-notebook .ls-pl-note-table{table-layout:fixed;width:100%;border-collapse:collapse;background:transparent;font:14px/1.55 Arial,sans-serif;margin:0}
+.ls-notebook .ls-pl-note-table th,.ls-notebook .ls-pl-note-table td{border:1px solid var(--note-line);padding:9px 10px;vertical-align:top;text-align:left;overflow-wrap:anywhere;color:var(--note-ink);background:transparent}
+.ls-notebook .ls-pl-note-table th{font-weight:700;background:#e3cea330}
+.ls-notebook .ls-pl-note-table textarea{font-size:14px;line-height:1.55;padding:0 2px;margin:0;min-height:28px}
+.ls-notebook .ls-pl-note-table th:first-child{width:30%}
+.ls-notebook .ls-pl-note-table[aria-label="Clues to this discovery"] th:first-child{width:50%}
+.ls-notebook .ls-pl-note-table[aria-label="Clues to this discovery"] th:last-child,.ls-notebook .ls-pl-note-table[aria-label="Clues found"] th:last-child{width:105px}
+.ls-notebook .ls-pl-note-found label{font-weight:400!important;display:flex!important;align-items:center;gap:5px;margin:4px 0!important;font-size:12px!important}
+.ls-notebook .ls-pl-note-found input[type=checkbox]{margin:0;flex:0 0 auto}
+.ls-notebook .ls-pl-note-tools{display:flex;align-items:center;flex-wrap:wrap;gap:5px 12px;margin:5px 0;font:12px/1.5 Arial,sans-serif;color:var(--note-muted)}
+.ls-notebook button.ls-pl-note-tool{display:inline-flex;align-items:center;justify-content:flex-start;width:auto;min-height:24px;height:auto;flex:0 1 auto;padding:2px 0;margin:0;border:0;border-radius:0;background:transparent;box-shadow:none;color:#81503a;font:12px/1.4 Arial,sans-serif;text-decoration:underline;text-underline-offset:3px}
+.ls-notebook button.ls-pl-note-tool:hover{color:#4a1d17;background:#e3cea340}
+.ls-notebook .ls-pl-note-status button{padding:3px 8px;text-decoration:none;border-radius:14px}
+.ls-notebook .ls-pl-note-status button[aria-pressed=true]{background:#6f3028;color:#fff4d9}
+.ls-notebook .ls-pl-note-list{margin:0 0 8px;padding:0 0 0 20px;list-style:disc}
+.ls-notebook .ls-pl-note-list>li{padding:0 0 12px 2px;margin:0 0 12px;min-width:0}
+.ls-notebook .ls-pl-note-list>li::marker{color:#997249}
+.ls-notebook .ls-pl-note-list p{margin:5px 0}
+.ls-notebook .ls-pl-note-action{position:relative}
+.ls-notebook .ls-pl-note-done>textarea{color:var(--note-muted)}
+.ls-notebook .ls-pl-note-route{border-left:2px solid var(--note-line);padding:6px 12px;margin:8px 0;font-size:14px}
+.ls-notebook .ls-pl-note-attachment{display:inline-flex;align-items:center;gap:10px;min-height:26px}
+.ls-notebook .ls-pl-note-links{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.ls-notebook .ls-pl-note-links .ls-cw-link,.ls-notebook .ls-pl-note-table .ls-cw-link{display:inline;width:auto;padding:0;text-align:left;font:inherit;text-decoration:underline;background:none;border:0;color:#7b3a30}
+.ls-notebook .ls-pl-note-discovery{margin:20px 0 30px}
+.ls-notebook .ls-pl-note-page small{font:12px/1.5 Arial,sans-serif;color:var(--note-muted)}
+.ls-notebook .ls-pl-note-table td>small{display:block;margin:4px 0}
+.ls-notebook .ls-pl-note-empty{color:var(--note-muted);font-size:14px}
+.ls-notebook .ls-pl-note-checklist>div{display:flex;align-items:flex-start;gap:10px}
+.ls-notebook .ls-pl-note-checklist textarea{flex:1;min-width:0}
+.ls-notebook .ls-pl-note-checklist label{display:flex;align-items:center;gap:5px;font-size:12px;margin:6px 0;white-space:nowrap}
+.ls-notebook .ls-pl-note-checklist button{margin-top:7px}
+.ls-notebook .ls-planner-entry-actions{max-width:940px;padding:0 12px}
+.ls-notebook .ls-planner-entry-actions>button{font:12px Arial,sans-serif;background:transparent;border:0;text-decoration:underline;color:#8c503e}
+.ls-notebook .ls-cw-index{font:13px/1.45 Arial,sans-serif}
+.ls-notebook .ls-cw-index>div{background:transparent;border-left:2px solid transparent;padding:8px 8px!important}
+.ls-notebook .ls-cw-index>div.selected{border-left-color:#703329;background:#dec79650}
+.ls-notebook .ls-cw-index small{font-size:11px;color:var(--note-muted)}
+.ls-notebook .ls-pl-note-page details{border:0;padding:4px 0;margin:14px 0;background:transparent}
+.ls-notebook .ls-pl-note-page summary{font:13px Arial,sans-serif;color:var(--note-muted)}
+.ls-pl-note-picker-backdrop{position:fixed;inset:0;z-index:1000;background:#211a1466;display:flex;justify-content:center;align-items:center;padding:24px}
+.ls-notebook .ls-pl-note-picker{width:560px;max-width:100%;max-height:80vh;overflow:auto;background:#fff5df;color:#392e25;border:1px solid #ad8554;border-radius:6px;padding:22px;box-shadow:0 12px 45px #24150c66;font:14px/1.5 Arial,sans-serif}
+.ls-notebook .ls-pl-note-picker>header{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:14px}
+.ls-notebook .ls-pl-note-picker h2{font:700 19px Arial,sans-serif;margin:0}
+.ls-notebook .ls-pl-note-picker-list{display:grid;gap:6px;margin-top:15px}
+.ls-notebook .ls-pl-note-picker-list [hidden]{display:none}
+.ls-notebook .ls-pl-note-picker-list button{width:100%;text-align:left;white-space:normal;min-height:36px;height:auto;padding:8px 10px}
+.ls-notebook .ls-pl-note-picker-list label{display:flex;align-items:center;gap:8px;padding:8px;margin:0}
+@media(max-width:850px){.ls-notebook .ls-planner-columns{grid-template-columns:minmax(0,1fr)}.ls-notebook .ls-cw-index{display:flex;flex-wrap:wrap;gap:6px}.ls-notebook .ls-cw-index>div{max-width:220px}.ls-notebook .ls-cw-editor.ls-pl-note-page{padding:0}.ls-notebook .ls-pl-note-table th,.ls-notebook .ls-pl-note-table td{padding:6px}.ls-notebook .ls-pl-note-table textarea{font-size:13px}.ls-notebook .ls-pl-note-table[aria-label="Clues to this discovery"] th:last-child,.ls-notebook .ls-pl-note-table[aria-label="Clues found"] th:last-child{width:75px}}
