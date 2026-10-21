@@ -18,7 +18,8 @@ assert.equal(JSON.stringify(w.history),oldHistory);assert.equal(JSON.stringify(o
 assert.equal(w.questions,'An old question');assert.equal(w.theories,'An old player theory');assert.equal(w.custom.permissions.default,0);
 const normalized=JSON.stringify(old);ensure(old);assert.equal(JSON.stringify(old),normalized,'Migration must be repeatable without duplicating entries.');
 const archived=workspace.renderCampaignWorkspace(old,{view:'overview'});
-for(const text of ['Earlier notes','An old question','Unplaced fact','Never lose this']) assert.ok(archived.includes(text));
+assert.ok(!archived.includes('Earlier notes (preserved)'));
+assert.equal(old.workspace.questions,'An old question');assert.equal(old.acts[0].gmNotes,'Never lose this');assert.equal(w.factEntries[0].text,'The bell rang');
 
 const campaign={name:'The Westering Stars',premise:'The stars travel west and vanish.',acts:[]};
 const fresh=ensure(campaign);
@@ -68,7 +69,7 @@ const facts=fresh.facts;session.after.summary='Corrected recap';planner.complete
 assert.match(session.versions[0].snapshot.content,/They followed the first clue/);
 const html=workspace.renderCampaignWorkspace(campaign,{view:'sessions',selectedId:next.id});
 for(const forbidden of ['Lazy DM','strong start','Open campaign questions','Revelations','nodes','session-zero','attendance']) assert.ok(!html.includes(forbidden),`Current UI must not require ${forbidden}.`);
-for(const label of ['New Adventure','New Session','New Person or Group','Where we start','What I need ready','Notes during the game','After the game'])assert.ok(html.includes(label));
+for(const label of ['New Session','Where we start','What I need ready','Notes during the game','After the game'])assert.ok(html.includes(label));
 person.name='<img src=x onerror=bad()>';assert.ok(!workspace.renderCampaignWorkspace(campaign,{view:'people',selectedId:person.id}).includes('<img src=x'));
 const exported=workspace.campaignWorkspaceJournalPages(campaign);
 assert.ok(exported.some(p=>p.content.includes('Actor.quina')));assert.ok(exported.some(p=>p.content.includes('Corrected recap')));
@@ -139,3 +140,48 @@ const exportedNotes=workspace.campaignWorkspaceJournalPages(campaign).find(p=>p.
 assert.ok(exportedNotes.includes('At sunset, the expedition leaves the lake.'));assert.ok(!exportedNotes.includes('Begins diving'));
 assert.ok(exportedNotes.includes('The recruits have left.'));assert.ok(!exportedNotes.includes('No divers remain'));
 console.log('Notebook checks passed: visible sections, people/clue tables, no dropdowns, legacy data preservation and current note exports.');
+
+// Main navigation and per-tab creation, without retired-data panels.
+const overview=workspace.renderCampaignWorkspace(campaign,{view:'overview'});
+assert.ok(overview.includes('Consequences still to come'));
+assert.ok(overview.includes('data-pl-action="add-fact"'));
+assert.ok(!overview.includes('data-pl-action="new-adventure"'));
+assert.ok(!overview.includes('Earlier notes (preserved)'));
+for(const [view,action] of [['adventures','new-adventure'],['sessions','new-session'],['people','new-person']]) {
+ const content=workspace.renderCampaignWorkspace(campaign,{view});
+ assert.ok(content.indexOf('data-pl-action="'+action+'"')>content.indexOf('<nav'));
+}
+priorPlan.status='happened';
+assert.ok(workspace.renderCampaignWorkspace(campaign,{view:'overview'}).includes('Happened · reopen'));
+assert.ok(workspace.campaignWorkspaceJournalPages(campaign)[0].content.includes('Happened'));
+assert.ok(fresh.factEntries.some(row=>row.text==='The captain is Quina’s cousin'));
+
+// Permanent deletion detaches live links, retains other records/history, and cannot be restored.
+const purge=JSON.parse(JSON.stringify(campaign));ensure(purge);const pw=purge.workspace;
+const snapshots=JSON.stringify(pw.sessions.map(s=>s.snapshot));
+assert.throws(()=>planner.permanentlyDeletePlannerEntry(purge,'adventure',adventure.id),/Deleted entries first/);
+planner.setPlannerEntryDeleted(purge,'person',person.id);
+planner.permanentlyDeletePlannerEntry(purge,'person',person.id);
+assert.ok(!pw.resources.some(r=>r.id===person.id));
+assert.equal(pw.situations.find(r=>r.id===adventure.id).participants[0].personId,'');
+assert.equal(pw.situations.find(r=>r.id===adventure.id).participants[0].name,person.name);
+assert.equal(pw.resources.find(r=>r.id==='evidence-1').sourceId,'');
+assert.equal(pw.resources.find(r=>r.id==='evidence-1').source,person.name);
+assert.ok(!pw.sessions.some(s=>s.personIds.includes(person.id)));
+assert.equal(JSON.stringify(pw.sessions.map(s=>s.snapshot)),snapshots);
+planner.setPlannerEntryDeleted(purge,'adventure',adventure.id);
+planner.permanentlyDeletePlannerEntry(purge,'adventure',adventure.id);
+assert.ok(!pw.situations.some(r=>r.id===adventure.id));
+assert.ok(!pw.sessions.some(s=>s.adventureId===adventure.id));
+assert.equal(pw.sessions.length,fresh.sessions.length);
+assert.equal(JSON.stringify(pw.sessions.map(s=>s.snapshot)),snapshots);
+planner.setPlannerEntryDeleted(purge,'session',session.id);
+planner.permanentlyDeletePlannerEntry(purge,'session',session.id);
+assert.ok(!pw.sessions.some(s=>s.id===session.id));
+assert.ok(!pw.sessions.some(s=>s.carriedFromId===session.id));
+const imported=JSON.parse(JSON.stringify(old));
+for(const sid of ['historic','pending'])planner.permanentlyDeletePlannerEntry(imported,'session',sid);
+ensure(imported);ensure(imported);
+assert.ok(!imported.workspace.sessions.some(s=>['historic','pending'].includes(s.id)),'Purged imports never reappear.');
+assert.equal(imported.workspace.history.length,old.workspace.history.length,'Other stored historical source material is untouched.');
+console.log('Planner refinements passed: tab creation, fact migration, visible happened plans, permanent deletion, safe links, snapshots, and no resurrected imports.');

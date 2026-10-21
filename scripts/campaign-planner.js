@@ -34,6 +34,43 @@ export function setPlannerEntryDeleted(campaign, type, key, deleted = true) {
   return record;
 }
 
+// Permanent deletion removes only the selected planner entry, never native documents or snapshots.
+export function permanentlyDeletePlannerEntry(campaign, type, key) {
+  const w=campaign.workspace, r=find(w,type,key);
+  if(!Object.hasOwn(entryTypes,type)||!r||(type==='person'&&!personKinds.includes(r.kind)))throw new Error('This entry is no longer available.');
+  if(!r.deletedAt)throw new Error('Move this entry to Deleted entries first.');
+  const without=(values)=>arr(values).filter(value=>value!==key);
+  if(type==='adventure') {
+    w.situations=w.situations.filter(a=>a.id!==key);
+    for(const s of w.sessions)if(s.adventureId===key)s.adventureId='';
+    for(const a of w.actions)if(a.adventureId===key)a.adventureId='';
+    w.prep.situationIds=without(w.prep.situationIds);
+  } else if(type==='session') {
+    // Remember source IDs only so older imports cannot resurrect an intentionally deleted entry.
+    w.removedSessionSources=ids([...arr(w.removedSessionSources),r.id,r.sourceHistoryId,r.sourcePacketId]);
+    w.sessions=w.sessions.filter(s=>s.id!==key);
+    for(const s of w.sessions)if(s.carriedFromId===key)delete s.carriedFromId;
+  } else {
+    for(const a of w.situations) {
+      for(const p of a.participants.filter(p=>p.personId===key)) {p.personId='';p.name=name(r);p.wants=r.desire||r.goals||p.wants;p.resources=r.assets||p.resources;}
+      for(const field of ['resourceIds','visitIds','materialIds'])a[field]=without(a[field]);
+    }
+    for(const s of w.sessions)for(const field of ['visitIds','personIds','materialIds'])s[field]=without(s[field]);
+    for(const a of w.actions)if(a.actorId===key){a.prose=actionText(w,a);a.actorId='';a.who=name(r);}
+    for(const other of w.resources) {other.relatedIds=without(other.relatedIds);if(other.sourceId===key){other.source=sourceName(w,other);other.sourceId='';}}
+    for(const d of w.revelations)if(d.destinationId===key)d.destinationId='';
+    w.connections=w.connections.filter(c=>c.fromId!==key&&c.toId!==key);
+    w.prep.resourceIds=without(w.prep.resourceIds);
+    w.entryLegacyResourceIds=without(w.entryLegacyResourceIds);
+    w.resources=w.resources.filter(person=>person.id!==key);
+  }
+}
+function ensureFactEntries(w) {
+  if(!Array.isArray(w.factEntries))w.factEntries=str(w.facts).split(/\r?\n/).filter(hasText).map(text=>({id:id(),text}));
+  for(const row of w.factEntries){row.id ||= id();row.text=str(row.text);}
+}
+function syncFacts(w) {w.facts=w.factEntries.map(row=>row.text).filter(hasText).join('\n');}
+
 export function newPlannerAdventure() {
   return { id: id(), title: "New Adventure", status: "active", summary: "", stakes: "", resourceIds: [], visitIds: [], materialIds: [], revelationIds: [], participants: [], actionIds: [], journalId: "" };
 }
@@ -52,6 +89,7 @@ export function ensureEntryPlanner(campaign, w = campaign.workspace) {
   const migrate = !w.entryPlannerVersion;
   if (migrate) w.entryLegacyResourceIds = w.resources.map(r => r.id);
   w.sessions = arr(w.sessions); w.actions = arr(w.actions);
+  ensureFactEntries(w);
   for (const a of w.situations) {
     a.participants = arr(a.participants); a.actionIds = ids(a.actionIds);
     if (!Array.isArray(a.visitIds)) a.visitIds = a.resourceIds.filter((rid) => w.resources.some((r) => r.id === rid && visitKinds.includes(r.kind)));
@@ -72,7 +110,7 @@ export function ensureEntryPlanner(campaign, w = campaign.workspace) {
   for (const action of w.actions) { action.id ||= id(); fields(action, ["adventureId", "actorId", "who", "action", "when", "reason"]); action.status = actionStatus[action.status] ? action.status : "planned"; }
   {
     for (const h of w.history) {
-      if (w.sessions.some(s => s.sourceHistoryId === h.id || s.id === h.id)) continue;
+      if (arr(w.removedSessionSources).includes(h.id) || w.sessions.some(s => s.sourceHistoryId === h.id || s.id === h.id)) continue;
       const session = newPlannerSession(w, arr(h.prep?.situationIds)[0] || "");
       const historyContent = str(h.tableContent) + savedNotes({ summary: h.summary, nextIntent: h.nextIntent, decisions: h.decisions, newFacts: h.newFacts, worldChanges: h.worldChanges, rewardsGained: h.rewardsGained, changes: h.changes });
       Object.assign(session, { id: h.id || session.id, sourceHistoryId: h.id, title: h.prep?.title || "Earlier session", status: "complete", completedAt: h.date || "", notes: str(h.prep?.notes), journalId: h.prep?.journalId || h.prep?.detailJournalId || "", legacy: clone(h), snapshot: { content: historyContent, legacy: clone(h) } });
@@ -81,7 +119,7 @@ export function ensureEntryPlanner(campaign, w = campaign.workspace) {
     }
     const p = w.prep, pending = w.after;
     const usefulPrep = [p.title, p.opening, p.notes, p.characters, p.locations, p.npcs, p.opposition, p.rewards, pending.summary].some(hasText) || p.resourceIds.length || p.situationIds.length || p.revelationIds.length || p.scenes.length || p.secrets.length || p.detail;
-    if (usefulPrep && !w.sessions.some(s => s.sourcePacketId === p.id)) {
+    if (usefulPrep && !arr(w.removedSessionSources).includes(p.id) && !w.sessions.some(s => s.sourcePacketId === p.id)) {
       const session = newPlannerSession(w, p.situationIds[0] || "");
       Object.assign(session, { id: p.id, sourcePacketId: p.id, title: p.title || "Earlier preparation", notes: p.notes, journalId: p.journalId, legacy: { prep: clone(p), after: clone(pending) } });
       session.visitIds = p.resourceIds.filter((rid) => w.resources.some((r) => r.id === rid && visitKinds.includes(r.kind)));
@@ -150,7 +188,7 @@ export function completePlannerSession(campaign, sessionId) {
   if (s.after.updateOverview) {
     w.location = s.after.location.trim() || s.location.trim();
     w.partyIntent = s.after.nextIntent.trim();
-    if (hasText(s.after.facts)) w.facts = [w.facts, s.after.facts.trim()].filter(Boolean).join("\n");
+    if (hasText(s.after.facts)) {ensureFactEntries(w);w.factEntries.push(...s.after.facts.trim().split(/\r?\n/).filter(hasText).map(text=>({id:id(),text})));syncFacts(w);}
   }
   s.snapshot = snapshot; s.status = "complete"; s.completedAt = new Date().toISOString();
   return s;
@@ -162,9 +200,31 @@ export function reopenPlannerSession(w, sessionId) {
   s.after.foundClueIds = []; for (const row of s.after.understanding) row.apply = false;
 }
 
+const examples = {
+  'Campaign name':'Where the Stars Die', 'Campaign premise':'The stars are drifting west and disappearing. Four curses are spreading across Kryta.',
+  'The party is at':'Cassardis, at the Tavern of the Old Aboleth.', 'They plan to':'Ask Quina who is funding the expedition.',
+  'Fact':'Quina lent the party a boat; they promised to return it.', 'Adventure name':'The Star in Lake Tevrar',
+  'The problem':'A star fell into Lake Tevrar. A secretive expedition is trying to recover it.', 'Why the party might get involved':'Quina asks the party to find out what the divers are looking for.',
+  'Person or group':'Secta Clavis Abyssi', 'What they want':'Recover the sphere from the lake bed.', 'Resources they can use':'Boats, diving equipment, and support from local nobles.',
+  'NPC action':'After the party exposes the smuggler, his partner sends a warning the next morning.',
+  'Name of place or contact':'Cassardis — Tavern of the Old Aboleth', 'What happens here?':'The expedition is recruiting divers. The party can ask questions; the fishermen can show them the camp.',
+  'How they can get there or learn about it':'The ferryman points out the camp on the western shore.',
+  'What do the characters need to learn?':'The expedition is a cover for a secret cult.', 'What have the players worked out so far?':'They suspect the expedition is hiding something, but do not know about the cult.',
+  'Clue':'A letter orders the divers to keep their cult membership secret.', 'Where the characters can find it':'In the leader’s tent at the expedition camp.',
+  'Material name':'Lake map and diving rules', 'Notes or rules reference':'Keep the lake depths, diving rules, and guard statistics here.',
+  'Session name':'Session 3 — The Expedition Camp', 'Where are the characters now?':'At the docks in Cassardis.', 'What did they decide to do next?':'Find a boat and visit the expedition camp.',
+  'Preparation item':'Prepare the camp map and the guards’ statistics.', 'Notes during the game':'The party persuaded the ferryman to take them across the lake.',
+  'What happened and what changed?':'They found the letter. Severin now knows someone searched his tent.', 'Which clues did they find, and what did they work out?':'They found the letter and believe the expedition belongs to a cult.',
+  'What does the party intend to do next?':'Follow Severin to the abbey.', 'Party location after the game':'On the western road, outside the abbey.', 'New facts to remember (optional)':'The ferryman is Quina’s brother.',
+  'Person or Group name':'Quina Cassardis', 'Who they are':'A local guide who looks after the fishing families.', 'Where to find them':'At the Tavern of the Old Aboleth in Cassardis.',
+  'One detail that helps portray them':'Folds a piece of sailcloth while speaking.', 'What they know':'The divers return to shore before dawn.', 'How they feel about the party, and why':'Trusts them because they rescued a missing fisherman.',
+  'Short name':'The cult’s letter', 'How it can be found':'Search the desk in the leader’s tent.', 'Shared source or obstacle':'All three stories come from the same ferryman.',
+  'Additional discovery notes':'The cult uses the expedition to hide its search for the sphere.'
+};
+const example = (label, fallback) => examples[label] || fallback || 'Write a note…';
 const button = (action, label, attrs = '') => `<button type="button" data-pl-action="${action}" ${attrs}>${label}</button>`;
-const input = (label, attr, value = '', placeholder = '') => `<label>${label}<input aria-label="${esc(label)}" ${attr} value="${esc(value)}" placeholder="${esc(placeholder)}"></label>`;
-const area = (label, attr, value = '', placeholder = '') => `<label>${label}<textarea aria-label="${esc(label)}" ${attr} rows="1" placeholder="${esc(placeholder)}">${esc(value)}</textarea></label>`;
+const input = (label, attr, value = '', placeholder = '') => `<label>${label}<input aria-label="${esc(label)}" ${attr} value="${esc(value)}" placeholder="${esc(example(label,placeholder))}"></label>`;
+const area = (label, attr, value = '', placeholder = '') => `<label>${label}<textarea aria-label="${esc(label)}" ${attr} rows="1" placeholder="${esc(example(label,placeholder))}">${esc(value)}</textarea></label>`;
 const check = (label, attr, value) => `<label class="ls-cw-check"><input type="checkbox" ${attr} ${value ? 'checked' : ''}>${esc(label)}</label>`;
 const fold = (key, label, content, open = false) => `<details data-pl-fold="${esc(key)}" ${open ? 'open' : ''}><summary>${label}</summary><div class="ls-cw-stack">${content}</div></details>`;
 const field = (label, key, r, placeholder = '', short = false) => (short ? input : area)(label, `data-pl-field="${key}"`, r[key], placeholder);
@@ -183,20 +243,15 @@ function savedNotes(value) {
   if (!value || typeof value !== 'object') return '';
   return Object.entries(value).filter(([key, v]) => !['id','sourceId','workspaceId','packetId','generatedTableContent','tableContent','snapshot','versions'].includes(key) && meaningful(v)).map(([key, v]) => `<section><strong>${esc(labelKey(key))}</strong>${savedNotes(v)}</section>`).join('');
 }
-const earlier = (key, value) => meaningful(value) ? fold(`earlier-${key}`, 'Earlier notes (preserved)', savedNotes(value)) : '';
-function earlierCampaign(c, w) {
-  const acts = arr(c.acts).filter(a => [a.objective,a.startingSituation,a.actualOutcome,a.gmNotes].some(hasText) || arr(a.chapters).some(ch => arr(ch.sessions).some(s => hasText(s.title)||hasText(s.purpose)||s.prep||s.journalId)));
-  return { background: c.background, characterHooks: c.characterHooks, tone:c.tone, problem:c.problem, questions: w.questions, theories: w.theories, discoveries: w.discoveries, priorities: w.priorities, objective: w.objective, acts, earlierSessionHistory: w.history, earlierPreparation: w.prep, unfinishedAfterGameNotes: w.after, savedMaterial:w.resources.filter(r=>arr(w.entryLegacyResourceIds).includes(r.id)) };
-}
 function personContent(w, r) {
   return block('Who they are and where to find them', [r.notes,r.whereabouts].filter(Boolean).join('\n')) + block('Portrayal detail', r.memorable) + block('What they want', r.desire || r.goals) + block('Resources they can use', r.assets) + block('What they know', r.knowledge) + block('How they feel about the party, and why', r.attitude);
 }
-const plainArea = (label, attrs, value = '', placeholder = '') => `<textarea aria-label="${esc(label)}" ${attrs} rows="1" placeholder="${esc(placeholder)}">${esc(value)}</textarea>`;
+const plainArea = (label, attrs, value = '', placeholder = '') => `<textarea aria-label="${esc(label)}" ${attrs} rows="1" placeholder="${esc(example(label,placeholder))}">${esc(value)}</textarea>`;
 const section = (title, content) => `<section class="ls-pl-note-section"><h2>${title}</h2>${content}</section>`;
 const choose = (kind, key, label, owner = '') => button('choose-link', label, `data-kind="${kind}" data-id="${esc(key)}" data-owner="${esc(owner)}" class="ls-pl-note-tool"`);
-const cellField = (label, key, r, placeholder = '') => `<textarea aria-label="${esc(label)}" data-pl-field="${key}" rows="1" placeholder="${esc(placeholder)}">${esc(r[key])}</textarea>`;
+const cellField = (label, key, r, placeholder = '') => `<textarea aria-label="${esc(label)}" data-pl-field="${key}" rows="1" placeholder="${esc(example(label,placeholder))}">${esc(r[key])}</textarea>`;
 const titleField = (label, key, r, placeholder) => `<div class="ls-pl-note-title">${cellField(label,key,r,placeholder)}</div>`;
-const note = (label, key, value, placeholder = '') => `<textarea aria-label="${esc(label)}" data-pl-note="${key}" rows="1" placeholder="${esc(placeholder)}">${esc(value)}</textarea>`;
+const note = (label, key, value, placeholder = '') => `<textarea aria-label="${esc(label)}" data-pl-note="${key}" rows="1" placeholder="${esc(example(label,placeholder))}">${esc(value)}</textarea>`;
 const table = (headers, rows, label) => `<div class="ls-pl-note-table-wrap"><table class="ls-pl-note-table" aria-label="${esc(label)}"><thead><tr>${headers.map(h=>`<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
 function actionText(w,a) {
   if (Object.hasOwn(a,'prose')) return str(a.prose);
@@ -232,11 +287,11 @@ function materialEditor(r) {
   return `<li data-pl-record="resource" data-id="${esc(r.id)}"><div class="ls-pl-note-item-title">${cellField('Material name','name',r,'Map, statistics, or handout')}</div>${cellField('Notes or rules reference','notes',r,'Notes or a rules reference…')}${reference(r)}</li>`;
 }
 function clueEditor(w,c) {
-  return `<tr data-pl-record="resource" data-id="${esc(c.id)}"><td>${cellField('Clue','notes',c,'What evidence can they find?')}<div class="ls-pl-note-tools">${choose('clue-details',c.id,'Details')}${c.uuid?button('document','Open document',`data-id="${esc(c.id)}" class="ls-pl-note-tool"`):''}</div></td><td><textarea aria-label="Where the characters can find it" data-pl-source rows="1" placeholder="Witness, place, or document…">${esc(sourceName(w,c))}</textarea>${c.method?`<small>${lines(c.method)}</small>`:''}</td><td class="ls-pl-note-found">${check('Found','data-pl-clue-found',c.clueStatus==='delivered')}${c.clueStatus==='unavailable'?'<small>Unavailable</small>':''}</td></tr>`;
+  return `<tr data-pl-record="resource" data-id="${esc(c.id)}"><td>${cellField('Clue','notes',c,'What evidence can they find?')}<div class="ls-pl-note-tools">${choose('clue-details',c.id,'Details')}${c.uuid?button('document','Open document',`data-id="${esc(c.id)}" class="ls-pl-note-tool"`):''}</div></td><td><textarea aria-label="Where the characters can find it" data-pl-source rows="1" placeholder="In the leader’s tent at the expedition camp.">${esc(sourceName(w,c))}</textarea>${c.method?`<small>${lines(c.method)}</small>`:''}</td><td class="ls-pl-note-found">${check('Found','data-pl-clue-found',c.clueStatus==='delivered')}${c.clueStatus==='unavailable'?'<small>Unavailable</small>':''}</td></tr>`;
 }
 function discoveryEditor(w,d) {
   const count=plannerClueCoverage(w,d);
-  return `<div class="ls-pl-note-discovery" data-pl-record="discovery" data-id="${esc(d.id)}">${field('What do the characters need to learn?','title',d,'The expedition is secretly working for a cult.')}${d.conclusion?earlier(`discovery-${d.id}`,{detail:d.conclusion}):''}${table(['Clue','Where the characters can find it','Found?'],d.clueIds.map(key=>find(w,'resource',key)).filter(c=>c?.kind==='clue').map(c=>clueEditor(w,c)).join(''),'Clues to this discovery')}<div class="ls-pl-note-tools">${button('add-clue','+ Add a clue',`data-id="${esc(d.id)}" class="ls-pl-note-tool"`)}${choose('discovery-clue',d.id,'Link an existing clue')}<small data-pl-coverage="${esc(d.id)}">${count.clues} clues · ${count.sources} sources · ${count.found} found</small></div>${field('What have the players worked out so far?','understanding',d,'Their current conclusion…')}</div>`;
+  return `<div class="ls-pl-note-discovery" data-pl-record="discovery" data-id="${esc(d.id)}">${field('What do the characters need to learn?','title',d,'The expedition is secretly working for a cult.')}${d.conclusion?field('Additional discovery notes','conclusion',d):''}${table(['Clue','Where the characters can find it','Found?'],d.clueIds.map(key=>find(w,'resource',key)).filter(c=>c?.kind==='clue').map(c=>clueEditor(w,c)).join(''),'Clues to this discovery')}<div class="ls-pl-note-tools">${button('add-clue','+ Add a clue',`data-id="${esc(d.id)}" class="ls-pl-note-tool"`)}${choose('discovery-clue',d.id,'Link an existing clue')}<small data-pl-coverage="${esc(d.id)}">${count.clues} clues · ${count.sources} sources · ${count.found} found</small></div>${field('What have the players worked out so far?','understanding',d,'Their current conclusion…')}</div>`;
 }
 function participantsTable(w,a) {
   return table(['Person or group','What they want','Resources they can use'],a.participants.map(p=>{
@@ -253,11 +308,11 @@ function adventureEditor(w,a) {
     ${section('Places and people the party can visit',`<ul class="ls-pl-note-list">${a.visitIds.map(key=>find(w,'resource',key)).filter(Boolean).map(r=>visitEditor(w,r,a.id)).join('')}</ul><div class="ls-pl-note-tools">${button('add-visit','+ Add a place or contact',`data-id="${esc(a.id)}" class="ls-pl-note-tool"`)}${choose('adventure-visit',a.id,'Link existing')}</div>`)}
     ${section('Clues to an important discovery',`${a.revelationIds.map(key=>find(w,'discovery',key)).filter(Boolean).map(d=>discoveryEditor(w,d)).join('')}<div class="ls-pl-note-tools">${button('add-discovery','+ Add a discovery',`data-id="${esc(a.id)}" class="ls-pl-note-tool"`)}${choose('adventure-discovery',a.id,'Link existing')}<small>Optional. Aim for three clues from different sources; one useful clue is enough to act.</small></div>`)}
     ${section('Material to keep handy',`<ul class="ls-pl-note-list">${a.materialIds.map(key=>find(w,'resource',key)).filter(Boolean).map(materialEditor).join('')}</ul><div class="ls-pl-note-tools">${button('add-material','+ Add material',`data-id="${esc(a.id)}" class="ls-pl-note-tool"`)}${choose('adventure-material',a.id,'Link existing')}</div>`)}
-    ${section('Sessions',`<div class="ls-pl-note-links">${sessions.map(s=>`<div>${link('session',s)} <small>${s.status==='complete'?'Completed':''}</small></div>`).join('')}</div>${button('new-session','New Session for this Adventure',`data-adventure="${esc(a.id)}" class="ls-pl-note-tool"`)}`)}${earlier(`adventure-${a.id}`,Object.fromEntries(['goals','resources','leads','nextMove','trigger','warning','consequence','response'].map(k=>[k,a[k]])))}</article>`;
+    ${section('Sessions',`<div class="ls-pl-note-links">${sessions.map(s=>`<div>${link('session',s)} <small>${s.status==='complete'?'Completed':''}</small></div>`).join('')}</div>${button('new-session','New Session for this Adventure',`data-adventure="${esc(a.id)}" class="ls-pl-note-tool"`)}`)}</article>`;
 }
 function personEditor(w,r) {
   const adventures=active(w.situations).filter(a=>a.participants.some(p=>p.personId===r.id)||a.visitIds.includes(r.id));
-  return `<article class="ls-cw-editor ls-pl-note-page" data-pl-record="resource" data-id="${esc(r.id)}">${titleField('Person or Group name','name',r,'Person or group')}${reference(r)}${section('Who they are',plainArea('Who they are','data-pl-field="notes"',r.notes,'A few words about them…')+field('Where to find them','whereabouts',r)+field('One detail that helps portray them','memorable',r))}${section('Goals and resources',field('What they want','desire',r)+field('Resources they can use','assets',r)+field('What they know','knowledge',r))}${section('The party',field('How they feel about the party, and why','attitude',r))}${section('What they intend to do next, and when',actionSection(w,r.actionIds,'person',r.id))}<div class="ls-pl-note-links">${adventures.map(a=>link('adventure',a)).join('')}</div>${earlier(`person-${r.id}`,Object.fromEntries(['state','goals','intent','trigger','leverage','ambitions','relationships','hooks','payoffs','response','warning','consequence'].map(k=>[k,r[k]])))}</article>`;
+  return `<article class="ls-cw-editor ls-pl-note-page" data-pl-record="resource" data-id="${esc(r.id)}">${titleField('Person or Group name','name',r,'Person or group')}${reference(r)}${section('Who they are',plainArea('Who they are','data-pl-field="notes"',r.notes,'A few words about them…')+field('Where to find them','whereabouts',r)+field('One detail that helps portray them','memorable',r))}${section('Goals and resources',field('What they want','desire',r)+field('Resources they can use','assets',r)+field('What they know','knowledge',r))}${section('The party',field('How they feel about the party, and why','attitude',r))}${section('What they intend to do next, and when',actionSection(w,r.actionIds,'person',r.id))}<div class="ls-pl-note-links">${adventures.map(a=>link('adventure',a)).join('')}</div></article>`;
 }
 const previousJournals = (s) => ids([s.journalId,s.legacy?.prep?.detailJournalId,s.legacy?.prep?.journalId]).map(key=>button('existing-journal','Open earlier Session Journal',`data-id="${esc(key)}" class="ls-pl-note-tool"`)).join('');
 function sessionEditor(w,s) {
@@ -269,10 +324,18 @@ function sessionEditor(w,s) {
     ${section('What NPCs plan to do during this time',actionSection(w,s.actionIds,'session',s.id)+choose('session-actions',s.id,'Use existing plans'))}
     ${section('What I need ready',`<div class="ls-pl-note-checklist">${s.checklist.map(row=>`<div data-pl-record="checklist" data-owner="${esc(s.id)}" data-id="${esc(row.id)}">${check('Ready','data-pl-field="done"',row.done)}${cellField('Preparation item','text',row,'Map, statistics, rules, or handout…')}${button('remove-check','Remove',`data-owner="${esc(s.id)}" data-id="${esc(row.id)}" class="ls-pl-note-tool"`)}</div>`).join('')}</div>${button('add-check','+ Add preparation item',`data-id="${esc(s.id)}" class="ls-pl-note-tool"`)}<ul class="ls-pl-note-list">${s.materialIds.map(key=>find(w,'resource',key)).filter(Boolean).map(r=>`<li><strong>${esc(name(r))}</strong><p>${lines(r.notes)}</p>${reference(r)}</li>`).join('')}</ul><div class="ls-pl-note-tools">${choose('session-material',s.id,'Choose material')}${choose('session-clues',s.id,'Choose clues to keep handy')}</div>${s.clueIds.length?table(['Clue','Source'],s.clueIds.map(key=>find(w,'resource',key)).filter(Boolean).map(c=>`<tr><td>${lines(c.notes)}</td><td>${esc(sourceName(w,c))}</td></tr>`).join(''),'Prepared clues'):''}`)}
     ${section('Notes during the game',plainArea('Notes during the game','data-pl-field="notes"',s.notes,'Write as you play…'))}
-    ${section('After the game',`<div data-pl-after="${esc(s.id)}">${area('What happened and what changed?','data-pl-after-field="summary"',s.after.summary)}${area('Which clues did they find, and what did they work out?','data-pl-after-field="discoveries"',s.after.discoveries)}${clues.length?table(['Clue','Found this game?'],w.resources.filter(c=>c.kind==='clue'&&clues.includes(c.id)).map(c=>`<tr><td>${lines(c.notes)}<small>${esc(sourceName(w,c))}</small></td><td class="ls-pl-note-found">${check(c.clueStatus==='delivered'?'Already found':'Found',`data-pl-found value="${esc(c.id)}" ${c.clueStatus==='delivered'?'disabled':''}`,c.clueStatus==='delivered'||s.after.foundClueIds.includes(c.id))}</td></tr>`).join(''),'Clues found'):''}${discoveries.map(d=>{const update=s.after.understanding.find(r=>r.discoveryId===d.id);return `<div data-pl-understanding="${esc(d.id)}"><strong>${esc(d.title)}</strong>${area('What have the players worked out so far?','data-pl-understanding-value',update?.value??d.understanding)}${check('Update this discovery when completing the Session','data-pl-understanding-apply',update?.apply)}</div>`;}).join('')}${area('What does the party intend to do next?','data-pl-after-field="nextIntent"',s.after.nextIntent)}${fold(`session-overview-${s.id}`,'Update Campaign Overview',`${input('Party location after the game','data-pl-after-field="location"',s.after.location,s.location)}${area('New facts to remember (optional)','data-pl-after-field="facts"',s.after.facts)}${check('Update Campaign Overview with this location, next intention, and new facts','data-pl-after-field="updateOverview"',s.after.updateOverview)}`)}</div>${button('complete-session','Complete Session and keep its history',`data-id="${esc(s.id)}" class="ls-cw-primary"`)}`)}${earlier(`session-${s.id}`,s.legacy)}</article>`;
+    ${section('After the game',`<div data-pl-after="${esc(s.id)}">${area('What happened and what changed?','data-pl-after-field="summary"',s.after.summary)}${area('Which clues did they find, and what did they work out?','data-pl-after-field="discoveries"',s.after.discoveries)}${clues.length?table(['Clue','Found this game?'],w.resources.filter(c=>c.kind==='clue'&&clues.includes(c.id)).map(c=>`<tr><td>${lines(c.notes)}<small>${esc(sourceName(w,c))}</small></td><td class="ls-pl-note-found">${check(c.clueStatus==='delivered'?'Already found':'Found',`data-pl-found value="${esc(c.id)}" ${c.clueStatus==='delivered'?'disabled':''}`,c.clueStatus==='delivered'||s.after.foundClueIds.includes(c.id))}</td></tr>`).join(''),'Clues found'):''}${discoveries.map(d=>{const update=s.after.understanding.find(r=>r.discoveryId===d.id);return `<div data-pl-understanding="${esc(d.id)}"><strong>${esc(d.title)}</strong>${area('What have the players worked out so far?','data-pl-understanding-value',update?.value??d.understanding)}${check('Update this discovery when completing the Session','data-pl-understanding-apply',update?.apply)}</div>`;}).join('')}${area('What does the party intend to do next?','data-pl-after-field="nextIntent"',s.after.nextIntent)}${fold(`session-overview-${s.id}`,'Update Campaign Overview',`${input('Party location after the game','data-pl-after-field="location"',s.after.location,s.location)}${area('New facts to remember (optional)','data-pl-after-field="facts"',s.after.facts)}${check('Update Campaign Overview with this location, next intention, and new facts','data-pl-after-field="updateOverview"',s.after.updateOverview)}`)}</div>${button('complete-session','Complete Session and keep its history',`data-id="${esc(s.id)}" class="ls-cw-primary"`)}`)}</article>`;
+}
+function factsEditor(w) {
+  return `<ul class="ls-pl-note-list" aria-label="Facts to remember">${w.factEntries.map(row=>`<li data-pl-record="fact" data-id="${esc(row.id)}">${cellField('Fact','text',row)}${button('remove-fact','Remove fact',`data-id="${esc(row.id)}" class="ls-pl-note-tool"`)}</li>`).join('')}</ul>${button('add-fact','+ Add Fact','class="ls-pl-note-tool"')}`;
 }
 function overview(c,w) {
-  return `<div class="ls-cw-editor ls-pl-note-page"><div class="ls-pl-note-title">${input('Campaign name','name="campaignName"',c.name,'Campaign name')}</div>${section('Campaign premise',plainArea('Campaign premise','name="campaignPremise"',c.premise,'The setting and central problem…'))}${section('Where we left off',input('The party is at','data-pl-current="location"',w.location)+area('They plan to','data-pl-current="partyIntent"',w.partyIntent))}${section('Active adventures',`<div class="ls-pl-note-links">${active(w.situations).filter(a=>a.status==='active').map(a=>link('adventure',a)).join('')||'<p class="ls-pl-note-empty">Create an Adventure for a problem the party can get involved in.</p>'}</div>`)}${section('What will NPCs do because of the party’s actions?',actionSection(w,w.actions.filter(a=>a.status==='planned').map(a=>a.id),'overview',''))}${section('Facts to remember',plainArea('Facts to remember','data-pl-current="facts"',w.facts,'Names, promises, relationships, and changes to the world…'))}</div>`;
+  return `<div class="ls-cw-editor ls-pl-note-page"><div class="ls-pl-note-title">${input('Campaign name','name="campaignName"',c.name)}</div><p class="ls-pl-note-hint">Keep updating this note as the campaign progresses.</p>
+    ${section('Campaign premise',plainArea('Campaign premise','name="campaignPremise"',c.premise))}
+    ${section('Where we left off',input('The party is at','data-pl-current="location"',w.location)+area('They plan to','data-pl-current="partyIntent"',w.partyIntent))}
+    ${section('Active adventures',`<p class="ls-pl-note-hint">Your ongoing Adventure notes. Create and manage them in Adventures.</p><ul class="ls-pl-note-list">${active(w.situations).filter(a=>a.status==='active').map(a=>`<li>${link('adventure',a)}</li>`).join('')||'<li class="ls-pl-note-empty">No active adventures yet.</li>'}</ul>`)}
+    ${section('Consequences still to come',`<p class="ls-pl-note-hint">What happened, how someone will respond, and when. Mark a response Happened once it occurs; the note stays here.</p>`+actionSection(w,w.actions.map(a=>a.id),'overview',''))}
+    ${section('Facts to remember',`<p class="ls-pl-note-hint">Established names, promises, relationships, or changes to the world.</p>`+factsEditor(w))}</div>`;
 }
 
 function help() {
@@ -331,19 +394,21 @@ function deletedEntries(w) {
   const records = [['adventure', w.situations], ['session', w.sessions], ['person', w.resources.filter(r => personKinds.includes(r.kind))]]
     .flatMap(([type, entries]) => entries.filter(r => r.deletedAt).map(record => ({type, record})));
   if (!records.length) return '';
-  return fold('deleted-entries', `Deleted entries · ${records.length}`, `<p>Restore an entry to put it back in the planner. Existing links, completed notes, and Foundry documents are kept.</p>${records.map(({type, record}) => `<div class="ls-cw-row"><span><strong>${esc(name(record))}</strong> · ${entryTypes[type]}</span>${button('restore-entry', `Restore ${entryTypes[type]}`, `data-type="${type}" data-id="${esc(record.id)}"`)}</div>`).join('')}`);
+  return fold('deleted-entries', `Deleted entries · ${records.length}`, `<p>Restore an entry, or permanently remove it from the planner. Separate entries and Foundry documents are kept.</p>${records.map(({type, record}) => `<div class="ls-cw-row"><span><strong>${esc(name(record))}</strong> · ${entryTypes[type]}</span><div class="ls-pl-note-tools">${button('restore-entry', `Restore ${entryTypes[type]}`, `data-type="${type}" data-id="${esc(record.id)}"`)}${button('purge-entry','Delete permanently',`data-type="${type}" data-id="${esc(record.id)}" class="ls-pl-note-tool"`)}</div></div>`).join('')}`);
 }
 export function renderEntryPlanner(campaign,state={}) {
   const w=campaign.workspace, view=['overview','adventures','sessions','people'].includes(state.view)?state.view:'overview';
   const type={adventures:'adventure',sessions:'session',people:'person'}[view], records=type==='adventure'?active(w.situations):type==='session'?active(w.sessions):type==='person'?people(w):[];
   const selected=records.find(r=>r.id===state.selectedId);
-  let body=view==='overview'?overview(campaign,w):`<div class="ls-planner-columns"><aside class="ls-cw-index" aria-label="${esc(view)}">${records.map(r=>`<div class="${r.id===state.selectedId?'selected':''}">${link(type,r)}${type==='session'?`<small>${r.status==='complete'?'Completed':'Preparing / playing'}</small>`:type==='adventure'?`<small>${adventureStatus[r.status]}</small>`:''}</div>`).join('')||'<p class="ls-cw-empty">Use a New button above to create an editable entry.</p>'}</aside><div>${selected?entryControls(type,selected)+(type==='adventure'?adventureEditor(w,selected):type==='session'?sessionEditor(w,selected):personEditor(w,selected)):'<p class="ls-cw-empty">Open an entry to keep working on it, or create a new one.</p>'}</div></div>`;
-  const html=`<section class="ls-panel ls-cw ls-planner ls-notebook" data-campaign-workspace><header><div><h1>Campaign Planner</h1><small>Click a note or table cell to edit. Changes save automatically.</small></div></header><div class="ls-cw-row ls-planner-create">${button('new-adventure','New Adventure','class="ls-cw-primary"')}${button('new-session','New Session')}${button('new-person','New Person or Group')}</div><nav class="ls-cw-tabs" aria-label="Campaign planner">${Object.entries({overview:'Campaign Overview',adventures:'Adventures',sessions:'Sessions',people:'People or Groups'}).map(([key,label])=>button('view',label,`data-view="${key}" aria-pressed="${key===view}"`)).join('')}</nav>${body}${pickerContent(w,state.picker)}${deletedEntries(w)}${help()}${view==='overview'?earlier('campaign',earlierCampaign(campaign,w)):''}<footer class="ls-cw-footer">${button('journal',selected?'Create / update this entry’s Journal':'Create / update Overview Journal',selected?`data-type="${type}" data-id="${esc(selected.id)}"`:'data-type="overview"')}<small>Drafts save automatically. Journals are snapshots you can open in Foundry.</small><span data-cw-save aria-live="polite"></span></footer></section>`;
+  const create=type?`<div class="ls-planner-create">${button(`new-${type}`,`New ${entryTypes[type]}`,'class="ls-cw-primary"')}</div>`:'';
+  let body=view==='overview'?overview(campaign,w):`<div class="ls-planner-columns"><aside class="ls-cw-index" aria-label="${esc(view)}">${create}${records.map(r=>`<div class="${r.id===state.selectedId?'selected':''}">${link(type,r)}${type==='session'?`<small>${r.status==='complete'?'Completed':'Preparing / playing'}</small>`:type==='adventure'?`<small>${adventureStatus[r.status]}</small>`:''}</div>`).join('')||'<p class="ls-cw-empty">Create your first entry here.</p>'}</aside><div>${selected?entryControls(type,selected)+(type==='adventure'?adventureEditor(w,selected):type==='session'?sessionEditor(w,selected):personEditor(w,selected)):'<p class="ls-cw-empty">Open an entry to keep working on it, or create a new one.</p>'}</div></div>`;
+  const html=`<section class="ls-panel ls-cw ls-planner ls-notebook" data-campaign-workspace><header><div><h1>Campaign Planner</h1><small>Click a note or table cell to edit. Changes save automatically.</small></div></header><nav class="ls-cw-tabs" aria-label="Campaign planner">${Object.entries({overview:'Campaign Overview',adventures:'Adventures',sessions:'Sessions',people:'People or Groups'}).map(([key,label])=>button('view',label,`data-view="${key}" aria-pressed="${key===view}"`)).join('')}</nav>${body}${pickerContent(w,state.picker)}${deletedEntries(w)}${help()}<footer class="ls-cw-footer">${button('journal',selected?'Create / update this entry’s Journal':'Create / update Overview Journal',selected?`data-type="${type}" data-id="${esc(selected.id)}"`:'data-type="overview"')}<small>Drafts save automatically. Journals are snapshots you can open in Foundry.</small><span data-cw-save aria-live="polite"></span></footer></section>`;
   return html.replace(/<details data-pl-fold="([^"]+)"\s*(open)?/g,(_,key,open)=>`<details data-pl-fold="${key}"${(state.openDetails?.[key]??Boolean(open))?' open':''}`);
 }
 
 function recordForCard(w, card) {
   const type=card.dataset.plRecord,key=card.dataset.id;
+  if(type==='fact') return w.factEntries.find(r=>r.id===key);
   if(type==='participant') return find(w,'adventure',card.dataset.owner)?.participants.find(r=>r.id===key);
   if(type==='checklist') return find(w,'session',card.dataset.owner)?.checklist.find(r=>r.id===key);
   if(type==='connection') return w.connections.find(r=>r.id===key);
@@ -406,6 +471,7 @@ export function syncEntryPlanner(campaign, root) {
       row.value=node.querySelector('[data-pl-understanding-value]').value;row.apply=node.querySelector('[data-pl-understanding-apply]').checked;
     });
   });
+  if(edits.some(edit=>edit.el.closest('[data-pl-record]')?.dataset.plRecord==='fact'))syncFacts(w);
   return w;
 }
 function clueContent(w,c) {return `<section><h3>${nativeLink(c)}</h3>${block('Clue',c.notes)}${block('Source',sourceName(w,c))}${block('How it can be found',c.method)}${block('Found?',clueStatus[c.clueStatus])}</section>`;}
@@ -419,7 +485,7 @@ function sessionContent(w,s) {
   return `<h1>${esc(s.title)}</h1>${block('Adventure',adventure?.title)}${block('Where the characters are',s.location)}${block('What they decided to do next',s.intention)}<h2>People and places they could reach</h2>${s.visitIds.map(key=>find(w,'resource',key)).filter(Boolean).map(r=>`<section><h3>${nativeLink(r)}</h3>${visitContent(w,r)}</section>`).join('')}${s.personIds.map(key=>find(w,'person',key)).filter(Boolean).map(r=>`<h3>${nativeLink(r)}</h3>${personContent(w,r)}`).join('')}<h2>What NPCs plan to do during this time</h2>${s.actionIds.map(key=>find(w,'action',key)).filter(Boolean).map(a=>actionContent(w,a)).join('')}<h2>What I need ready</h2><ul>${s.checklist.map(r=>`<li>${r.done?'Ready':'To prepare'}: ${esc(r.text)}</li>`).join('')}</ul>${s.materialIds.map(key=>find(w,'resource',key)).filter(Boolean).map(r=>`<h3>${nativeLink(r)}</h3><p>${lines(r.notes)}</p>`).join('')}<h2>Important clues</h2>${s.clueIds.map(key=>find(w,'resource',key)).filter(Boolean).map(c=>clueContent(w,c)).join('')}${block('Notes during the game',s.notes)}<h2>After the game</h2>${block('What happened and what changed',s.after.summary)}${block('Which clues they found and what they worked out',s.after.discoveries)}<ul>${s.after.foundClueIds.map(key=>find(w,'resource',key)).filter(Boolean).map(c=>`<li>Found: ${esc(name(c))} — ${lines(c.notes)} (${esc(sourceName(w,c))})</li>`).join('')}</ul>${s.after.understanding.filter(r=>r.apply).map(r=>block(`Players' understanding: ${discoveries.find(d=>d.id===r.discoveryId)?.title||'Discovery'}`,r.value)).join('')}${block('Party location after the game',s.after.location)}${block('What the party intends next',s.after.nextIntent)}${block('New facts to remember',s.after.facts)}${s.legacy?`<h2>Earlier saved notes</h2>${savedNotes(s.legacy)}`:''}`;
 }
 function overviewContent(c,w) {
-  return `<h1>${esc(c.name||'Campaign')}</h1>${block('Campaign premise',c.premise)}${block('The party is at',w.location)}${block('They plan to',w.partyIntent)}<h2>Active adventures</h2><ul>${active(w.situations).filter(a=>a.status==='active').map(a=>`<li>${esc(a.title)}</li>`).join('')}</ul><h2>What NPCs intend to do</h2>${w.actions.filter(a=>a.status==='planned').map(a=>actionContent(w,a)).join('')}${block('Facts to remember',w.facts)}`;
+  return `<h1>${esc(c.name||'Campaign')}</h1>${block('Campaign premise',c.premise)}${block('The party is at',w.location)}${block('They plan to',w.partyIntent)}<h2>Active adventures</h2><ul>${active(w.situations).filter(a=>a.status==='active').map(a=>`<li>${esc(a.title)}</li>`).join('')}</ul><h2>Consequences still to come</h2>${w.actions.map(a=>actionContent(w,a)).join('')}<h2>Facts to remember</h2><ul>${w.factEntries.filter(row=>hasText(row.text)).map(row=>`<li>${lines(row.text)}</li>`).join('')}</ul>`;
 }
 export function entryPlannerPages(campaign) {
   const w=campaign.workspace;
@@ -500,6 +566,15 @@ export function bindEntryPlanner(app) {
         if(!confirmed)return;
         setPlannerEntryDeleted(app.campaign,type,key);open(type,'');
       }
+      if(action==='purge-entry') {
+        const type=target.dataset.type,record=find(w,type,key);
+        if(!Object.hasOwn(entryTypes,type)||!record?.deletedAt)throw new Error('Choose an entry in Deleted entries.');
+        const confirmed=await foundry.applications.api.DialogV2.confirm({window:{title:`Permanently delete ${entryTypes[type]}`},content:`<p>Permanently delete <strong>${esc(name(record))}</strong> from the planner?</p><p>This cannot be undone. Its live links will be detached. Separate entries, completed history in other Sessions, and Foundry documents will be kept.</p>`});
+        if(!confirmed)return;
+        permanentlyDeletePlannerEntry(app.campaign,type,key);
+      }
+      if(action==='add-fact'){w.factEntries.push({id:id(),text:''});syncFacts(w);}
+      if(action==='remove-fact'){w.factEntries=w.factEntries.filter(row=>row.id!==key);syncFacts(w);}
       if(action==='restore-entry') {setPlannerEntryDeleted(app.campaign,target.dataset.type,key,false);open(target.dataset.type,key);}
       if(action==='new-adventure'||action==='new-person'||action==='new-session') {
         const type=action.slice(4),entry=createPlannerEntry(app.campaign,type,target.dataset.adventure||'');open(type,entry.id);

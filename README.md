@@ -171,7 +171,7 @@ Validation includes automated item, creature, draft/undo, campaign, and map
 regressions, plus all thirteen builder steps rendered in a browser with Foundry
 API stubs. A live Foundry/PF2e world was not available for in-world verification.
 
-### Campaign Planner (0.42.0)
+### Campaign Planner (0.42.1)
 
 The planner follows the Alexandrian's situation preparation, clue design,
 preparation load, and campaign status methods. Its forms adapt the supplied
@@ -185,7 +185,17 @@ bullet notes for plans and places, and a clue/source/found table. Click a note
 or table cell to write; it grows with its contents and saves automatically.
 The main pages contain no dropdown menus. Linking a shared record opens a
 small searchable chooser only when requested. Source details, attachments,
-help, older notes, and the recycle list remain secondary.
+help and the recycle list remain secondary. Retired-data panels are no longer
+shown on the main pages.
+
+**Overview refinements (0.42.1):** creation controls live in the Adventures,
+Sessions, and People or Groups tabs. The overview follows the template headings:
+premise, where we left off, active adventures, consequences still to come, and
+facts to remember. Marking a plan **Happened** leaves it visible and can be reversed.
+**+ Add Fact** creates an editable bullet; existing fact lines appear automatically,
+and Session completion adds new fact bullets. The plain-text facts copy remains
+compatible with older data. Writing areas stay visibly outlined and contain quiet
+example placeholders, which disappear as you type. No manual migration is needed.
 
 NPC plans use one note for who acts, what they do, and when. Places use one
 note for the situation, available actions, and directions. Existing structured
@@ -198,7 +208,7 @@ needed; permissions, completed history, and Delete/Restore are unchanged.
 
 1. Update **Campaign Overview** with the premise, where the party is, what they
    intend next, NPC actions with their in-world triggers, and facts to remember.
-2. Choose **New Adventure** for a problem the party can engage with. Record the
+2. Open **Adventures** and choose **New Adventure** for a problem the party can engage with. Record the
    problem and involvement, who wants what and the resources available, intended
    actions, places or contacts, and useful material. The main headings stay visible.
    Keep this same Adventure across games; there is no required visiting order.
@@ -210,7 +220,7 @@ needed; permissions, completed history, and Delete/Restore are unchanged.
    found and separately choose which understanding notes to update. The optional
    overview update records the party's location, next intention, and new facts.
    Edit changed Adventure circumstances and NPC intentions on their shared records.
-5. Use **New Person or Group** only when a recurring NPC or faction needs more
+5. In **People or Groups**, use **New Person or Group** when a recurring NPC or faction needs more
    detail. Link this entry from several Adventures and Sessions. A few inline
    lines in an Adventure are enough for a minor character.
 
@@ -233,7 +243,7 @@ prepared material and recap. Editing a completed Session retains the earlier
 completed version, and campaign updates are unchecked to avoid applying facts
 again accidentally. NPC plans only advance when the GM edits them.
 
-**Deleting entries (0.41.1):** open an Adventure, Session, or Person or Group
+**Deleting entries:** open an Adventure, Session, or Person or Group
 and choose **Delete** above its form. Confirm to move it out of the normal
 lists and new-link choices. Expand **Deleted entries** below the planner to
 restore it. Deleting an Adventure keeps its Sessions and shared material;
@@ -244,14 +254,21 @@ changed by these controls. Deleted earlier Sessions stay deleted on reopening;
 new Sessions skip deleted preparation when choosing material to carry forward.
 Deletion and restoration use the existing save queue and recover on failed saves.
 
+**Delete permanently (0.42.1):** inside Deleted entries, this removes the chosen
+planner record after confirmation. It cannot be restored. Live links are detached;
+plain participant/source names remain useful in other entries. Separate Sessions,
+shared material, native documents, and snapshots inside other Sessions are kept.
+Imported Sessions do not reappear after reopening. Original legacy source backups
+are not erased. A failed save restores the record and its links.
+
 **Saving and safe migration:** this remains in the existing
 `campaignBuilderDraft` client setting. The additive workspace version 3 upgrade
 reuses situation/resource IDs: existing situations become Adventures, useful
 pending preparation becomes a Session, and existing session history becomes
 completed Sessions. Original Acts, history, detailed drafts, unknown extension
 fields, and document links remain stored. Retired fields and unfinished older
-updates remain available under **Earlier notes (preserved)**; they are not
-silently discarded or automatically applied. Old clues keep their evidence and
+updates are retained in storage without a confusing extra panel on each page;
+they are not automatically applied. Old clues keep their evidence and
 found status; missing sources are left for the GM to supply. No manual import
 is required. Storage remains per client; this does not introduce multi-GM sync.
 

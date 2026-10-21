@@ -27,7 +27,7 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
       window.fromUuid=async uuid=>({uuid,name:'Linked map',documentName:uuid.startsWith('Scene.')?'Scene':'Actor',sheet:{render:()=>{window.openedDocument=uuid;}}});
       window.cw=await import('/scripts/campaign-workspace.js');
       window.app={campaign:{name:'La Stella del Tevrar',premise:'Stars move west and disappear',acts:[]},campaignWorkspaceState:{view:'overview',selectedId:''},element:document.querySelector('.lore-smith-app'),
-        async saveCampaignDraft(){if(window.failDeleted&&[...this.campaign.workspace.situations,...this.campaign.workspace.sessions,...this.campaign.workspace.resources].some(r=>r.deletedAt))throw Error('Simulated deletion save failure');if(window.failComplete&&this.campaign.workspace.sessions.some(s=>s.status==='complete'))throw Error('Simulated save failure');window.savedCampaign=JSON.stringify(this.campaign);},
+        async saveCampaignDraft(){if(window.failPurgeId&&![...this.campaign.workspace.situations,...this.campaign.workspace.sessions,...this.campaign.workspace.resources].some(r=>r.id===window.failPurgeId))throw Error('Simulated permanent deletion save failure');if(window.failDeleted&&[...this.campaign.workspace.situations,...this.campaign.workspace.sessions,...this.campaign.workspace.resources].some(r=>r.deletedAt))throw Error('Simulated deletion save failure');if(window.failComplete&&this.campaign.workspace.sessions.some(s=>s.status==='complete'))throw Error('Simulated save failure');window.savedCampaign=JSON.stringify(this.campaign);},
         async syncCampaignForm(){cw.syncCampaignWorkspace(this.campaign,this.element);await this.saveCampaignDraft();},
         async renderCampaignPreservingScroll(){this.element.querySelector('.ls-main').innerHTML=cw.renderCampaignWorkspace(this.campaign,this.campaignWorkspaceState);cw.bindCampaignWorkspace(this);cw.bindCampaignWorkspace(this);},
       };await app.renderCampaignPreservingScroll();
@@ -40,8 +40,8 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     async function done(){await action('close-picker').click();}
     async function view(key){await page.locator(`[data-pl-action=view][data-view="${key}"]`).click();}
     async function open(type,id){await view({adventure:'adventures',session:'sessions',person:'people'}[type]);await page.locator(`[data-pl-action=open][data-type="${type}"][data-id="${id}"]`).first().click();}
-    await field('The party is at').fill('Cassardis');await field('They plan to').fill('Ask about the expedition');await field('Facts to remember').fill('Quina knows the fishermen');
-    await action('new-adventure').click();await field('Adventure name').fill('La Stella del Tevrar');
+    await field('The party is at').fill('Cassardis');await field('They plan to').fill('Ask about the expedition');await action('add-fact').click();await field('Fact').fill('Quina knows the fishermen');
+    await view('adventures');await action('new-adventure').click();await field('Adventure name').fill('La Stella del Tevrar');
     const a=await page.evaluate(()=>app.campaignWorkspaceState.selectedId);
     assert.equal(await page.evaluate(()=>app.campaign.workspace.situations.length),1);
     await field('The problem').fill('A fallen star is changing the lake');await field('Why the party might get involved').fill('Quina asks for help');
@@ -67,7 +67,7 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     await fold(`material-${a}`);await action('add-material').click();await field('Material name').fill('Lake map and diving rules');await field('Notes or rules reference').fill('Map, depths, hazard statistics, and diving rules');
     const material=await page.evaluate(()=>app.campaign.workspace.situations[0].materialIds[0]);
     await choose('document',material);await field('Foundry document (optional)').fill('JournalEntry.diving');await done();
-    await action('new-person').click();await field('Person or Group name').fill('Quina');
+    await view('people');await action('new-person').click();await field('Person or Group name').fill('Quina');
     const person=await page.evaluate(()=>app.campaignWorkspaceState.selectedId);
     await field('Who they are').fill('A local guide');await field('Where to find them').fill('Cassardis tavern');await field('One detail that helps portray them').fill('Folds sailcloth while speaking');await field('What they want').fill('Find who paid for the expedition');await field('Resources they can use').fill('Fishing contacts and a boat');await field('What they know').fill('The western road reaches the abbey');await field('How they feel about the party, and why').fill('Trusts them because they helped Tomas');
     await open('adventure',a);
@@ -117,7 +117,7 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     assert.equal(await page.evaluate(id=>app.campaign.workspace.sessions.find(s=>s.id===id).versions.length,session),1);
     assert.equal(await field('Update Campaign Overview with this location, next intention, and new facts').isChecked(),false);
     await open('session',next);await page.screenshot({path:path.join(output,'campaign-entry-session.png'),fullPage:true});
-    await view('overview');assert.equal(await field('They plan to').inputValue(),'Talk to the abbot');assert.match(await field('Facts to remember').inputValue(),/abbey paid/);
+    await view('overview');assert.equal(await field('They plan to').inputValue(),'Talk to the abbot');assert.ok((await field('Fact').evaluateAll(els=>els.map(el=>el.value))).some(value=>value.includes('abbey paid')));
     await page.screenshot({path:path.join(output,'campaign-entry-overview.png'),fullPage:true});
     await page.setViewportSize({width:640,height:1000});await open('adventure',a);await page.screenshot({path:path.join(output,'campaign-entry-narrow.png'),fullPage:true});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth+1),'No horizontal overflow at 640px.');
@@ -209,7 +209,51 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     assert.equal(await page.locator('.ls-pl-note-list').first().evaluate(el=>getComputedStyle(el).maxHeight),'none','Existing note sidebar CSS cannot clip the notebook.');
 
     assert.equal(await page.locator('[data-campaign-workspace] select').count(),0);
+    // Requested overview behavior and fields visible without hover or focus.
+    await view('overview');
+    assert.equal(await action('new-adventure').count(),0);assert.equal(await action('new-session').count(),0);assert.equal(await action('new-person').count(),0);
+    assert.equal(await page.getByText('Earlier notes (preserved)',{exact:true}).count(),0);
+    await field('The party is at').fill('');await field('They plan to').fill('');await page.getByRole('heading',{name:'Where we left off',exact:true}).click();
+    for(const label of ['The party is at','They plan to']) {
+      assert.ok(await field(label).getAttribute('placeholder'));
+      assert.equal(await field(label).evaluate(el=>getComputedStyle(el).borderTopColor==='rgba(0, 0, 0, 0)'),false);
+      assert.ok(await field(label).evaluate(el=>el.getBoundingClientRect().height>=32));
+    }
+    const plan=record('action',actionId);
+    await plan.locator('[data-pl-action=action-status]').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.equal(await plan.count(),1);assert.match(await plan.textContent(),/Happened · reopen/);
+    await page.evaluate(async()=>{app.campaign=JSON.parse(savedCampaign);await app.renderCampaignPreservingScroll();});
+    assert.match(await plan.textContent(),/Happened · reopen/);
+    await plan.locator('[data-pl-action=action-status]').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.match(await plan.textContent(),/Mark happened/);
+    await action('add-fact').click();await field('Fact').last().fill('The captain promised to wait until dawn.');
+    await page.evaluate(()=>app.syncCampaignForm());await view('adventures');await view('overview');
+    assert.equal(await field('Fact').last().inputValue(),'The captain promised to wait until dawn.');
+    await action('remove-fact').last().click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.ok(!await page.evaluate(()=>app.campaign.workspace.facts.includes('captain promised')));
+    await field('The party is at').fill('Cassardis, at the Tavern of the Old Aboleth.');await field('They plan to').fill('Ask Quina who is funding the expedition.');
+    await page.setViewportSize({width:1100,height:1000});await page.screenshot({path:path.join(output,'campaign-overview-refined.png'),fullPage:true});
+    await page.setViewportSize({width:640,height:1000});
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth+1));
+    await page.setViewportSize({width:1100,height:1000});
+    // Each tab creates only its own entry. Purge can be cancelled, rolls back on save failure, and persists on reopening.
+    for(const [type,tab] of [['adventure','adventures'],['session','sessions'],['person','people']]) {
+      await view(tab);assert.equal(await action('new-'+type).count(),1);
+      await action('new-'+type).click();const disposable=await page.evaluate(()=>app.campaignWorkspaceState.selectedId);
+      await action('delete-entry').click();await page.evaluate(()=>app.campaignWorkspacePending);await fold('deleted-entries');
+      const purge=page.locator(`[data-pl-action=purge-entry][data-id="${disposable}"]`);
+      await page.evaluate(()=>{window.confirmResult=false;});await purge.click();await page.evaluate(()=>app.campaignWorkspacePending);
+      assert.equal(await purge.count(),1);assert.match(await page.evaluate(()=>lastConfirmation.content),/cannot be undone/);
+      await page.evaluate(id=>{window.confirmResult=true;window.failPurgeId=id;},disposable);
+      await purge.click();await page.evaluate(()=>app.campaignWorkspacePending);assert.equal(await purge.count(),1);
+      assert.ok(await page.evaluate(()=>notifications.some(([kind,text])=>text==='Simulated permanent deletion save failure')));
+      await page.evaluate(()=>{window.failPurgeId='';window.notifications=[];});await purge.click();await page.evaluate(()=>app.campaignWorkspacePending);
+      assert.equal(await purge.count(),0);
+      await page.evaluate(async()=>{app.campaign=JSON.parse(savedCampaign);await app.renderCampaignPreservingScroll();});
+      assert.equal(await page.evaluate(id=>[...app.campaign.workspace.situations,...app.campaign.workspace.sessions,...app.campaign.workspace.resources].some(r=>r.id===id),disposable),false);
+      assert.equal(await page.evaluate(id=>Boolean(game.journal.get(id)),journalId),true);
+    }
     assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>notifications.filter(([kind])=>kind==='error')),[]);
-    console.log('Browser campaign entries passed: immediate creation, editing, shared linking, reachable destinations, Foundry drops, Journal protection/permissions, save/reopen, failed completion retry, history revisions, reuse, narrow layout, reversible entry deletion, notebook layout, shared table edits, search, and expanding notes.');
+    console.log('Browser campaign entries passed: immediate creation, editing, shared linking, reachable destinations, Foundry drops, Journal protection/permissions, save/reopen, failed completion retry, history revisions, reuse, narrow layout, reversible entry deletion, notebook layout, shared table edits, search, expanding notes, tab creation, visible inputs, bullet facts, retained happened plans, and permanent deletion/rollback.');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});
