@@ -73,4 +73,57 @@ person.name='<img src=x onerror=bad()>';assert.ok(!workspace.renderCampaignWorks
 const exported=workspace.campaignWorkspaceJournalPages(campaign);
 assert.ok(exported.some(p=>p.content.includes('Actor.quina')));assert.ok(exported.some(p=>p.content.includes('Corrected recap')));
 assert.ok(exported.find(p=>p.key===`entry-session-${next.id}`).content.includes('No divers remain'),'Uncompleted Sessions use current shared records.');
+
+// Deletion is reversible and never changes another entry's content or shared references.
+ensure(campaign);
+const stableState=JSON.stringify(campaign);
+const originalSession=JSON.stringify(session);
+const originalConnections=JSON.stringify(fresh.connections);
+planner.setPlannerEntryDeleted(campaign,'adventure',adventure.id);
+let deletedUI=workspace.renderCampaignWorkspace(campaign,{view:'adventures',selectedId:adventure.id});
+assert.ok(deletedUI.includes('Deleted entries'));
+assert.ok(!deletedUI.includes(`data-pl-action="open" data-type="adventure" data-id="${adventure.id}"`));
+assert.ok(!deletedUI.includes('data-pl-action="delete-entry"'));
+assert.ok(!workspace.campaignWorkspaceJournalPages(campaign).some(p=>p.key===`entry-adventure-${adventure.id}`));
+assert.equal(JSON.stringify(session),originalSession,'Deleting an Adventure must not modify its Sessions.');
+assert.equal(next.adventureId,adventure.id);
+const linkedSessionUI=workspace.renderCampaignWorkspace(campaign,{view:'sessions',selectedId:next.id});
+assert.ok(linkedSessionUI.includes(`<option value="${adventure.id}" selected>${adventure.title} (deleted)</option>`),'Existing links remain selected when saved.');
+planner.setPlannerEntryDeleted(campaign,'person',person.id);
+assert.equal(adventure.participants[0].personId,person.id);
+assert.equal(other.participants[0].personId,person.id);
+assert.equal(fresh.resources.find(r=>r.id==='evidence-1').sourceId,person.id);
+assert.equal(JSON.stringify(fresh.connections),originalConnections);
+assert.equal(person.uuid,'Actor.quina');
+const linkedPersonUI=workspace.renderCampaignWorkspace(campaign,{view:'adventures',selectedId:other.id});
+assert.ok(linkedPersonUI.includes(`<option value="${person.id}" selected>`));
+assert.ok(!workspace.campaignWorkspaceJournalPages(campaign).some(p=>p.key===`entry-person-${person.id}`));
+assert.ok(!planner.plannerSessionOptions(fresh,{...next,visitIds:[]}).some(r=>r.id===person.id),'Deleted people are not offered as new visits.');
+assert.ok(planner.plannerSessionOptions(fresh,{...next,visitIds:[person.id]}).some(r=>r.id===person.id),'Existing selected details remain accessible.');
+planner.setPlannerEntryDeleted(campaign,'session',session.id);
+assert.equal(JSON.stringify(session.snapshot),JSON.stringify(JSON.parse(originalSession).snapshot));
+assert.ok(!workspace.campaignWorkspaceJournalPages(campaign).some(p=>p.key===`entry-session-${session.id}`));
+const restoredFromStorage=JSON.parse(JSON.stringify(campaign));ensure(restoredFromStorage);
+for(const [type,key] of [['adventure',adventure.id],['person',person.id],['session',session.id]]){
+ const ui=workspace.renderCampaignWorkspace(restoredFromStorage,{view:'overview'});
+ assert.ok(ui.includes(`data-pl-action="restore-entry" data-type="${type}" data-id="${key}"`));
+ planner.setPlannerEntryDeleted(campaign,type,key,false);
+}
+assert.equal(JSON.stringify(campaign),stableState,'Restoration retains IDs, references, permissions, notes, and history.');
+planner.setPlannerEntryDeleted(old,'session','historic');
+planner.setPlannerEntryDeleted(old,'session','pending');
+const oldCount=old.workspace.sessions.length;ensure(old);ensure(old);
+assert.equal(old.workspace.sessions.length,oldCount,'Migration must not recreate a deleted imported Session.');
+assert.ok(old.workspace.sessions.find(s=>s.id==='historic').deletedAt);
+assert.ok(old.workspace.sessions.find(s=>s.id==='pending').deletedAt);
+planner.setPlannerEntryDeleted(campaign,'session',next.id);
+const another=planner.createPlannerEntry(campaign,'session',adventure.id);
+assert.equal(another.carriedFromId,session.id,'New Sessions skip deleted preparation when choosing what to reuse.');
+const intact=JSON.stringify(campaign);
+assert.throws(()=>planner.setPlannerEntryDeleted(campaign,'resource','tavern'),/Choose/);
+assert.throws(()=>planner.setPlannerEntryDeleted(campaign,'person','tavern'),/no longer/);
+assert.throws(()=>planner.setPlannerEntryDeleted(campaign,'adventure','missing'),/no longer/);
+assert.equal(JSON.stringify(campaign),intact);
+console.log('Entry deletion passed: hidden lists/exports, safe existing selections, shared content, completed history, restore, save/reopen, migration, and carry-forward.');
+
 console.log('Campaign entries passed: additive migration, three entry types, shared records, reachable destinations, clue diagnostics, one-clue progress, completion, history revisions, carry-forward, exports and escaping.');

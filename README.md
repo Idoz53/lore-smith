@@ -171,7 +171,7 @@ Validation includes automated item, creature, draft/undo, campaign, and map
 regressions, plus all thirteen builder steps rendered in a browser with Foundry
 API stubs. A live Foundry/PF2e world was not available for in-world verification.
 
-### Campaign Planner (0.41.0)
+### Campaign Planner (0.41.1)
 
 The planner follows the Alexandrian's situation preparation, clue design,
 preparation load, and campaign status methods. Its forms adapt the supplied
@@ -215,6 +215,17 @@ removes an unvisited place or unfound clue. Completing a Session freezes its
 prepared material and recap. Editing a completed Session retains the earlier
 completed version, and campaign updates are unchecked to avoid applying facts
 again accidentally. NPC plans only advance when the GM edits them.
+
+**Deleting entries (0.41.1):** open an Adventure, Session, or Person or Group
+and choose **Delete** above its form. Confirm to move it out of the normal
+lists and new-link choices. Expand **Deleted entries** below the planner to
+restore it. Deleting an Adventure keeps its Sessions and shared material;
+existing links retain their notes and show a deleted label. Deleting a Session
+keeps its saved history for restoration and does not undo campaign updates.
+Foundry Journals, Actors, Scenes, and their permissions are never deleted or
+changed by these controls. Deleted earlier Sessions stay deleted on reopening;
+new Sessions skip deleted preparation when choosing material to carry forward.
+Deletion and restoration use the existing save queue and recover on failed saves.
 
 **Saving and safe migration:** this remains in the existing
 `campaignBuilderDraft` client setting. The additive workspace version 3 upgrade

@@ -18,7 +18,7 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     await page.evaluate(async()=>{
       window.notifications=[];window.confirmResult=true;
       window.ui={notifications:{error:m=>notifications.push(['error',m]),info:m=>notifications.push(['info',m])}};
-      let count=0;window.foundry={utils:{randomID:()=>`browser-${++count}`},applications:{api:{DialogV2:{confirm:async()=>{window.confirmCount=(window.confirmCount||0)+1;return window.confirmResult;}}}}};
+      let count=0;window.foundry={utils:{randomID:()=>`browser-${++count}`},applications:{api:{DialogV2:{confirm:async options=>{window.lastConfirmation=options;window.confirmCount=(window.confirmCount||0)+1;return window.confirmResult;}}}}};
       const journals=new Map();window.game={journal:{get:id=>journals.get(id)}};
       window.JournalEntry={create:async data=>{
         const journal={...data,id:`journal-${journals.size+1}`,getFlag:(scope,key)=>data.flags?.[scope]?.[key],sheet:{render:()=>{window.openedJournal=journal.id;}},pages:data.pages.map((p,i)=>({...p,id:`page-${i}`,getFlag:(scope,key)=>p.flags?.[scope]?.[key]})),updateEmbeddedDocuments:async(_type,updates)=>{for(const u of updates)journal.pages.find(p=>p.id===u._id).text.content=u['text.content'];},createEmbeddedDocuments:async(_type,pages)=>journal.pages.push(...pages)};
@@ -27,7 +27,7 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
       window.fromUuid=async uuid=>({uuid,name:'Linked map',documentName:uuid.startsWith('Scene.')?'Scene':'Actor',sheet:{render:()=>{window.openedDocument=uuid;}}});
       window.cw=await import('/scripts/campaign-workspace.js');
       window.app={campaign:{name:'La Stella del Tevrar',premise:'Stars move west and disappear',acts:[]},campaignWorkspaceState:{view:'overview',selectedId:''},element:document.querySelector('.lore-smith-app'),
-        async saveCampaignDraft(){if(window.failComplete&&this.campaign.workspace.sessions.some(s=>s.status==='complete'))throw Error('Simulated save failure');window.savedCampaign=JSON.stringify(this.campaign);},
+        async saveCampaignDraft(){if(window.failDeleted&&[...this.campaign.workspace.situations,...this.campaign.workspace.sessions,...this.campaign.workspace.resources].some(r=>r.deletedAt))throw Error('Simulated deletion save failure');if(window.failComplete&&this.campaign.workspace.sessions.some(s=>s.status==='complete'))throw Error('Simulated save failure');window.savedCampaign=JSON.stringify(this.campaign);},
         async syncCampaignForm(){cw.syncCampaignWorkspace(this.campaign,this.element);await this.saveCampaignDraft();},
         async renderCampaignPreservingScroll(){this.element.querySelector('.ls-main').innerHTML=cw.renderCampaignWorkspace(this.campaign,this.campaignWorkspaceState);cw.bindCampaignWorkspace(this);cw.bindCampaignWorkspace(this);},
       };await app.renderCampaignPreservingScroll();
@@ -119,7 +119,52 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     await page.screenshot({path:path.join(output,'campaign-entry-overview.png'),fullPage:true});
     await page.setViewportSize({width:640,height:1000});await open('adventure',a);await page.screenshot({path:path.join(output,'campaign-entry-narrow.png'),fullPage:true});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth+1),'No horizontal overflow at 640px.');
+
+    // Cancel, failed persistence, deletion, restoration, and shared references in the real UI.
+    await page.setViewportSize({width:1280,height:1000});
+    await page.evaluate(()=>{window.confirmResult=false;});
+    await action('delete-entry').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.match(await page.evaluate(()=>lastConfirmation.content),/Its Sessions, shared people/);
+    assert.equal(await page.evaluate(id=>Boolean(app.campaign.workspace.situations.find(r=>r.id===id).deletedAt),a),false);
+    await page.evaluate(()=>{window.confirmResult=true;window.failDeleted=true;});
+    await action('delete-entry').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.equal(await page.evaluate(id=>Boolean(app.campaign.workspace.situations.find(r=>r.id===id).deletedAt),a),false);
+    assert.equal(await field('Adventure name').inputValue(),'La Stella del Tevrar');
+    assert.ok(await page.evaluate(()=>notifications.some(([kind,text])=>kind==='error'&&text==='Simulated deletion save failure')));
+    await page.evaluate(()=>{window.failDeleted=false;window.notifications=[];});
+    await action('delete-entry').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.equal(await page.locator(`[data-pl-action=open][data-type=adventure][data-id="${a}"]`).count(),0);
+    assert.ok(await page.evaluate(id=>JSON.parse(savedCampaign).workspace.situations.find(r=>r.id===id).deletedAt,a));
+    await open('session',next);assert.equal(await field('Linked Adventure').inputValue(),a);
+    assert.match(await field('Linked Adventure').locator('option:checked').textContent(),/deleted/);
+    assert.match(await page.locator('.ls-cw-editor').textContent(),/The expedition has left/);
+    await page.evaluate(async()=>{await app.syncCampaignForm();app.campaign=JSON.parse(savedCampaign);await app.renderCampaignPreservingScroll();});
+    assert.equal(await field('Linked Adventure').inputValue(),a);
+    await fold('deleted-entries');
+    await page.screenshot({path:path.join(output,'campaign-entry-delete.png'),fullPage:true});
+    await page.locator(`[data-pl-action=restore-entry][data-type=adventure][data-id="${a}"]`).click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.equal(await field('Adventure name').inputValue(),'La Stella del Tevrar');
+    assert.equal(await page.evaluate(id=>app.campaign.workspace.sessions.find(r=>r.id===id).adventureId,next),a);
+    await open('person',person);await action('delete-entry').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    await open('adventure',a);await fold(`who-${a}`);
+    assert.equal(await page.locator('[data-pl-record=participant] [data-pl-field=personId]').inputValue(),person);
+    assert.match(await page.locator('[data-pl-record=participant]').textContent(),/Quina \(deleted\)/);
+    await view('overview'); // Save the retained shared reference.
+    assert.equal(await page.evaluate(id=>JSON.parse(savedCampaign).workspace.situations.find(r=>r.id===id).participants[0].personId,a),person);
+    await fold('deleted-entries');await page.locator(`[data-pl-action=restore-entry][data-type=person][data-id="${person}"]`).click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.equal(await field('Person or Group name').inputValue(),'Quina');
+    await open('session',session);await fold(`session-after-${session}`);await action('complete-session').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    const completedRecord=await page.evaluate(id=>JSON.stringify(app.campaign.workspace.sessions.find(r=>r.id===id)),session);
+    const journalId=await page.evaluate(()=>createdJournal.id);
+    await action('delete-entry').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.equal(await page.locator(`[data-pl-action=open][data-type=session][data-id="${session}"]`).count(),0);
+    assert.equal(await page.evaluate(id=>Boolean(game.journal.get(id)),journalId),true);
+    await page.evaluate(async()=>{app.campaign=JSON.parse(savedCampaign);await app.renderCampaignPreservingScroll();});
+    await fold('deleted-entries');await page.locator(`[data-pl-action=restore-entry][data-type=session][data-id="${session}"]`).click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.equal(await page.evaluate(id=>JSON.stringify(app.campaign.workspace.sessions.find(r=>r.id===id)),session),completedRecord);
+    assert.equal(await action('reopen-session').count(),1);
+
     assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>notifications.filter(([kind])=>kind==='error')),[]);
-    console.log('Browser campaign entries passed: immediate creation, editing, shared linking, reachable destinations, Foundry drops, Journal protection/permissions, save/reopen, failed completion retry, history revisions, reuse, and narrow layout.');
+    console.log('Browser campaign entries passed: immediate creation, editing, shared linking, reachable destinations, Foundry drops, Journal protection/permissions, save/reopen, failed completion retry, history revisions, reuse, narrow layout, and reversible entry deletion (cancel, failed save, links, and history).');
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

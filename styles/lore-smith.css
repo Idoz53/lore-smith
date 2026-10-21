@@ -220,6 +220,8 @@
 
 /* Compact entry navigation reuses the campaign workspace's parchment controls. */
 .ls-planner .ls-planner-create{justify-content:flex-start;margin:12px 0}
+.ls-planner-entry-actions{display:flex;justify-content:flex-end;margin-bottom:8px}
+.ls-planner-entry-actions>button{width:auto;flex:0 1 auto}
 .ls-planner-columns{display:grid;grid-template-columns:minmax(180px,.65fr) minmax(0,2fr);gap:20px;align-items:start}
 .ls-planner-columns>div,.ls-planner-columns>aside{min-width:0}
 .ls-planner .ls-cw-change{margin:5px 0}
