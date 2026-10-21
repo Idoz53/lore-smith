@@ -307,3 +307,8 @@
 .ls-notebook .ls-cw-index>.ls-planner-create{border:0;padding:0 0 12px!important}
 .ls-notebook .ls-planner-create>button{width:100%;white-space:normal;line-height:1.4;height:auto;padding:8px}
 @media(max-width:850px){.ls-notebook .ls-cw-index>.ls-planner-create{flex-basis:100%;max-width:none}.ls-notebook .ls-planner-create>button{width:auto;min-width:160px}}
+
+.ls-notebook .ls-planner-reset{border-top:1px solid var(--note-line);margin-top:24px;padding-top:14px;font:13px/1.5 Arial,sans-serif}
+.ls-notebook .ls-planner-reset>div{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px}
+.ls-notebook .ls-planner-reset button{width:auto}
+.ls-notebook .ls-planner-reset small{color:var(--note-muted)}

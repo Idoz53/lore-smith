@@ -171,7 +171,7 @@ Validation includes automated item, creature, draft/undo, campaign, and map
 regressions, plus all thirteen builder steps rendered in a browser with Foundry
 API stubs. A live Foundry/PF2e world was not available for in-world verification.
 
-### Campaign Planner (0.42.2)
+### Campaign Planner (0.42.3)
 
 The planner follows the Alexandrian's situation preparation, clue design,
 preparation load, and campaign status methods. Its forms adapt the supplied
@@ -187,6 +187,20 @@ The main pages contain no dropdown menus. Linking a shared record opens a
 small searchable chooser only when requested. Source details, attachments,
 help and the recycle list remain secondary. Retired-data panels are no longer
 shown on the main pages.
+
+**Blank planner and reset (0.42.3):** the Campaign Overview has **Clear planner**
+to erase this browser's saved name, premise, notes, entries, deleted entries, and
+linked preparation drafts. Confirm the clear once; the next opening stays blank.
+Native Foundry Journals, maps, and separate builders are not erased. The optional
+**Erase my saved planner after each module update** checkbox deletes that planner
+on the first opening after a version change. This is a client preference, off by
+default for everyone else. Saving and reopening on the same version retains new
+work. The overview uses neutral writing prompts instead of a sample campaign story.
+
+Release ZIPs are built with `python tools/package-module.py` from an explicit
+runtime allowlist. They contain no test fixtures, saved settings, worlds, notes,
+screenshots, or recovery data. The source repository keeps automated tests, and
+the fresh-start test verifies that no saved planner entries or prose are seeded.
 
 **Examples and consequences (0.42.2):** built-in examples use an unrelated bridge
 repair scenario, including map placeholders and test fixtures. Examples are

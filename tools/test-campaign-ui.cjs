@@ -28,6 +28,8 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
       window.cw=await import('/scripts/campaign-workspace.js');
       window.app={campaign:{name:'The Missing Tools',premise:'The bridge needs repairs',acts:[]},campaignWorkspaceState:{view:'overview',selectedId:''},element:document.querySelector('.lore-smith-app'),
         async saveCampaignDraft(){if(window.failPurgeId&&![...this.campaign.workspace.situations,...this.campaign.workspace.sessions,...this.campaign.workspace.resources].some(r=>r.id===window.failPurgeId))throw Error('Simulated permanent deletion save failure');if(window.failDeleted&&[...this.campaign.workspace.situations,...this.campaign.workspace.sessions,...this.campaign.workspace.resources].some(r=>r.deletedAt))throw Error('Simulated deletion save failure');if(window.failComplete&&this.campaign.workspace.sessions.some(s=>s.status==='complete'))throw Error('Simulated save failure');window.savedCampaign=JSON.stringify(this.campaign);},
+        async clearCampaignPlanner(){if(window.failReset)throw Error('Simulated reset failure');this.campaign={name:'',premise:'',acts:[]};cw.ensureCampaignWorkspace(this.campaign);this.campaignWorkspaceState={view:'overview',selectedId:'',resetOnUpdate:window.resetOnUpdate};await this.saveCampaignDraft();},
+        async setPlannerResetOnUpdate(enabled){window.resetOnUpdate=enabled;},
         async syncCampaignForm(){cw.syncCampaignWorkspace(this.campaign,this.element);await this.saveCampaignDraft();},
         async renderCampaignPreservingScroll(){this.element.querySelector('.ls-main').innerHTML=cw.renderCampaignWorkspace(this.campaign,this.campaignWorkspaceState);cw.bindCampaignWorkspace(this);cw.bindCampaignWorkspace(this);},
       };await app.renderCampaignPreservingScroll();
@@ -265,6 +267,16 @@ const repo=path.resolve(__dirname,'..'),output=process.env.LORE_SMITH_QA_OUTPUT|
     await page.evaluate(async()=>{app.campaign=JSON.parse(savedCampaign);await app.renderCampaignPreservingScroll();});assert.equal(await plan.count(),0);
     await action('add-action').click();assert.match(await page.locator('[data-pl-record=action]').textContent(),/Mark happened/);
     await action('delete-action').click();await page.evaluate(()=>app.campaignWorkspacePending);assert.equal(await field('NPC action').count(),0);
+    const beforeReset=await page.evaluate(()=>app.campaign.premise);
+    await field('Erase my saved planner after each module update').check();assert.equal(await page.evaluate(()=>window.resetOnUpdate),true);
+    await page.evaluate(()=>{window.confirmResult=false;});await action('clear-planner').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.equal(await field('Campaign premise').inputValue(),beforeReset);
+    await page.evaluate(()=>{window.confirmResult=true;window.failReset=true;});await action('clear-planner').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.equal(await field('Campaign premise').inputValue(),beforeReset);
+    await page.evaluate(()=>{window.failReset=false;window.notifications=[];});await action('clear-planner').click();await page.evaluate(()=>app.campaignWorkspacePending);
+    assert.equal(await field('Campaign premise').inputValue(),'');assert.equal(await field('Campaign name').inputValue(),'');assert.equal(await field('Fact').count(),0);assert.equal(await field('NPC action').count(),0);
+    await page.evaluate(async()=>{app.campaign=JSON.parse(savedCampaign);await app.renderCampaignPreservingScroll();});assert.equal(await field('Campaign premise').inputValue(),'');
+    await page.screenshot({path:path.join(output,'campaign-blank-planner.png'),fullPage:true});
     assert.deepEqual(errors,[]);assert.deepEqual(await page.evaluate(()=>notifications.filter(([kind])=>kind==='error')),[]);
     console.log('Browser campaign entries passed: immediate creation, editing, shared linking, reachable destinations, Foundry drops, Journal protection/permissions, save/reopen, failed completion retry, history revisions, reuse, narrow layout, reversible entry deletion, notebook layout, shared table edits, search, expanding notes, tab creation, visible inputs, bullet facts, retained happened plans, and permanent deletion/rollback.');
   }finally{await browser.close();}

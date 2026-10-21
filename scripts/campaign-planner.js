@@ -217,10 +217,10 @@ export function reopenPlannerSession(w, sessionId) {
 }
 
 const examples = {
-  "Campaign name": "The Old Trade Road",
-  "Campaign premise": "A damaged bridge has cut off several villages. Rival guilds disagree about how to reopen the road.",
-  "The party is at": "At the village inn.",
-  "They plan to": "Speak to the bridge keeper about the missing tools.",
+  "Campaign name": "Campaign name",
+  "Campaign premise": "Write your campaign premise…",
+  "The party is at": "Current party location…",
+  "They plan to": "What the party plans to do next…",
   "Fact": "The innkeeper lent the party a cart; they promised to return it.",
   "Adventure name": "The Missing Tools",
   "The problem": "Tools needed to repair the bridge have disappeared.",
@@ -440,7 +440,7 @@ export function renderEntryPlanner(campaign,state={}) {
   const selected=records.find(r=>r.id===state.selectedId);
   const create=type?`<div class="ls-planner-create">${button(`new-${type}`,`New ${entryTypes[type]}`,'class="ls-cw-primary"')}</div>`:'';
   let body=view==='overview'?overview(campaign,w):`<div class="ls-planner-columns"><aside class="ls-cw-index" aria-label="${esc(view)}">${create}${records.map(r=>`<div class="${r.id===state.selectedId?'selected':''}">${link(type,r)}${type==='session'?`<small>${r.status==='complete'?'Completed':'Preparing / playing'}</small>`:type==='adventure'?`<small>${adventureStatus[r.status]}</small>`:''}</div>`).join('')||'<p class="ls-cw-empty">Create your first entry here.</p>'}</aside><div>${selected?entryControls(type,selected)+(type==='adventure'?adventureEditor(w,selected):type==='session'?sessionEditor(w,selected):personEditor(w,selected)):'<p class="ls-cw-empty">Open an entry to keep working on it, or create a new one.</p>'}</div></div>`;
-  const html=`<section class="ls-panel ls-cw ls-planner ls-notebook" data-campaign-workspace><header><div><h1>Campaign Planner</h1><small>Click a note or table cell to edit. Changes save automatically.</small></div></header><nav class="ls-cw-tabs" aria-label="Campaign planner">${Object.entries({overview:'Campaign Overview',adventures:'Adventures',sessions:'Sessions',people:'People or Groups'}).map(([key,label])=>button('view',label,`data-view="${key}" aria-pressed="${key===view}"`)).join('')}</nav>${body}${pickerContent(w,state.picker)}${deletedEntries(w)}${help()}<footer class="ls-cw-footer">${button('journal',selected?'Create / update this entry’s Journal':'Create / update Overview Journal',selected?`data-type="${type}" data-id="${esc(selected.id)}"`:'data-type="overview"')}<small>Drafts save automatically. Journals are snapshots you can open in Foundry.</small><span data-cw-save aria-live="polite"></span></footer></section>`;
+  const html=`<section class="ls-panel ls-cw ls-planner ls-notebook" data-campaign-workspace><header><div><h1>Campaign Planner</h1><small>Click a note or table cell to edit. Changes save automatically.</small></div></header><nav class="ls-cw-tabs" aria-label="Campaign planner">${Object.entries({overview:'Campaign Overview',adventures:'Adventures',sessions:'Sessions',people:'People or Groups'}).map(([key,label])=>button('view',label,`data-view="${key}" aria-pressed="${key===view}"`)).join('')}</nav>${body}${view==='overview'?`<div class="ls-planner-reset"><div>${button('clear-planner','Clear planner')}<small>Empty this browser’s saved campaign notes and entries.</small></div>${check('Erase my saved planner after each module update','data-pl-reset-on-update',state.resetOnUpdate)}</div>`:''}${pickerContent(w,state.picker)}${deletedEntries(w)}${help()}<footer class="ls-cw-footer">${button('journal',selected?'Create / update this entry’s Journal':'Create / update Overview Journal',selected?`data-type="${type}" data-id="${esc(selected.id)}"`:'data-type="overview"')}<small>Drafts save automatically. Journals are snapshots you can open in Foundry.</small><span data-cw-save aria-live="polite"></span></footer></section>`;
   return html.replace(/<details data-pl-fold="([^"]+)"\s*(open)?/g,(_,key,open)=>`<details data-pl-fold="${key}"${(state.openDetails?.[key]??Boolean(open))?' open':''}`);
 }
 
@@ -568,6 +568,12 @@ export function bindEntryPlanner(app) {
   });
   root.addEventListener('change',async event=>{
     if(busy)return;const el=event.target;
+    if(el.matches('[data-pl-reset-on-update]')) {
+      clearTimeout(app.campaignSaveTimer);lock();
+      try { await save();await app.setPlannerResetOnUpdate(el.checked);state().resetOnUpdate=el.checked;status('Saved'); }
+      catch(error) { el.checked=!el.checked;fail(error); } finally { unlock(); }
+      return;
+    }
     const refresh=el.matches('[data-pl-link], [data-pl-select], [data-pl-field="personId"], [data-pl-field="adventureId"], [data-pl-field="actorId"], [data-pl-field="clueId"]');
     clearTimeout(app.campaignSaveTimer);
     if(!refresh){void save().catch(fail);return;}
@@ -589,6 +595,11 @@ export function bindEntryPlanner(app) {
     try {
       await save();const w=app.campaign.workspace,action=target.dataset.plAction,key=target.dataset.id;
       original=clone(w);oldState=clone(state());
+      if(action==='clear-planner') {
+        const confirmed=await foundry.applications.api.DialogV2.confirm({window:{title:'Clear planner'},content:'<p>Erase this browser’s saved Campaign Planner: the name, premise, notes, Adventures, Sessions, People or Groups, and deleted entries?</p><p>This cannot be undone. Linked preparation drafts are also cleared. Foundry Journals, maps, and other builders are separate and will remain.</p>',yes:{label:'Clear planner'},no:{label:'Cancel'}});
+        if(!confirmed)return;
+        await app.clearCampaignPlanner();committed=true;await render();return;
+      }
       if(action==='view'){state().view=target.dataset.view;state().selectedId='';state().picker=null;}
       if(action==='open')open(target.dataset.type,key);
       if(action==='choose-link')state().picker={kind:target.dataset.kind,id:key,owner:target.dataset.owner};

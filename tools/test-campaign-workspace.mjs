@@ -48,7 +48,7 @@ const sandbox = {
 };
 const source = (await readFile(new URL("../scripts/main.js", import.meta.url), "utf8")).replace(/^import .*?;\s*/m, "");
 vm.createContext(sandbox);
-vm.runInContext(`${source}\nglobalThis.testApi = { LoreSmithDashboard, normalizeSessionPrep, normalizeCampaignBuild, newSessionPrep, adventureCampaignJournalPages };`, sandbox);
+vm.runInContext(`${source}\nglobalThis.testApi = { LoreSmithDashboard, normalizeSessionPrep, normalizeCampaignBuild, newSessionPrep, adventureCampaignJournalPages, clearCampaignPlannerStorage, prepareCampaignPlannerStorage };`, sandbox);
 const { LoreSmithDashboard, normalizeSessionPrep, normalizeCampaignBuild, newSessionPrep, adventureCampaignJournalPages } = sandbox.testApi;
 assert.equal(newSessionPrep().locations.length, 2, "Standalone Session Prep retains its existing two-place defaults.");
 const standalone = normalizeSessionPrep({ locations: [] });
@@ -144,3 +144,51 @@ assert.equal(closedDraft.workspace.partyIntent, "Follow the northern road");
 assert.equal(closedDraft.workspace.history.length, 1);
 
 console.log("Campaign workspace checks passed: shared records, atomic updates, history, unused preparation, detailed prep persistence, optional places, Journal links, and existing Acts.");
+
+// A clean installation has no pre-written premise or saved planner entries.
+const blank=normalizeCampaignBuild();
+assert.equal(blank.name,'');assert.equal(blank.premise,'');
+for(const key of ['situations','sessions','resources','actions','history','factEntries','revelations'])assert.equal(blank.workspace[key].length,0,key);
+assert.equal(blank.workspace.location,'');assert.equal(blank.workspace.partyIntent,'');assert.equal(blank.workspace.facts,'');
+
+// Exercise real dashboard/storage reset and version handling. Other builders and journals are untouched.
+sandbox.game.modules=new Map([['lore-smith',{version:'1.0.0'}]]);
+settings.set('campaignPlannerVersion','1.0.0');
+settings.set('campaignPlannerResetOnUpdate',false);
+settings.set('campaignBuilderDraft',JSON.stringify({campaign:{name:'Disposable planner',premise:'Disposable notes'}}));
+settings.set('sessionPrepDraft',JSON.stringify({prep:{campaignLink:{workspaceId:'old'},notes:'Linked notes'}}));
+settings.set('campaignMapBuilderDraft','separate map');settings.set('worldMapBuilderDraft','separate atlas');
+const journalIds=[...journals.keys()];
+app.sessionPrep.campaignLink={workspaceId:'old'};
+await app.clearCampaignPlanner();
+assert.equal(settings.get('campaignBuilderDraft'),'');assert.equal(settings.get('sessionPrepDraft'),'');
+assert.equal(app.campaign.premise,'');assert.equal(app.campaign.name,'');assert.equal(app.campaign.workspace.sessions.length,0);
+assert.equal(app.sessionPrep.campaignLink,null);assert.equal(settings.get('campaignMapBuilderDraft'),'separate map');assert.equal(settings.get('worldMapBuilderDraft'),'separate atlas');assert.deepEqual([...journals.keys()],journalIds);
+settings.set('campaignBuilderDraft','work written after reset');
+settings.set('sessionPrepDraft',JSON.stringify({prep:{notes:'Standalone prep',campaignLink:null}}));
+const prepare=sandbox.testApi.prepareCampaignPlannerStorage;
+sandbox.game.modules.get('lore-smith').version='1.0.1';await prepare();
+assert.equal(settings.get('campaignBuilderDraft'),'work written after reset','Users who do not opt in retain their work.');
+await app.setPlannerResetOnUpdate(true);await prepare();assert.equal(settings.get('campaignBuilderDraft'),'work written after reset','Enabling the option does not erase the current draft.');
+sandbox.game.modules.get('lore-smith').version='1.0.2';await prepare();assert.equal(settings.get('campaignBuilderDraft'),'');
+assert.equal(JSON.parse(settings.get('sessionPrepDraft')).prep.notes,'Standalone prep');
+settings.set('campaignBuilderDraft','new work');await prepare();assert.equal(settings.get('campaignBuilderDraft'),'new work','Reopening on the same version retains newly written work.');
+// A failed multi-setting clear restores previous values, then can be retried.
+settings.set('sessionPrepDraft',JSON.stringify({prep:{campaignLink:{workspaceId:'old'},notes:'Linked retry'}}));
+const savedSet=sandbox.game.settings.set;
+sandbox.game.settings.set=async(scope,key,value)=>{if(key==='sessionPrepDraft'&&value==='')throw Error('Simulated reset failure');return savedSet(scope,key,value);};
+sandbox.game.modules.get('lore-smith').version='1.0.3';
+await assert.rejects(()=>prepare(),/Simulated reset failure/);
+assert.equal(settings.get('campaignBuilderDraft'),'new work');assert.equal(settings.get('campaignPlannerVersion'),'1.0.2');
+sandbox.game.settings.set=savedSet;await prepare();assert.equal(settings.get('campaignBuilderDraft'),'');assert.equal(settings.get('sessionPrepDraft'),'');
+console.log('Blank planner and reset passed: empty defaults, actual storage clearing, linked draft cleanup, opt-in updates, repeat opening, failed-save rollback, and separate builders/documents.');
+
+// An already-running linked save must finish before the clear, never after it.
+app.sessionPrep.campaignLink={workspaceId:app.campaign.workspace.id,packetId:app.campaign.workspace.prep.id};
+let releaseLinkedSave;const saveGate=new Promise(resolve=>{releaseLinkedSave=resolve;});
+sandbox.game.settings.set=async(scope,key,value)=>{if(key==='sessionPrepDraft'&&value!=='')await saveGate;return savedSet(scope,key,value);};
+const pendingLinkedSave=app.saveSessionPrepDraft();const clearing=app.clearCampaignPlanner();
+await Promise.resolve();releaseLinkedSave();await pendingLinkedSave;await clearing;
+assert.equal(settings.get('campaignBuilderDraft'),'');assert.equal(settings.get('sessionPrepDraft'),'');
+sandbox.game.settings.set=savedSet;
+console.log('In-flight linked saves finish before the clear and cannot restore deleted notes.');

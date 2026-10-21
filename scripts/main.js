@@ -2,6 +2,35 @@ import { ensureCampaignWorkspace, renderCampaignWorkspace, syncCampaignWorkspace
 
 const MODULE_ID = "lore-smith";
 const FLAG_SCOPE = MODULE_ID;
+const plannerModuleVersion = () => String(game.modules?.get(MODULE_ID)?.version || "");
+async function clearCampaignPlannerStorage() {
+  const previous = new Map([["campaignBuilderDraft", game.settings.get(MODULE_ID, "campaignBuilderDraft")], ["campaignPlannerVersion", game.settings.get(MODULE_ID, "campaignPlannerVersion")]]);
+  const rawPrep = game.settings.get(MODULE_ID, "sessionPrepDraft");
+  let linkedPrep = false;
+  try { const stored = rawPrep ? JSON.parse(rawPrep) : null; linkedPrep = Boolean((stored?.prep ?? stored)?.campaignLink); } catch { /* Unrelated malformed drafts are not reset. */ }
+  if (linkedPrep) previous.set("sessionPrepDraft", rawPrep);
+  const applied = [];
+  try {
+    for (const key of previous.keys()) {
+      await game.settings.set(MODULE_ID, key, key === "campaignPlannerVersion" ? plannerModuleVersion() : "");
+      applied.push(key);
+    }
+  } catch (error) {
+    for (const key of applied.reverse()) {
+      try { await game.settings.set(MODULE_ID, key, previous.get(key)); } catch (rollbackError) { console.error("Lore Smith | Could not restore a draft after a failed reset.", rollbackError); }
+    }
+    throw error;
+  }
+  return { linkedPrep };
+}
+async function prepareCampaignPlannerStorage() {
+  const version = plannerModuleVersion();
+  if (!version) return;
+  const previous = game.settings.get(MODULE_ID, "campaignPlannerVersion");
+  if (game.settings.get(MODULE_ID, "campaignPlannerResetOnUpdate") === true && previous && previous !== version) await clearCampaignPlannerStorage();
+  else if (previous !== version) await game.settings.set(MODULE_ID, "campaignPlannerVersion", version);
+}
+
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 const ITEM_TYPE_LABELS = {
@@ -1577,6 +1606,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   sessionPrep = newSessionPrep();
   sessionDraftLoaded = false;
   sessionSaveTimer = null;
+  sessionSavePromise = Promise.resolve();
   lastSessionJournalId = null;
   sessionScrollTop = 0;
   lootResults = [];
@@ -1653,6 +1683,10 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext(options) {
+    if (!this.plannerStoragePrepared) {
+      await prepareCampaignPlannerStorage();
+      this.plannerStoragePrepared = true;
+    }
     if (!this.sessionDraftLoaded) {
       this.sessionDraftLoaded = true;
       try {
@@ -2003,7 +2037,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
         };
       }),
       campaign: { ...this.campaign, people: campaignPeople },
-      campaignWorkspaceHtml: this.activeTab === "campaign" ? renderCampaignWorkspace(this.campaign, this.campaignWorkspaceState) : "",
+      campaignWorkspaceHtml: this.activeTab === "campaign" ? renderCampaignWorkspace(this.campaign, { ...this.campaignWorkspaceState, resetOnUpdate: game.settings.get(MODULE_ID, "campaignPlannerResetOnUpdate") === true }) : "",
       campaignPlannerVisible: false, // Older Act data remains available in the planner’s preserved notes.
       campaignSteps,
       campaignActs,
@@ -2733,8 +2767,13 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async saveSessionPrepDraft() {
-    await game.settings.set(MODULE_ID, "sessionPrepDraft", JSON.stringify({ step: this.sessionStep, prep: this.sessionPrep }));
-    await this.syncLinkedCampaignSession();
+    const serialized = JSON.stringify({ step: this.sessionStep, prep: this.sessionPrep });
+    const persist = async () => {
+      await game.settings.set(MODULE_ID, "sessionPrepDraft", serialized);
+      await this.syncLinkedCampaignSession();
+    };
+    this.sessionSavePromise = this.sessionSavePromise.then(persist, persist);
+    await this.sessionSavePromise;
   }
 
   async syncLinkedCampaignSession({ journalId = undefined } = {}) {
@@ -2922,6 +2961,27 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (this._worldMapKeydown) window.removeEventListener("keydown", this._worldMapKeydown);
     clearTimeout(this._worldMapSelectTimer);
     return super.close(options);
+  }
+
+  async clearCampaignPlanner() {
+    clearTimeout(this.campaignSaveTimer);
+    const linked = Boolean(this.sessionPrep.campaignLink);
+    if (linked) clearTimeout(this.sessionSaveTimer);
+    await this.sessionSavePromise;
+    await this.campaignSavePromise;
+    const reset = await clearCampaignPlannerStorage();
+    this.adventureCampaign = normalizeCampaignBuild();
+    if (this.activeTab === "campaign") this.campaign = this.adventureCampaign;
+    this.adventureCampaignStep = 0;
+    this.campaignStep = 0;
+    this.campaignWorkspaceState = { view: "overview", selectedId: "", planner: false };
+    this.campaignDraftLoaded = true;
+    if (linked || reset.linkedPrep) { this.sessionPrep = newSessionPrep(); this.sessionStep = 0; this.sessionDraftLoaded = true; }
+  }
+
+  async setPlannerResetOnUpdate(enabled) {
+    await game.settings.set(MODULE_ID, "campaignPlannerVersion", plannerModuleVersion());
+    await game.settings.set(MODULE_ID, "campaignPlannerResetOnUpdate", Boolean(enabled));
   }
 
   async saveCampaignDraft() {
@@ -4351,6 +4411,14 @@ Hooks.once("init", () => {
     config: false,
     type: String,
     default: "",
+  });
+  game.settings.register(MODULE_ID, "campaignPlannerResetOnUpdate", {
+    name: "Erase my saved planner after each module update",
+    hint: "Deletes this browser's Campaign Planner draft when a new Lore Smith version is opened. Foundry Journals and other builders remain separate.",
+    scope: "client", config: true, type: Boolean, default: false,
+  });
+  game.settings.register(MODULE_ID, "campaignPlannerVersion", {
+    scope: "client", config: false, type: String, default: "",
   });
   game.settings.register(MODULE_ID, "campaignMapBuilderDraft", {
     name: "Campaign Map Builder Draft", hint: "Automatically stores the progressive regional map preparation wizard.",
