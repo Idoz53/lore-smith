@@ -28,6 +28,11 @@ const template = await readFile(resolve(root, "templates/dashboard.hbs"), "utf8"
 const creatureTemplate = await readFile(resolve(root, "templates/creature-builder.hbs"), "utf8");
 const itemTemplate = await readFile(resolve(root, "templates/item-builder.hbs"), "utf8");
 const itemSupport = await readFile(resolve(root, "scripts/item-builder-support.js"), "utf8");
+const campaignFacade = await readFile(resolve(root, "scripts/campaign-workspace.js"), "utf8");
+for (const file of ["campaign-planner.js", "campaign-workspace-legacy.js"]) {
+  await access(resolve(root, "scripts", file), constants.R_OK);
+  if (!campaignFacade.includes(`from "./${file}"`)) throw new Error(`Campaign support is not loaded: ${file}`);
+}
 for (const file of ["builder-session.js", "builder-guides.js", "creature-builder-support.js", "item-builder-support.js"]) {
   await access(resolve(root, "scripts", file), constants.R_OK);
   if (!nativeScript.includes(`from "./${file}"`)) throw new Error(`Builder support is not loaded: ${file}`);

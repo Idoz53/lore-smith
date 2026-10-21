@@ -204,3 +204,28 @@
 .ls-builder-comparisons details{margin-top:10px;padding:10px;border:1px solid #ba914f;background:#fff5db}.ls-builder-comparisons summary{cursor:pointer;font-weight:700}.ls-balance-assistant details>p{padding:0 10px;font:12px/1.5 Arial,sans-serif}
 .ls-builder,.ls-builder *{box-sizing:border-box}.ls-builder-step{min-width:0;width:100%}
 @media(max-width:760px){.ls-builder-session{padding:10px}.ls-builder-heading{padding:14px}.ls-builder-body{padding:14px}.ls-builder-heading h1{font-size:23px}.ls-builder-preview dl,.ls-statblock-preview dl,.ls-result-preview dl{grid-template-columns:1fr}.ls-builder-navigation{padding:8px;grid-template-columns:48px minmax(0,1fr) 48px}.ls-builder-navigation>span{font:12px/1.4 Arial,sans-serif}.ls-source-browser,.ls-content-columns{grid-template-columns:minmax(0,1fr)}.ls-builder-filters{grid-template-columns:minmax(0,1fr)}.ls-coin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Optional campaign methods stay within the existing parchment workspace. */
+.ls-cw .ls-cw-stack{display:grid;gap:12px;min-width:0;padding:5px 0}
+.ls-cw .ls-cw-guidance{padding:11px 13px;background:#fff2d2;border-left:3px solid #936527;font:13px/1.55 Arial,sans-serif}
+.ls-cw .ls-cw-prep-grid>details{padding:12px;background:#f9e9c6;border:1px solid #c4a165;border-radius:3px;margin:8px 0}
+.ls-cw .ls-cw-prep-grid>details>summary{margin:0;font-size:16px}
+.ls-cw .ls-cw-prep-grid>details[open]>summary{margin-bottom:10px}
+.ls-cw .ls-cw-stack>p,.ls-cw .ls-cw-editor>p{font:14px/1.5 Arial,sans-serif}
+.ls-cw .ls-cw-stack a{color:#70241d;text-decoration:underline}
+.ls-cw [data-cw-save]{font:12px/1.4 Arial,sans-serif;color:#70241d}
+.ls-cw [data-cw-connection]{min-width:0}
+.ls-cw details:focus-within{outline-color:#70241d}
+.ls-cw button:focus-visible,.ls-cw summary:focus-visible{outline:2px solid #70241d;outline-offset:3px}
+
+/* Compact entry navigation reuses the campaign workspace's parchment controls. */
+.ls-planner .ls-planner-create{justify-content:flex-start;margin:12px 0}
+.ls-planner-columns{display:grid;grid-template-columns:minmax(180px,.65fr) minmax(0,2fr);gap:20px;align-items:start}
+.ls-planner-columns>div,.ls-planner-columns>aside{min-width:0}
+.ls-planner .ls-cw-change{margin:5px 0}
+.ls-planner .ls-cw-index>div{display:grid;gap:6px}
+.ls-planner .ls-cw-history section{margin:7px 0}
+.ls-planner .ls-cw-editor>h2{margin-top:10px;font-size:19px}
+.ls-planner .ls-cw-editor .ls-cw-change{background:#fff0cd}
+.ls-planner .ls-cw-editor details .ls-cw-change{border-color:#c4a165}
+@media(max-width:850px){.ls-planner-columns{grid-template-columns:minmax(0,1fr)}.ls-planner .ls-planner-create>button{flex:1 1 180px}}

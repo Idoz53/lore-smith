@@ -2004,7 +2004,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       }),
       campaign: { ...this.campaign, people: campaignPeople },
       campaignWorkspaceHtml: this.activeTab === "campaign" ? renderCampaignWorkspace(this.campaign, this.campaignWorkspaceState) : "",
-      campaignPlannerVisible: this.campaignWorkspaceState.planner,
+      campaignPlannerVisible: false, // Older Act data remains available in the planner’s preserved notes.
       campaignSteps,
       campaignActs,
       campaignCurrentAct,
@@ -2271,7 +2271,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
     if (["campaign", "campaignMap"].includes(this.activeTab)) {
       const campaignPanel = this.element?.querySelector(".ls-main");
       const syncLiveCampaignState = async (event) => {
-        if (!event.target?.matches?.("input, textarea, select")) return;
+        if (!event.target?.matches?.("input, textarea, select") || event.target.closest("[data-campaign-workspace]")) return;
         await this.syncCampaignForm({ persist: false });
         this.refreshCampaignActValidation();
         clearTimeout(this.campaignSaveTimer);
@@ -2280,7 +2280,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
       campaignPanel?.addEventListener("input", syncLiveCampaignState);
       campaignPanel?.addEventListener("change", syncLiveCampaignState);
       campaignPanel?.addEventListener("focusout", async (event) => {
-        if (!event.target?.matches?.("input, textarea, select")) return;
+        if (!event.target?.matches?.("input, textarea, select") || event.target.closest("[data-campaign-workspace]")) return;
         clearTimeout(this.campaignSaveTimer);
         await this.syncCampaignForm();
         this.refreshCampaignActValidation();
@@ -2909,6 +2909,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async close(options = {}) {
+    await this.campaignWorkspacePending;
     clearTimeout(this.campaignSaveTimer);
     clearTimeout(this.sessionSaveTimer);
     clearTimeout(this.worldMapSaveTimer);
@@ -3804,6 +3805,7 @@ class LoreSmithDashboard extends HandlebarsApplicationMixin(ApplicationV2) {
   static async changeTab(event, target) {
     const tab = target?.dataset?.tab || event?.currentTarget?.dataset?.tab;
     if (!tab) return;
+    await this.campaignWorkspacePending;
     await this.syncSessionPrepForm();
     await this.syncCampaignForm();
     await this.syncWorldMapForm();

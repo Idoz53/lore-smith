@@ -5,7 +5,7 @@
       <div><strong>Lore Smith</strong><small>PF2e GM Workspace</small></div>
     </div>
     <nav>
-      <button type="button" data-action="dashboardTab" data-tab="campaign" class="{{#if tabs.campaign}}active{{/if}}"><i class="fa-solid fa-map"></i> Campaign Builder</button>
+      <button type="button" data-action="dashboardTab" data-tab="campaign" class="{{#if tabs.campaign}}active{{/if}}"><i class="fa-solid fa-map"></i> Campaign Planner</button>
       <button type="button" data-action="dashboardTab" data-tab="campaignMap" class="{{#if tabs.campaignMap}}active{{/if}}"><i class="fa-solid fa-map-location-dot"></i> Campaign Map Builder</button>
       <button type="button" data-action="dashboardTab" data-tab="worldMap" class="{{#if tabs.worldMap}}active{{/if}}"><i class="fa-solid fa-earth-europe"></i> World Map Builder</button>
       <button type="button" data-action="dashboardTab" data-tab="session" class="{{#if tabs.session}}active{{/if}}"><i class="fa-solid fa-compass"></i> Session Prep</button>
@@ -133,7 +133,6 @@
       <section class="ls-panel ls-campaign-panel ls-act-campaign-panel">
         <header><div><span>Prepare, play, and complete one act at a time</span><h1>Campaign Builder</h1></div><div class="ls-header-actions"><button data-action="newCampaignBuild"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openCampaignJournal" {{#unless campaignJournalAvailable}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open campaign</button></div></header>
         <p class="ls-lead">Prepare only the act you are about to play. Calling it ready creates or updates its Foundry Journal page. Completing it records what happened and unlocks the next act.</p>
-        <div class="ls-act-campaign-basics"><label>Campaign name<input name="campaignName" value="{{campaign.name}}" placeholder="Name this campaign"></label><label>Campaign summary<textarea name="campaignPremise" rows="2" placeholder="A short reminder of the campaign's central situation.">{{campaign.premise}}</textarea></label></div>
         <nav class="ls-act-rail" aria-label="Campaign acts">{{#each campaignActs}}<button type="button" data-action="goToCampaignStep" data-step="{{index}}" data-campaign-act-nav="{{index}}" class="{{#if active}}active{{/if}} {{#if completed}}completed{{/if}} {{#if ready}}ready{{/if}}" {{#if locked}}disabled{{/if}}><span class="ls-act-roman">{{roman}}</span><span><strong>Act {{roman}}</strong><small>{{name}}</small></span><em>{{#if locked}}Locked{{else}}{{statusLabel}}{{/if}}</em></button>{{/each}}<button type="button" data-action="addCampaignAct" class="add-act"><i class="fa-solid fa-plus"></i><span><strong>Add Act</strong><small>Continue beyond the current ending</small></span></button></nav>
         {{#with campaignCurrentAct}}
           <section class="ls-session-step ls-act-editor" data-campaign-act-id="{{id}}">
@@ -141,7 +140,7 @@
             <aside class="ls-campaign-guidance"><strong>Guidance for this act</strong><p>{{guidance}}</p>{{#if previousCarryForward}}<p><strong>Carried forward from the previous act:</strong> {{previousCarryForward}}</p>{{/if}}</aside>
             <div class="ls-session-form ls-act-core">
               <label class="wide">Act name<input data-campaign-act-field="name" value="{{name}}" placeholder="Introduction, The Broken Alliance, Final Reckoning..."></label>
-              <label class="wide">What must this act accomplish?<textarea rows="3" data-campaign-act-field="objective" placeholder="The playable purpose of this part of the campaign.">{{objective}}</textarea></label>
+              <label class="wide">Possible objectives for this act<textarea rows="3" data-campaign-act-field="objective" placeholder="The playable purpose of this part of the campaign.">{{objective}}</textarea></label>
               <label class="wide">How does this act begin?<textarea rows="3" data-campaign-act-field="startingSituation" placeholder="Where the party is, what has just changed, and what demands attention.">{{startingSituation}}</textarea></label>
               <label>Important locations<textarea rows="3" data-campaign-act-field="locations" placeholder="Only the places this act is likely to use.">{{locations}}</textarea></label>
               <label>People and factions<textarea rows="3" data-campaign-act-field="people" placeholder="Who wants what during this act?">{{people}}</textarea></label>
@@ -226,7 +225,7 @@
         <header><div><span>Guided next-session preparation</span><h1>Session Prep</h1></div><div class="ls-header-actions"><button data-action="newSessionPrep"><i class="fa-solid fa-rotate-left"></i> Start over</button><button data-action="openLastSessionJournal" {{#unless lastSessionJournalId}}disabled{{/unless}}><i class="fa-solid fa-book-open"></i> Open last session</button></div></header>
         <p class="ls-lead">Answer a few focused questions. Lore Smith turns them into a ready-to-run Foundry Journal, with every important place, person, scene, and secret on its own page.</p>
         {{#if sessionCampaignLink}}<aside class="ls-session-campaign-link"><div><span>Campaign session</span><strong>Act {{actRoman}} · Chapter {{chapterRoman}} — {{chapterName}} · Session {{sessionNumber}}</strong><small>{{actName}}</small></div><button type="button" data-action="backToCampaignAct"><i class="fa-solid fa-arrow-left"></i> Back to Act</button></aside>{{/if}}
-        {{#if workspacePrepLink}}<aside class="ls-session-campaign-link"><div><span>Campaign preparation</span><strong>{{workspacePrepLink.campaignName}}</strong><small>Extra detail for your next game. Shared campaign records stay linked below.</small></div><button type="button" data-action="backToCampaignAct">Back to Prepare next game</button></aside><div class="ls-reference-list">{{#each workspacePrepLink.resources}}<div><span>{{name}}<small>{{kind}} · {{state}}</small></span>{{#if uuid}}<button type="button" data-action="openLootDocument" data-uuid="{{uuid}}">Open document</button>{{/if}}</div>{{/each}}</div>{{/if}}
+        {{#if workspacePrepLink}}<aside class="ls-session-campaign-link"><div><span>Campaign preparation</span><strong>{{workspacePrepLink.campaignName}}</strong><small>Extra detail for your next game. Shared campaign records stay linked below.</small></div><button type="button" data-action="backToCampaignAct">Back to Campaign Planner</button></aside><div class="ls-reference-list">{{#each workspacePrepLink.resources}}<div><span>{{name}}<small>{{kind}} · {{state}}</small></span>{{#if uuid}}<button type="button" data-action="openLootDocument" data-uuid="{{uuid}}">Open document</button>{{/if}}</div>{{/each}}</div>{{/if}}
         <div class="ls-session-progress" aria-label="Session prep progress">
           {{#each sessionSteps}}<button data-action="goToSessionStep" data-step="{{index}}" class="{{#if active}}active{{/if}}"><span>{{number}}</span>{{label}}</button>{{/each}}
         </div>

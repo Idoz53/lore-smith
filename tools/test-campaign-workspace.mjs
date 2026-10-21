@@ -5,7 +5,7 @@ import vm from "node:vm";
 const workspaceSource = await readFile(new URL("../scripts/campaign-workspace.js", import.meta.url), "utf8");
 let nextId = 0;
 globalThis.foundry = { utils: { randomID: () => `test-${++nextId}`, deepClone: structuredClone } };
-const workspace = await import(`data:text/javascript;base64,${Buffer.from(workspaceSource).toString("base64")}`);
+const workspace = await import(new URL("../scripts/campaign-workspace.js", import.meta.url));
 const { ensureCampaignWorkspace, selectWorkspaceSituation, workspaceSelectedResources, applyCampaignWorkspaceAfterPlay, campaignWorkspaceJournalPages } = workspace;
 
 const campaign = { name: "The Star of Tevrar", premise: "A star falls into the lake.", acts: [] };
@@ -124,5 +124,23 @@ const freshCampaign = normalizeCampaignBuild({ name: "New campaign", premise: "A
 assert.equal(adventureCampaignJournalPages(freshCampaign).length, 1, "Unfilled optional Acts must not generate placeholder Journal pages.");
 freshCampaign.acts[0].startingSituation = "The bridge is burning.";
 assert.equal(adventureCampaignJournalPages(freshCampaign).length, 2, "Existing substantive Act content remains exportable.");
+
+// Exercise the actual dashboard close/save path, including a pending workspace operation.
+let releaseOperation;
+app.campaignWorkspacePending = new Promise((resolve) => { releaseOperation = resolve; });
+const intentControl = { dataset: { plCurrent: "partyIntent" }, type: "textarea", value: "Follow the western road" };
+const container = { querySelector: () => null, querySelectorAll: (selector) => selector === "[data-pl-current]" ? [intentControl] : [] };
+app.element = { querySelector: (selector) => selector === "[data-campaign-workspace]" ? container : selector === '[name="campaignName"]' ? { value: "Latest campaign name" } : null, querySelectorAll: () => [] };
+app.activeTab = "campaign";
+sandbox.foundry.applications.api.ApplicationV2.prototype.close = async () => "closed";
+const closing = app.close();
+await Promise.resolve();
+assert.notEqual(app.campaign.name, "Latest campaign name", "Close waits for the current workspace action before syncing its replacement DOM.");
+releaseOperation();
+assert.equal(await closing, "closed");
+const closedDraft = JSON.parse(settings.get("campaignBuilderDraft")).campaign;
+assert.equal(closedDraft.name, "Latest campaign name");
+assert.equal(closedDraft.workspace.partyIntent, "Follow the western road");
+assert.equal(closedDraft.workspace.history.length, 1);
 
 console.log("Campaign workspace checks passed: shared records, atomic updates, history, unused preparation, detailed prep persistence, optional places, Journal links, and existing Acts.");

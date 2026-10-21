@@ -5,31 +5,16 @@ Pathfinder Second Edition system.
 
 The module provides:
 
-- a Campaign Builder with **Campaign Board**, **Prepare next game**, and
-  **After play** tabs. Track active, dormant, and resolved situations; connect
-  reusable NPCs, places, factions, clues, encounters, rewards, and character
-  hooks; drag existing Foundry documents onto their resource records;
-- preparation gathered from selected situations and their shared resources,
-  with quick table notes Journals and optional access to the detailed Session
-  Prep wizard. Extra places and images are optional for campaign preparation;
-- confirmed after-play changes with before/after history, player intentions,
-  and unused material carried into the next preparation. Faction moves and
-  clue discoveries change only when the GM records them;
-- an optional **Session x Session** area retaining the progressive Act planner.
-  Existing prepared Acts seed board situations on first use, while original
-  Acts, session drafts, and document links remain available. Prepare Act I, call it ready to
-  play, record what actually happened, complete it, and unlock Act II without
-  having to write the entire campaign in advance; an optional **Session x Session**
-  button expands each Act's chapter and session planner, collapsed by default;
-  existing preparation is preserved, and the planner stays open or closed for
-  each Act while navigating the dashboard; sessions are not required to call an
-  Act ready, and unused session placeholders are omitted from its Journal;
-  every Act's optional planner is divided into
-  Chapter I (Introduction), Chapter II (Escalation), and Chapter III
-  (Resolution), with its planned sessions distributed across those chapters;
-  every individual session links directly to the full Session Prep wizard and
-  back to the evolving native campaign Journal; locked future Acts remain
-  hidden from that Journal until the preceding Act is completed;
+- a Campaign Planner with a living **Campaign Overview** and three entry types:
+  **Adventure**, **Session**, and optional **Person or Group**. New buttons create
+  editable records immediately; existing entries are reopened and updated;
+- shared people, places, clues, intended NPC actions, and Foundry documents.
+  An Adventure lasts across Sessions. Sessions select the material they might
+  use, without duplicating the Adventure or its NPCs;
+- preparation and play notes in each Session, explicit found-clue and player
+  understanding updates, current campaign facts, and preserved completed-session
+  snapshots. Unused material remains available and previous selections can be
+  reused for the next Session;
 - a separate eight-step Campaign Map Builder: upload a real map, mark points of
   interest, draw the party's starting area, and prepare outward by distance;
   the center receives full playable detail, nearby places receive practical
@@ -186,25 +171,89 @@ Validation includes automated item, creature, draft/undo, campaign, and map
 regressions, plus all thirteen builder steps rendered in a browser with Foundry
 API stubs. A live Foundry/PF2e world was not available for in-world verification.
 
-### Campaign workflow (0.38.0)
+### Campaign Planner (0.41.0)
 
-1. Open Campaign Builder. Add a situation, describe its stakes and available
-   leads, then add resources and link them from the situation editor.
-2. Choose **Prepare this situation**. Adjust the selected resources, write an
-   opening, and create table notes or continue into detailed Session Prep.
-3. After the game, record what happened and the players' next intention. Add
-   explicit changes to situation status, leads, faction state, NPC notes, or
-   clue discovery. Mark used resources and choose **Record play and update the
-   board**. Unused selections remain prepared; all shared records remain saved.
+The planner follows the Alexandrian's situation preparation, clue design,
+preparation load, and campaign status methods. Its forms adapt the supplied
+Obsidian Campaign Planner template to editable Foundry records. The former
+8-step workflow is retired from this interface. No template duplication,
+scheduling, attendance, table agreements, or onboarding forms are required.
 
-Drafts use the existing campaign save setting and survive closing the
-dashboard. History preserves earlier preparation and before/after values.
-Generated Journals are snapshots: update their notes when you want the latest
-campaign state. Marking a clue discovered does not change document sharing.
-The **Session x Session** button opens the existing Acts and chapter planner.
+1. Update **Campaign Overview** with the premise, where the party is, what they
+   intend next, NPC actions with their in-world triggers, and facts to remember.
+2. Choose **New Adventure** for a problem the party can engage with. Record the
+   problem and involvement, who wants what and the resources available, intended
+   actions, places or contacts, and useful material. Optional details collapse.
+   Keep this same Adventure across games; there is no required visiting order.
+3. From that Adventure choose **New Session for this Adventure**. The Adventure
+   is preselected. Select the people and places the party might reach, NPC plans,
+   clues, and material. Directions to another Adventure's locations are offered
+   as nearby possibilities too. Add a short readiness checklist and play notes.
+4. Fill **After the game** and complete the Session. Select the clues actually
+   found and separately choose which understanding notes to update. The optional
+   overview update records the party's location, next intention, and new facts.
+   Edit changed Adventure circumstances and NPC intentions on their shared records.
+5. Use **New Person or Group** only when a recurring NPC or faction needs more
+   detail. Link this entry from several Adventures and Sessions. A few inline
+   lines in an Adventure are enough for a minor character.
 
-Validation: module checks, workspace integration regressions, and browser
-workflow checks. A live Foundry/PF2e world still needs in-world verification.
+**Clues:** each clue has one maintained resource record. Discoveries and
+Sessions reference its ID. A discovery can have several clues, and a clue can
+be reused by another discovery. Evidence, source, optional discovery method,
+and Not found / Found / Unavailable status are separate from the players'
+understanding. A counter helps review three distinct clues and independent
+sources; it never blocks play or Session completion. One useful clue is enough.
+Several ways of questioning a witness share a source. The optional shared-source
+field groups clues that depend on the same witness or archive. Source counting
+is an aid; the GM still judges actual independence and whether evidence supports
+its conclusion. Ordinary directions do not need an investigation structure.
+
+**Reuse and history:** a new Session stores selections of existing records.
+For the same Adventure it carries the previous Session's selected links and
+unfinished readiness items; its game notes and recap start empty. Nothing
+removes an unvisited place or unfound clue. Completing a Session freezes its
+prepared material and recap. Editing a completed Session retains the earlier
+completed version, and campaign updates are unchecked to avoid applying facts
+again accidentally. NPC plans only advance when the GM edits them.
+
+**Saving and safe migration:** this remains in the existing
+`campaignBuilderDraft` client setting. The additive workspace version 3 upgrade
+reuses situation/resource IDs: existing situations become Adventures, useful
+pending preparation becomes a Session, and existing session history becomes
+completed Sessions. Original Acts, history, detailed drafts, unknown extension
+fields, and document links remain stored. Retired fields and unfinished older
+updates remain available under **Earlier notes (preserved)**; they are not
+silently discarded or automatically applied. Old clues keep their evidence and
+found status; missing sources are left for the GM to supply. No manual import
+is required. Storage remains per client; this does not introduce multi-GM sync.
+
+**Foundry documents:** drop Actors, Scenes, Journals, Items, or Playlists onto
+relevant records and open their native sheets. Create/update a native Journal
+snapshot for the selected entry or overview. New entry Journals default to GM
+only. Existing permissions are retained; Found status never reveals a document
+to players. Manually changed generated pages require confirmation before being
+replaced, and unrelated pages are preserved. Earlier Session Journals can still
+be opened. Native Journal editors and other module builders are unchanged.
+
+The module still supports Foundry VTT 13 and PF2e 7.0.0 or later. The interface
+uses the module's existing English labels and parchment controls.
+
+References:
+[Don't Prep Plots](https://thealexandrian.net/wordpress/4147/roleplaying-games/dont-prep-plots),
+[Three Clue Rule](https://thealexandrian.net/wordpress/1118/roleplaying-games/three-clue-rule),
+[Managing Prep Load](https://thealexandrian.net/wordpress/52735/roleplaying-games/random-gm-tip-managing-prep-load),
+[Campaign Status Documents](https://thealexandrian.net/wordpress/42961/roleplaying-games/smart-prep-part-4-campaign-status-documents).
+
+Checks: `node tools/validate-module.mjs`, `node tools/test-campaign-entries.mjs`,
+`node tools/test-campaign-workspace.mjs`, and the older data compatibility tests
+in `node tools/test-campaign-methods.mjs`. The optional browser check
+`node tools/test-campaign-ui.cjs` requires Playwright and Microsoft Edge;
+`LORE_SMITH_QA_OUTPUT` selects its screenshot directory (default: OS temporary
+directory). It exercises creation, editing, linked records, saving/reopening,
+Foundry drops, Journal edit protection and permissions, failed-save retry,
+completed-session history, reuse, and narrow layouts using temporary sample
+campaigns. Foundry APIs are mocked in these checks; live Foundry/PF2e world
+verification is still required.
 
 Enable Lore Smith in a world using the PF2e system. A new Lore Smith button is
 added to the Scene controls for GMs.
