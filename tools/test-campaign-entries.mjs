@@ -5,7 +5,7 @@ const workspace=await import('../scripts/campaign-workspace.js');
 const planner=await import('../scripts/campaign-planner.js');
 const {ensureCampaignWorkspace:ensure}=workspace;
 
-const old={name:'Old campaign',premise:'Stars vanish',acts:[{id:'act',name:'Act I',gmNotes:'Never lose this',chapters:[]}],workspace:{version:2,id:'stable',location:'Village',partyIntent:'Follow the western road',facts:'The bell rang',questions:'An old question',theories:'An old player theory',custom:{permissions:{default:0}},situations:[{id:'a',title:'The lake',summary:'A fallen star',stakes:'Quina needs help',nextMove:'Send divers',trigger:'At dawn',resourceIds:['n','place','map'],revelationIds:['d'],goals:'Retired goals note'}],resources:[{id:'n',name:'Quina',kind:'npc',uuid:'Actor.quina',notes:'Guide',state:'Distrustful',desire:'Find the patron',knowledge:'Knows the fishermen',assets:'Boat'},{id:'place',name:'The lake',kind:'location',notes:'Old location notes',uuid:'Scene.lake'},{id:'map',name:'Lake chart',kind:'other',notes:'Depths',uuid:'JournalEntry.map'},{id:'clue',name:'Letter',kind:'clue',notes:'A letter names the abbey',source:'Severin’s tent',method:'Read it',discovered:true}],revelations:[{id:'d',title:'Find the abbey',clueIds:['clue'],understanding:'They know where it is'}],connections:[{id:'route',fromId:'n',toId:'place',description:'Follow the river',kind:'access'}],prep:{id:'pending',title:'Pending game',opening:'The bell rings',notes:'Old reminders',resourceIds:['place','map'],situationIds:['a'],revelationIds:['d'],scenes:[{id:'scene',text:'Optional scene',carry:true}],secrets:[{id:'secret',text:'Unplaced fact',carry:true}],detail:{custom:'Original detailed draft'}},after:{summary:'Unfinished recap',nextIntent:'Talk to the keeper',changes:[{id:'change',targetId:'n',field:'state',value:'Friendly'}]},history:[{id:'historic',summary:'They rescued Tomas',nextIntent:'Find Vessa',prep:{title:'Earlier game',journalId:'Journal1'},tableContent:'<p>Old prep snapshot</p>',changes:[]}]}};
+const old={name:'Old campaign',premise:'Supplies are missing',acts:[{id:'act',name:'Act I',gmNotes:'Never lose this',chapters:[]}],workspace:{version:2,id:'stable',location:'Village',partyIntent:'Follow the northern road',facts:'The bell rang',questions:'An old question',theories:'An old player theory',custom:{permissions:{default:0}},situations:[{id:'a',title:'The bridge',summary:'A damaged bridge',stakes:'Nella needs help',nextMove:'Send workers',trigger:'At dawn',resourceIds:['n','place','map'],revelationIds:['d'],goals:'Retired goals note'}],resources:[{id:'n',name:'Nella',kind:'npc',uuid:'Actor.nella',notes:'Guide',state:'Distrustful',desire:'Find the patron',knowledge:'Knows the carpenters',assets:'Cart'},{id:'place',name:'The bridge',kind:'location',notes:'Old location notes',uuid:'Scene.bridge'},{id:'map',name:'Bridge chart',kind:'other',notes:'Dimensions',uuid:'JournalEntry.map'},{id:'clue',name:'Letter',kind:'clue',notes:'A letter names the warehouse',source:'Alden’s tent',method:'Read it',discovered:true}],revelations:[{id:'d',title:'Find the warehouse',clueIds:['clue'],understanding:'They know where it is'}],connections:[{id:'route',fromId:'n',toId:'place',description:'Follow the river',kind:'access'}],prep:{id:'pending',title:'Pending game',opening:'The bell rings',notes:'Old reminders',resourceIds:['place','map'],situationIds:['a'],revelationIds:['d'],scenes:[{id:'scene',text:'Optional scene',carry:true}],secrets:[{id:'secret',text:'Unplaced fact',carry:true}],detail:{custom:'Original detailed draft'}},after:{summary:'Unfinished recap',nextIntent:'Talk to the keeper',changes:[{id:'change',targetId:'n',field:'state',value:'Friendly'}]},history:[{id:'historic',summary:'They rescued Bram',nextIntent:'Find Orin',prep:{title:'Earlier game',journalId:'Journal1'},tableContent:'<p>Old prep snapshot</p>',changes:[]}]}};
 const oldHistory=JSON.stringify(old.workspace.history),oldActs=JSON.stringify(old.acts),oldPrep=JSON.stringify(old.workspace.prep.detail);
 const w=ensure(old);
 assert.equal(w.version,3);assert.equal(w.id,'stable');assert.equal(w.situations[0].id,'a');
@@ -13,7 +13,7 @@ assert.deepEqual(w.situations[0].visitIds,['n','place']);assert.deepEqual(w.situ
 assert.equal(w.situations[0].participants[0].personId,'n');assert.equal(w.actions[0].when,'At dawn');
 assert.equal(w.resources.find(r=>r.id==='clue').clueStatus,'delivered');
 assert.equal(w.sessions.length,2);assert.equal(w.sessions.find(s=>s.id==='pending').legacy.prep.detail.custom,'Original detailed draft');
-assert.match(w.sessions.find(s=>s.id==='historic').snapshot.content,/They rescued Tomas/);
+assert.match(w.sessions.find(s=>s.id==='historic').snapshot.content,/They rescued Bram/);
 assert.equal(JSON.stringify(w.history),oldHistory);assert.equal(JSON.stringify(old.acts),oldActs);assert.equal(JSON.stringify(w.prep.detail),oldPrep);
 assert.equal(w.questions,'An old question');assert.equal(w.theories,'An old player theory');assert.equal(w.custom.permissions.default,0);
 const normalized=JSON.stringify(old);ensure(old);assert.equal(JSON.stringify(old),normalized,'Migration must be repeatable without duplicating entries.');
@@ -21,18 +21,18 @@ const archived=workspace.renderCampaignWorkspace(old,{view:'overview'});
 assert.ok(!archived.includes('Earlier notes (preserved)'));
 assert.equal(old.workspace.questions,'An old question');assert.equal(old.acts[0].gmNotes,'Never lose this');assert.equal(w.factEntries[0].text,'The bell rang');
 
-const campaign={name:'The Westering Stars',premise:'The stars travel west and vanish.',acts:[]};
+const campaign={name:'The Old Trade Road',premise:'The bridge needs repairs.',acts:[]};
 const fresh=ensure(campaign);
 assert.equal(fresh.sessions.length,0,'Opening an empty campaign must not create dummy Sessions.');
-const adventure=planner.createPlannerEntry(campaign,'adventure');adventure.title='The Silent Abbey';adventure.summary='The bell pulls the stars west';
-const person=planner.createPlannerEntry(campaign,'person');person.name='Quina';person.desire='Find out who paid for the expedition';person.knowledge='A western road reaches the abbey';person.uuid='Actor.quina';
-const other=planner.createPlannerEntry(campaign,'adventure');other.title='The Lake';
+const adventure=planner.createPlannerEntry(campaign,'adventure');adventure.title='The Old Warehouse';adventure.summary='The tools are in storage';
+const person=planner.createPlannerEntry(campaign,'person');person.name='Nella';person.desire='Find out who paid for the repair crew';person.knowledge='A northern road reaches the warehouse';person.uuid='Actor.nella';
+const other=planner.createPlannerEntry(campaign,'adventure');other.title='The Bridge';
 adventure.participants.push({id:'role',personId:person.id,name:'',wants:'',resources:''});other.participants.push({id:'role2',personId:person.id,name:'',wants:'',resources:''});
-const location={id:'tavern',name:'Tavern',kind:'location',state:'Recruiting divers',notes:'',obstacle:'A suspicious captain',opportunity:'Ask about the expedition',directions:'The captain points west',uuid:'Scene.tavern',relatedIds:[]};
-const abbey={...location,id:'abbey',name:'Abbey',state:'The bell rings',uuid:'Scene.abbey'};
-fresh.resources.push(location,abbey);adventure.visitIds.push('tavern');other.visitIds.push('abbey');
-fresh.connections.push({id:'direction',fromId:'tavern',toId:'abbey',kind:'access',description:'The western road',clueId:''});
-const discovery={id:'discovery',title:'Where are the stars going?',conclusion:'',clueIds:[],understanding:'',essential:true,status:'open'};
+const location={id:'tavern',name:'Tavern',kind:'location',state:'Recruiting workers',notes:'',obstacle:'A suspicious captain',opportunity:'Ask about the repair crew',directions:'The captain points north',uuid:'Scene.tavern',relatedIds:[]};
+const warehouse={...location,id:'warehouse',name:'Warehouse',state:'The bell rings',uuid:'Scene.warehouse'};
+fresh.resources.push(location,warehouse);adventure.visitIds.push('tavern');other.visitIds.push('warehouse');
+fresh.connections.push({id:'direction',fromId:'tavern',toId:'warehouse',kind:'access',description:'The northern road',clueId:''});
+const discovery={id:'discovery',title:'Where are the missing tools?',conclusion:'',clueIds:[],understanding:'',essential:true,status:'open'};
 fresh.revelations.push(discovery);adventure.revelationIds.push(discovery.id);
 for(let i=1;i<=3;i++){const clue={id:`evidence-${i}`,name:`Evidence ${i}`,kind:'clue',notes:`Distinct evidence ${i}`,sourceId:person.id,source:'',method:'',sourceGroup:'',clueStatus:'prepared',relatedIds:[]};fresh.resources.push(clue);discovery.clueIds.push(clue.id);}
 ensure(campaign);
@@ -44,10 +44,10 @@ assert.equal(planner.plannerClueCoverage(fresh,discovery).sources,3);
 const session=planner.createPlannerEntry(campaign,'session',adventure.id);
 const beforeCounts=[fresh.situations.length,fresh.resources.length,fresh.revelations.length];
 assert.equal(session.adventureId,adventure.id);assert.deepEqual([fresh.situations.length,fresh.resources.length,fresh.revelations.length],beforeCounts);
-assert.ok(planner.plannerSessionOptions(fresh,session).some(r=>r.id==='abbey'),'Prepare the destination of a lead even when it belongs to another adventure.');
+assert.ok(planner.plannerSessionOptions(fresh,session).some(r=>r.id==='warehouse'),'Prepare the destination of a lead even when it belongs to another adventure.');
 session.visitIds=['tavern'];session.personIds=[person.id];session.clueIds=['evidence-1'];session.notes='Notes written during play';
-session.checklist=[{id:'todo',text:'Read diving rules',done:false},{id:'ready',text:'Lake map',done:true}];
-session.after.summary='They followed the first clue';session.after.nextIntent='Visit the abbey';session.after.location='Western road';session.after.facts='The captain is Quina’s cousin';
+session.checklist=[{id:'todo',text:'Read climbing rules',done:false},{id:'ready',text:'Bridge map',done:true}];
+session.after.summary='They followed the first clue';session.after.nextIntent='Visit the warehouse';session.after.location='Northern road';session.after.facts='The captain is Nella’s cousin';
 session.after.foundClueIds=['evidence-1'];session.after.understanding=[{discoveryId:'discovery',value:'They know the direction, not the cause',apply:true}];
 ensure(campaign);
 const beforeBad=JSON.stringify(campaign);session.after.foundClueIds.push('missing');const invalid=JSON.stringify(campaign);
@@ -56,14 +56,14 @@ session.after.foundClueIds.pop();assert.equal(JSON.stringify(campaign),beforeBad
 planner.completePlannerSession(campaign,session.id);
 assert.equal(session.status,'complete');assert.equal(discovery.understanding,'They know the direction, not the cause');assert.equal(discovery.status,'open');
 assert.equal(fresh.resources.find(r=>r.id==='evidence-1').clueStatus,'delivered');assert.equal(fresh.resources.find(r=>r.id==='evidence-2').clueStatus,'prepared');
-assert.equal(fresh.partyIntent,'Visit the abbey');assert.equal(fresh.location,'Western road');
+assert.equal(fresh.partyIntent,'Visit the warehouse');assert.equal(fresh.location,'Northern road');
 assert.throws(()=>planner.completePlannerSession(campaign,session.id),/already/);
-const frozen=JSON.stringify(session.snapshot);location.state='No divers remain';person.knowledge='A new fact';
+const frozen=JSON.stringify(session.snapshot);location.state='No workers remain';person.knowledge='A new fact';
 assert.equal(JSON.stringify(session.snapshot),frozen,'Later shared record edits cannot alter completed session history.');
 const next=planner.createPlannerEntry(campaign,'session',adventure.id);
 assert.deepEqual([fresh.situations.length,fresh.resources.length,fresh.revelations.length],beforeCounts,'Creating a Session never duplicates the Adventure, NPCs, or clues.');
-assert.deepEqual(next.visitIds,['tavern']);assert.deepEqual(next.clueIds,['evidence-1']);assert.deepEqual(next.checklist.map(r=>r.text),['Read diving rules']);assert.equal(next.notes,'');
-assert.equal(next.after.summary,'');assert.equal(next.location,'Western road');
+assert.deepEqual(next.visitIds,['tavern']);assert.deepEqual(next.clueIds,['evidence-1']);assert.deepEqual(next.checklist.map(r=>r.text),['Read climbing rules']);assert.equal(next.notes,'');
+assert.equal(next.after.summary,'');assert.equal(next.location,'Northern road');
 planner.reopenPlannerSession(fresh,session.id);assert.equal(session.versions.length,1);assert.equal(session.after.updateOverview,false);assert.equal(JSON.stringify(session.versions[0].snapshot),frozen);
 const facts=fresh.facts;session.after.summary='Corrected recap';planner.completePlannerSession(campaign,session.id);assert.equal(fresh.facts,facts,'Editing history does not apply facts a second time by default.');
 assert.match(session.versions[0].snapshot.content,/They followed the first clue/);
@@ -72,8 +72,8 @@ for(const forbidden of ['Lazy DM','strong start','Open campaign questions','Reve
 for(const label of ['New Session','Where we start','What I need ready','Notes during the game','After the game'])assert.ok(html.includes(label));
 person.name='<img src=x onerror=bad()>';assert.ok(!workspace.renderCampaignWorkspace(campaign,{view:'people',selectedId:person.id}).includes('<img src=x'));
 const exported=workspace.campaignWorkspaceJournalPages(campaign);
-assert.ok(exported.some(p=>p.content.includes('Actor.quina')));assert.ok(exported.some(p=>p.content.includes('Corrected recap')));
-assert.ok(exported.find(p=>p.key===`entry-session-${next.id}`).content.includes('No divers remain'),'Uncompleted Sessions use current shared records.');
+assert.ok(exported.some(p=>p.content.includes('Actor.nella')));assert.ok(exported.some(p=>p.content.includes('Corrected recap')));
+assert.ok(exported.find(p=>p.key===`entry-session-${next.id}`).content.includes('No workers remain'),'Uncompleted Sessions use current shared records.');
 
 // Deletion is reversible and never changes another entry's content or shared references.
 ensure(campaign);
@@ -95,7 +95,7 @@ assert.equal(adventure.participants[0].personId,person.id);
 assert.equal(other.participants[0].personId,person.id);
 assert.equal(fresh.resources.find(r=>r.id==='evidence-1').sourceId,person.id);
 assert.equal(JSON.stringify(fresh.connections),originalConnections);
-assert.equal(person.uuid,'Actor.quina');
+assert.equal(person.uuid,'Actor.nella');
 const linkedPersonUI=workspace.renderCampaignWorkspace(campaign,{view:'adventures',selectedId:other.id});
 assert.ok(linkedPersonUI.includes('(deleted)'));assert.equal(other.participants[0].personId,person.id);
 assert.ok(!workspace.campaignWorkspaceJournalPages(campaign).some(p=>p.key===`entry-person-${person.id}`));
@@ -133,12 +133,12 @@ const notebook=workspace.renderCampaignWorkspace(campaign,{view:'adventures',sel
 assert.ok(!notebook.includes('<select'),'The notebook does not present dropdown menus.');
 assert.ok(notebook.includes('aria-label="Who is involved"'));assert.ok(notebook.includes('aria-label="Clues to this discovery"'));
 assert.ok(!notebook.includes('data-pl-fold="who-'));assert.ok(!notebook.includes('data-pl-fold="visits-'));
-const priorPlan={...planner.newPlannerAction(adventure.id),who:'The expedition',action:'Begins diving',when:'At dawn',reason:'The party supplied a boat'};fresh.actions.push(priorPlan);adventure.actionIds.push(priorPlan.id);
+const priorPlan={...planner.newPlannerAction(adventure.id),who:'The repair crew',action:'Begins repairs',when:'At dawn',reason:'The party supplied a cart'};fresh.actions.push(priorPlan);adventure.actionIds.push(priorPlan.id);
 const originalPlan=JSON.stringify(priorPlan);workspace.renderCampaignWorkspace(campaign,{view:'adventures',selectedId:adventure.id});assert.equal(JSON.stringify(priorPlan),originalPlan,'Displaying legacy structured notes never rewrites them.');
-priorPlan.prose='At sunset, the expedition leaves the lake.';location.visitNote='The recruits have left. The ferryman knows the western road.';
+priorPlan.prose='At sunset, the repair crew leaves the bridge.';location.visitNote='The recruits have left. The cart driver knows the northern road.';
 const exportedNotes=workspace.campaignWorkspaceJournalPages(campaign).find(p=>p.key===`entry-adventure-${adventure.id}`).content;
-assert.ok(exportedNotes.includes('At sunset, the expedition leaves the lake.'));assert.ok(!exportedNotes.includes('Begins diving'));
-assert.ok(exportedNotes.includes('The recruits have left.'));assert.ok(!exportedNotes.includes('No divers remain'));
+assert.ok(exportedNotes.includes('At sunset, the repair crew leaves the bridge.'));assert.ok(!exportedNotes.includes('Begins repairs'));
+assert.ok(exportedNotes.includes('The recruits have left.'));assert.ok(!exportedNotes.includes('No workers remain'));
 console.log('Notebook checks passed: visible sections, people/clue tables, no dropdowns, legacy data preservation and current note exports.');
 
 // Main navigation and per-tab creation, without retired-data panels.
@@ -151,10 +151,10 @@ for(const [view,action] of [['adventures','new-adventure'],['sessions','new-sess
  const content=workspace.renderCampaignWorkspace(campaign,{view});
  assert.ok(content.indexOf('data-pl-action="'+action+'"')>content.indexOf('<nav'));
 }
-priorPlan.status='happened';
+priorPlan.status='happened';priorPlan.overview=true;
 assert.ok(workspace.renderCampaignWorkspace(campaign,{view:'overview'}).includes('Happened · reopen'));
 assert.ok(workspace.campaignWorkspaceJournalPages(campaign)[0].content.includes('Happened'));
-assert.ok(fresh.factEntries.some(row=>row.text==='The captain is Quina’s cousin'));
+assert.ok(fresh.factEntries.some(row=>row.text==='The captain is Nella’s cousin'));
 
 // Permanent deletion detaches live links, retains other records/history, and cannot be restored.
 const purge=JSON.parse(JSON.stringify(campaign));ensure(purge);const pw=purge.workspace;
@@ -185,3 +185,20 @@ ensure(imported);ensure(imported);
 assert.ok(!imported.workspace.sessions.some(s=>['historic','pending'].includes(s.id)),'Purged imports never reappear.');
 assert.equal(imported.workspace.history.length,old.workspace.history.length,'Other stored historical source material is untouched.');
 console.log('Planner refinements passed: tab creation, fact migration, visible happened plans, permanent deletion, safe links, snapshots, and no resurrected imports.');
+
+const scoped={name:'Example campaign',acts:[]};const sw=ensure(scoped);
+const written={id:'overview-plan',adventureId:'',actorId:'',who:'The merchant',action:'Hires an escort',when:'Tomorrow',reason:'',status:'happened'};
+const empty={...written,id:'empty-plan',who:'',action:'',when:''};
+const separate={...written,id:'adventure-plan',adventureId:'some-adventure'};
+sw.actions.push(written,empty,separate);ensure(scoped);
+assert.equal(written.overview,true);assert.equal(written.status,'happened');
+assert.equal(empty.overview,false);assert.equal(empty.status,'planned');assert.equal(separate.overview,false);
+const cleanOverview=workspace.renderCampaignWorkspace(scoped,{view:'overview'});
+assert.ok(cleanOverview.includes('data-id="overview-plan"'));
+assert.ok(!cleanOverview.includes('data-id="empty-plan"'));assert.ok(!cleanOverview.includes('data-id="adventure-plan"'));
+const newPlan=planner.newPlannerAction();assert.equal(newPlan.status,'planned');
+sw.sessions.push(planner.newPlannerSession(sw));sw.sessions[0].actionIds=[written.id];sw.sessions[0].snapshot={content:'Completed history'};
+const preserved=JSON.stringify(sw.sessions[0].snapshot);planner.deletePlannerAction(sw,written.id);
+assert.ok(!sw.actions.some(a=>a.id===written.id));assert.deepEqual(sw.sessions[0].actionIds,[]);
+assert.equal(JSON.stringify(sw.sessions[0].snapshot),preserved);
+console.log('Consequence checks passed: explicit overview scope, no default completed rows, deletion and retained history.');

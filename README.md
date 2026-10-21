@@ -171,7 +171,7 @@ Validation includes automated item, creature, draft/undo, campaign, and map
 regressions, plus all thirteen builder steps rendered in a browser with Foundry
 API stubs. A live Foundry/PF2e world was not available for in-world verification.
 
-### Campaign Planner (0.42.1)
+### Campaign Planner (0.42.2)
 
 The planner follows the Alexandrian's situation preparation, clue design,
 preparation load, and campaign status methods. Its forms adapt the supplied
@@ -187,6 +187,15 @@ The main pages contain no dropdown menus. Linking a shared record opens a
 small searchable chooser only when requested. Source details, attachments,
 help and the recycle list remain secondary. Retired-data panels are no longer
 shown on the main pages.
+
+**Examples and consequences (0.42.2):** built-in examples use an unrelated bridge
+repair scenario, including map placeholders and test fixtures. Examples are
+placeholders only and never become saved campaign notes. The overview shows only
+consequences added there; Adventure, Session, and Person plans stay in their own
+entries. Existing written overview consequences keep their status. Empty rows
+left by earlier behavior no longer appear there. New plans always start intended,
+with **Mark happened**. Each plan has **Delete**, which removes its live links
+after confirmation when it contains notes; completed Session snapshots remain.
 
 **Overview refinements (0.42.1):** creation controls live in the Adventures,
 Sessions, and People or Groups tabs. The overview follows the template headings:

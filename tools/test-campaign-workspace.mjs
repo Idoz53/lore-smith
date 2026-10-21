@@ -8,27 +8,27 @@ globalThis.foundry = { utils: { randomID: () => `test-${++nextId}`, deepClone: s
 const workspace = await import(new URL("../scripts/campaign-workspace.js", import.meta.url));
 const { ensureCampaignWorkspace, selectWorkspaceSituation, workspaceSelectedResources, applyCampaignWorkspaceAfterPlay, campaignWorkspaceJournalPages } = workspace;
 
-const campaign = { name: "The Star of Tevrar", premise: "A star falls into the lake.", acts: [] };
+const campaign = { name: "The Old Trade Road", premise: "A bridge needs urgent repairs.", acts: [] };
 let board = ensureCampaignWorkspace(campaign);
 const boardId = board.id;
-board.situations.push({ id: "rescue", title: "Rescue Tomas", status: "active", summary: "Tomas is missing.", stakes: "His sister needs him home.", leads: "Search the shore.", nextMove: "The water rises.", resourceIds: ["tomas", "shore"] });
+board.situations.push({ id: "rescue", title: "Rescue Bram", status: "active", summary: "Bram is missing.", stakes: "His sister needs him home.", leads: "Search the shore.", nextMove: "The water rises.", resourceIds: ["bram", "shore"] });
 board.resources.push(
-  { id: "tomas", name: "Tomas", kind: "npc", state: "Missing", notes: "Saw the star fall.", uuid: "Actor.tomas", discovered: false, relatedIds: ["shore"] },
-  { id: "shore", name: "Lake shore", kind: "location", state: "Flooded", notes: "Floating wreckage.", uuid: "Scene.shore", discovered: true, relatedIds: [] },
-  { id: "contract", name: "Tomas's contract", kind: "clue", state: "In his coat", notes: "Names Vessa as the specialist.", uuid: "", discovered: false, relatedIds: ["tomas"] },
-  { id: "archive", name: "Drowned archive", kind: "location", state: "Unexplored", notes: "A later expedition.", uuid: "Scene.archive", discovered: false, relatedIds: [] },
+  { id: "bram", name: "Bram", kind: "npc", state: "Missing", notes: "Saw the bridge collapse.", uuid: "Actor.bram", discovered: false, relatedIds: ["shore"] },
+  { id: "shore", name: "Bridge shore", kind: "location", state: "Flooded", notes: "Floating wreckage.", uuid: "Scene.shore", discovered: true, relatedIds: [] },
+  { id: "contract", name: "Bram's contract", kind: "clue", state: "In his coat", notes: "Names Orin as the specialist.", uuid: "", discovered: false, relatedIds: ["bram"] },
+  { id: "archive", name: "Drowned archive", kind: "location", state: "Unexplored", notes: "A later repair crew.", uuid: "Scene.archive", discovered: false, relatedIds: [] },
 );
 selectWorkspaceSituation(campaign, "rescue");
 assert.equal(ensureCampaignWorkspace(campaign).id, boardId, "Normalization must retain workspace identity.");
-assert.ok(workspaceSelectedResources(campaign).some((r) => r.id === "tomas"), "Selecting a situation gathers its existing records.");
+assert.ok(workspaceSelectedResources(campaign).some((r) => r.id === "bram"), "Selecting a situation gathers its existing records.");
 board = campaign.workspace;
-board.resources.find((r) => r.id === "tomas").state = "Found on a wreck";
-assert.equal(workspaceSelectedResources(campaign).find((r) => r.id === "tomas").state, "Found on a wreck", "Preparation uses current records, not copied values.");
+board.resources.find((r) => r.id === "bram").state = "Found on a wreck";
+assert.equal(workspaceSelectedResources(campaign).find((r) => r.id === "bram").state, "Found on a wreck", "Preparation uses current records, not copied values.");
 board.prep.resourceIds.push("archive");
 board.prep.title = "Rescue at the shore";
-board.prep.opening = "Mira points toward the wreck.";
+board.prep.opening = "Lysa points toward the wreck.";
 board.prep.notes = "Offer the players several approaches.";
-board.partyIntent = "Find Tomas";
+board.partyIntent = "Find Bram";
 
 const campaignBeforeInvalidApply = JSON.stringify(campaign);
 assert.throws(() => applyCampaignWorkspaceAfterPlay(campaign), "An empty After Play entry must not rotate preparation.");
@@ -63,20 +63,20 @@ await LoreSmithDashboard.openCampaignWorkspacePrep.call(app);
 assert.equal(app.activeTab, "session");
 assert.equal(app.sessionPrep.locations.length, 0);
 assert.equal(app.sessionPrep.title, "Rescue at the shore");
-assert.equal(app.sessionPrep.goal, "Find Tomas");
+assert.equal(app.sessionPrep.goal, "Find Bram");
 app.sessionPrep.title = "The wreck rescue";
-app.sessionPrep.opening = "A mast cracks above Tomas.";
+app.sessionPrep.opening = "A mast cracks above Bram.";
 app.sessionPrep.reminders = "Keep the rising water visible.";
 await app.saveSessionPrepDraft();
 assert.equal(app.adventureCampaign.workspace.prep.title, "The wreck rescue");
-assert.equal(app.adventureCampaign.workspace.prep.opening, "A mast cracks above Tomas.");
+assert.equal(app.adventureCampaign.workspace.prep.opening, "A mast cracks above Bram.");
 assert.equal(app.adventureCampaign.workspace.prep.notes, "Keep the rising water visible.");
 assert.equal(JSON.parse(settings.get("campaignBuilderDraft")).campaign.workspace.prep.detail.title, "The wreck rescue");
 
 app.activeTab = "campaign";
-app.adventureCampaign.workspace.prep.opening = "Mira arrives with a boat.";
+app.adventureCampaign.workspace.prep.opening = "Lysa arrives with a cart.";
 await LoreSmithDashboard.openCampaignWorkspacePrep.call(app);
-assert.equal(app.sessionPrep.opening, "Mira arrives with a boat.", "Packet edits must appear when detailed preparation reopens.");
+assert.equal(app.sessionPrep.opening, "Lysa arrives with a cart.", "Packet edits must appear when detailed preparation reopens.");
 app.sessionPrep.locations.push({ id: "extra", name: "Pier", image: "" });
 await LoreSmithDashboard.removeLocation.call(app, null, { dataset: { id: "extra" } });
 assert.equal(app.sessionPrep.locations.length, 0, "Workspace location cards are optional and removable.");
@@ -88,38 +88,38 @@ assert.equal(app.resolveSessionJournal()?.id, "journal-prep", "Reopening a packe
 
 const beforeHistory = app.adventureCampaign.workspace;
 const oldPacketId = beforeHistory.prep.id;
-beforeHistory.after.summary = "The party rescued Tomas and warned the town.";
-beforeHistory.after.nextIntent = "Find Vessa, the Sphere specialist.";
-beforeHistory.after.usedResourceIds = ["tomas", "shore", "contract"];
+beforeHistory.after.summary = "The party rescued Bram and warned the town.";
+beforeHistory.after.nextIntent = "Find Orin, the bridge engineer.";
+beforeHistory.after.usedResourceIds = ["bram", "shore", "contract"];
 beforeHistory.after.changes = [
-  { id: "c1", targetType: "resource", targetId: "tomas", field: "state", value: "Safe with Mira", reason: "The party rescued him." },
-  { id: "c2", targetType: "resource", targetId: "contract", field: "discovered", value: true, reason: "Tomas showed them the contract." },
-  { id: "c3", targetType: "situation", targetId: "rescue", field: "status", value: "resolved", reason: "Tomas returned home." },
+  { id: "c1", targetType: "resource", targetId: "bram", field: "state", value: "Safe with Lysa", reason: "The party rescued him." },
+  { id: "c2", targetType: "resource", targetId: "contract", field: "discovered", value: true, reason: "Bram showed them the contract." },
+  { id: "c3", targetType: "situation", targetId: "rescue", field: "status", value: "resolved", reason: "Bram returned home." },
 ];
 beforeHistory.after.changes.push({ id: "invalid", targetType: "resource", targetId: "missing", field: "state", value: "Changed" });
 assert.throws(() => applyCampaignWorkspaceAfterPlay(app.adventureCampaign), "Every pending change must be valid.");
-assert.equal(beforeHistory.resources.find((r) => r.id === "tomas").state, "Found on a wreck", "An invalid batch must not partially apply earlier changes.");
+assert.equal(beforeHistory.resources.find((r) => r.id === "bram").state, "Found on a wreck", "An invalid batch must not partially apply earlier changes.");
 assert.equal(beforeHistory.history.length, 0);
 beforeHistory.after.changes.pop();
 const entry = applyCampaignWorkspaceAfterPlay(app.adventureCampaign);
 const updated = app.adventureCampaign.workspace;
-assert.equal(updated.resources.find((r) => r.id === "tomas").state, "Safe with Mira");
+assert.equal(updated.resources.find((r) => r.id === "bram").state, "Safe with Lysa");
 assert.equal(updated.situations.find((s) => s.id === "rescue").status, "resolved");
-assert.equal(updated.partyIntent, "Find Vessa, the Sphere specialist.");
+assert.equal(updated.partyIntent, "Find Orin, the bridge engineer.");
 assert.notEqual(updated.prep.id, oldPacketId, "After Play opens a fresh preparation packet.");
 assert.ok(updated.prep.resourceIds.includes("archive"), "Unused preparation must carry forward.");
 assert.equal(updated.history.length, 1);
 assert.equal(entry.prep.id, oldPacketId, "History retains the previous preparation.");
-assert.equal(entry.changes.find((change) => change.targetId === "tomas" && change.field === "state").before, "Found on a wreck");
+assert.equal(entry.changes.find((change) => change.targetId === "bram" && change.field === "state").before, "Found on a wreck");
 const storedHistory = JSON.stringify(entry);
-updated.resources.find((r) => r.id === "tomas").state = "Travelling";
+updated.resources.find((r) => r.id === "bram").state = "Travelling";
 assert.equal(JSON.stringify(entry), storedHistory, "Future edits must not rewrite recorded history.");
 await app.saveSessionPrepDraft();
 assert.equal(updated.prep.detail, null, "An old open Session Prep draft must not overwrite the next packet.");
 
 const exported = campaignWorkspaceJournalPages(app.adventureCampaign);
-assert.ok(exported.some((page) => page.content.includes("Actor.tomas")), "Journal output must preserve native Foundry links.");
-assert.ok(exported.some((page) => page.content.includes("The party rescued Tomas")), "Journal output includes actual play history.");
+assert.ok(exported.some((page) => page.content.includes("Actor.bram")), "Journal output must preserve native Foundry links.");
+assert.ok(exported.some((page) => page.content.includes("The party rescued Bram")), "Journal output includes actual play history.");
 const freshCampaign = normalizeCampaignBuild({ name: "New campaign", premise: "A new problem" });
 assert.equal(adventureCampaignJournalPages(freshCampaign).length, 1, "Unfilled optional Acts must not generate placeholder Journal pages.");
 freshCampaign.acts[0].startingSituation = "The bridge is burning.";
@@ -128,7 +128,7 @@ assert.equal(adventureCampaignJournalPages(freshCampaign).length, 2, "Existing s
 // Exercise the actual dashboard close/save path, including a pending workspace operation.
 let releaseOperation;
 app.campaignWorkspacePending = new Promise((resolve) => { releaseOperation = resolve; });
-const intentControl = { dataset: { plCurrent: "partyIntent" }, type: "textarea", value: "Follow the western road" };
+const intentControl = { dataset: { plCurrent: "partyIntent" }, type: "textarea", value: "Follow the northern road" };
 const container = { querySelector: () => null, querySelectorAll: (selector) => selector === "[data-pl-current]" ? [intentControl] : [] };
 app.element = { querySelector: (selector) => selector === "[data-campaign-workspace]" ? container : selector === '[name="campaignName"]' ? { value: "Latest campaign name" } : null, querySelectorAll: () => [] };
 app.activeTab = "campaign";
@@ -140,7 +140,7 @@ releaseOperation();
 assert.equal(await closing, "closed");
 const closedDraft = JSON.parse(settings.get("campaignBuilderDraft")).campaign;
 assert.equal(closedDraft.name, "Latest campaign name");
-assert.equal(closedDraft.workspace.partyIntent, "Follow the western road");
+assert.equal(closedDraft.workspace.partyIntent, "Follow the northern road");
 assert.equal(closedDraft.workspace.history.length, 1);
 
 console.log("Campaign workspace checks passed: shared records, atomic updates, history, unused preparation, detailed prep persistence, optional places, Journal links, and existing Acts.");
